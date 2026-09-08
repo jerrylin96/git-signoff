@@ -136,7 +136,7 @@ land with the badge/verifier artifact available, so adoption is visible.
 Target end-state: GSA as a widely adopted open standard, conceivably donated
 to a neutral foundation, applicable across domains and industries. Candidate
 home, dual-track: the Linux Foundation's **Agentic AI Foundation (AAIF)** for
-governance — MCP itself was donated there, `git-signoff` is an MCP server,
+governance — MCP itself was donated there, GSA is agent-tooling infrastructure of the same kind,
 and human-accountability attestation for agentic coding is core AAIF
 territory — while the **OpenSSF** attestation ecosystem (in-toto, SLSA,
 Sigstore) remains the interop target rather than the home. Crucially, that
@@ -151,7 +151,7 @@ donation vehicle. Milestones, in order:
 2. **Spec licensing** — ✅ 2026-08-06: Community Specification License 1.0
    in `LICENSE-SPEC`, declared by `gsa-core.md` and `gsa-escrow.md`; code
    stays MIT.
-3. **Independent implementations**: the skill and the `git-signoff` server are two
+3. **Independent implementations**: the skill and the `git_signoff` Python reference library are two
    same-author implementations; the milestone is one *third-party* verifier
    or producer. The enabler shipped 2026-08-06 — `conformance/` publishes
    the test-vector suite (mostly real attestations, reference verifier
@@ -233,25 +233,33 @@ with a verdict and the trigger that changes it:
   Candidate: compress to judgment guidance once live runs show the model
   doesn't need the full matrix. Cost of keeping: comprehension tax on every
   new reader; cost of cutting: re-litigating the rigor floors the tests pin.
-- **`git-signoff` MCP server (~900 lines + tests) and the PyPI publish path**:
-  freeze until someone asks for deterministic server-side enforcement — no
-  adopter of the skill channel has, and the PyPI trusted-publisher setup
-  remains an unspent user action. The distribution was renamed
-  `git-signoff` (2026-09-08) because `signoff-mcp` on PyPI belongs to an
-  unrelated project published 2026-05-02; three unrelated products in the
-  AI-agent space now use the bare word "signoff", so adoption-path surfaces
-  lead with "Git Signoff Attestation" rather than the bare word. The primary
-  command is `git-signoff` too (`serve` / `init` subcommands; bare prints
-  help since git dispatches `git signoff` to it) and the import package is
-  `git_signoff`; no alias — there were no users or MCP registrations to keep
-  compatible with, and getting the name right once before adoption beats
-  carrying two. The GitHub repository was renamed `jerrylin96/git-signoff`
-  the same day (old URLs redirect); `/signoff`, `skills/signoff/`,
+- **MCP server and the PyPI publish path — DELETED 2026-09-08.** The
+  verdict here had been "freeze until someone asks"; nobody asked, and the
+  component turned out to be the root of several other backlog items: the
+  repository's only non-stdlib dependency (`mcp`), the 1328-line duplicated
+  `init.py` (kept in parity by a test solely so a console-script `init`
+  subcommand could exist), a second implementation of the producer mechanics
+  that could drift from the skill's bash, a console-script guard, a publish
+  workflow, and a PyPI name that could not be registered (`signoff-mcp` taken
+  by an unrelated project; `git-signoff` rejected as too similar to the
+  unrelated `git-sign-off`). Its "server-side enforcement" pitch also
+  overstated: every target harness gives the agent a shell, so the server
+  never was a boundary — the verifier in CI plus the branch ruleset are. What
+  stays is `git_signoff/` as an unpublished Python reference implementation
+  of the producer mechanics (status derivation, notes merge, adapters,
+  profile resolution): the only executable, unit-tested form of the producer
+  rules, since the skill's bash cannot be unit tested. A thin MCP wrapper
+  (~100 lines over that core) is easy to add back if an adopter asks; that
+  is the test for bloat — cheaper to recreate on demand than to carry.
+  Naming record: the GitHub repository was renamed `jerrylin96/git-signoff`
+  on 2026-09-08 (old URLs redirect). The surviving rationale is
+  discoverability — the bare word "signoff" is shared with two AI products,
+  the DCO `--signoff` trailer, and a chip-design discipline, while
+  `git-signoff` names what the tool is attached to and echoes the protocol
+  name — not PyPI consistency, which is moot. `/signoff`, `skills/signoff/`,
   `refs/notes/signoff`, and the `Signoff-*` trailers keep the bare word
-  deliberately — `git-signoff` is the tool, `signoff` is the action and the
-  protocol vocabulary. Nothing is on PyPI
-  until the pending-publisher user action below is done. Keep the server out
-  of the adoption path either way.
+  deliberately: `git-signoff` is the project, `signoff` is the action and the
+  protocol vocabulary.
 - **Escrow spec (`gsa-escrow.md`)**: already evidence-gated — correct
   shape; no further investment until its gates trip.
 - **Conformance vectors, spec license, in-toto draft**: *not* baggage —
@@ -343,14 +351,6 @@ Recorded so they never need re-derivation; each names its future fix.
 - Purchase custom domain; DNS to Pages.
 - Enable GitHub Pages in repo settings.
 - GitHub About sidebar text.
-- Register `git-signoff` on PyPI as a pending trusted publisher (pypi.org →
-  Publishing → add pending publisher: project `git-signoff`, owner
-  `jerrylin96`, repository `signoff`, workflow `pypi-publish.yml`,
-  environment `pypi`) — the `pypi-publish` workflow then publishes with no
-  stored credentials. Do this soon: `signoff-mcp` was taken by an unrelated
-  project before we published, and a pending publisher reserves the name.
-  Optionally also reserve `git-signoff-mcp` so the obvious variant cannot
-  point elsewhere.
 - Dispatch the `release` workflow to cut the `v0.4.0` tag: `pyproject.toml`
   has said 0.4.0 since the channel consolidation but the newest release tag
   on origin is `v0.3.0`.

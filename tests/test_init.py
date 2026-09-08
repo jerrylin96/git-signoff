@@ -781,19 +781,16 @@ def test_profile_text_byte_parity():
         )
 
 
-def test_init_scripts_byte_parity():
+def test_initializer_is_not_duplicated_into_the_package():
+    """init.py lives once, at the repository root, where the install snippet
+    serves it. The former package copy (kept byte-identical by a test) existed
+    only for a console-script `init` subcommand that no longer exists."""
     repo_root = Path(__file__).parent.parent
-    root_init = (repo_root / "init.py").read_text(encoding="utf-8")
-    pkg_init = (repo_root / "git_signoff" / "init.py").read_text(encoding="utf-8")
-    assert root_init == pkg_init
-
-
-def test_package_namespaced_init():
-    from git_signoff import init as mcp_init
-    from git_signoff import init_cli
-
-    assert init_cli.init is mcp_init
-    assert hasattr(mcp_init, "run_init")
+    assert not (repo_root / "git_signoff" / "init.py").exists()
+    assert not (repo_root / "git_signoff" / "init_cli.py").exists()
+    pyproject = (repo_root / "pyproject.toml").read_text(encoding="utf-8")
+    assert "[project.scripts]" not in pyproject, "nothing is installed by name; the adoption path is curl-run init.py"
+    assert "Private :: Do Not Upload" in pyproject
 
 
 def test_pyproject_does_not_package_top_level_init():

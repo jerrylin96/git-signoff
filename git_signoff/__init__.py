@@ -1,9 +1,14 @@
-"""git-signoff: GSA Protocol v1.0 Phase 2 — deterministic MCP server mechanics.
+"""git_signoff: Python reference implementation of the GSA producer mechanics.
 
-Implements skills/signoff/specs/gsa-core.md §3 (TranscriptProvider adapters),
-§4 (signoff_prepare / signoff_commit tools), and §2.5 (git-notes dual
-persistence with tracking-ref cat_sort_uniq merge). The Socratic interview
-stays in the agent prompt; this package is deterministic Git mechanics only.
+Not a distribution. The adoption path is the curl-run init.py plus the
+vendored skill folder (both standard-library only); this package exists so
+the producer rules have an executable, unit-tested form — status derivation
+from transcript availability (gsa-core §2.2), single-line trailer values
+(§2.3), git-notes dual persistence with the cat_sort_uniq merge (§2.5), and
+the TranscriptProvider adapters (§3). The Socratic interview stays in the
+agent prompt. An MCP wrapper over these functions shipped from 2026-08 to
+2026-09-08 and was removed for lack of demand (docs/productionization.md);
+the interface it exposed is still specified, informatively, in gsa-core §4.
 """
 
 from git_signoff.adapters import (

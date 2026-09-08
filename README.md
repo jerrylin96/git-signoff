@@ -276,9 +276,11 @@ jobs:
 Supports standard merge strategies: **2-parent PR merges** (verifies clean merge tree & attested PR head in `head` mode), **fast-forward merges** (`head` mode), **squash merges** (`history` mode; in `head` mode when base is unchanged), and **rebase merges** (`history` mode; in `head` mode, re-run `/signoff` after rebase). Enforce strictly with preconfigured [`ruleset.json`](verify/ruleset.json). Full setup & badge markdown: [`verify/`](verify/README.md).
 
 The protocol is harness-, model-, and vendor-neutral. The skill is
-prompt-driven and self-contained; the optional `git-signoff` MCP server adds
-deterministic server-side enforcement (derived status, stale-state circuit
-breakers, notes concurrency handling).
+prompt-driven and self-contained, and nothing is installed by name: the
+initializer is a curl-run script and the verifier is a single file, both
+standard-library Python. A Python reference implementation of the producer
+mechanics lives in [`git_signoff/`](git_signoff/) as an executable,
+unit-tested specification; it is not distributed.
 
 - **Protocol spec:** [`skills/signoff/specs/gsa-core.md`](skills/signoff/specs/gsa-core.md)
 - **Project roadmap:** [`docs/roadmap.md`](docs/roadmap.md)
@@ -290,28 +292,6 @@ repository under review, loaded by the harness from disk. Earlier
 account-scoped channels (a Claude Code plugin marketplace and a release-zip
 skill upload) were retired in v0.4.0 — the vendored folder replaced them on
 every surface; [docs/roadmap.md#phase-4-amendment-2026-08-30](docs/roadmap.md#phase-4-amendment-2026-08-30) records the history.
-
-### MCP server (optional enforcement)
-
-```bash
-pip install "git-signoff @ git+https://github.com/jerrylin96/git-signoff"
-claude mcp add signoff -- git-signoff serve   # server must run with cwd = target repo
-```
-
-One name everywhere: `pip install git-signoff`, `import git_signoff`, and the
-`git-signoff` command (`git-signoff serve` runs the server, `git-signoff init`
-the initializer; bare `git-signoff` prints help, because git dispatches
-`git signoff` to it).
-
-Tools: `signoff_prepare` (resolves the review range and also reports the
-active interview profile — source, ID, provenance digest — plus the
-science-guard signals detected in the diff), `signoff_commit`
-(server-derived status, `ack_no_transcript` circuit breaker),
-`signoff_push_notes` (`cat_sort_uniq` notes merge). **Not yet on PyPI:**
-install from git as above. It will publish as `git-signoff` (the PyPI name
-`signoff-mcp` belongs to an unrelated project); the credential-free publish
-workflow (trusted publishing) is in place and runs once the name is
-registered as a pending publisher.
 
 ## Status & roadmap
 
@@ -329,13 +309,13 @@ automated `refs/notes/signoff` recovery, an open
 for third-party implementations, and a reviewed
 [transcript-escrow spec](skills/signoff/specs/gsa-escrow.md) whose
 privacy baseline is user-owned storage with client-side encryption.
-Cloud escrow implementation and the first PyPI publish remain next.
+Cloud escrow implementation remains next.
 
 ## Development
 
 ```bash
-pip install -e . pytest
-pytest
+pip install -e . pytest ruff   # installs the in-repo reference library for the tests; no dependencies
+ruff check . && pytest
 ```
 
 Contract tests live in `scripts/tests/` (skill contracts), `tests/` (repo

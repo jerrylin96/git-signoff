@@ -1,8 +1,8 @@
 # Specification: Portable Git Signoff Attestation (GSA) Protocol Core
 
-**Document Version:** 3.6.0 (single-valued trailer rule: producers keep values on one line, verifiers reject repeated single-valued trailers within one attestation; merged-note anchoring scoped to the annotated object)  
+**Document Version:** 3.6.0 (single-valued trailer rule: producers keep values on one line, verifiers reject repeated single-valued trailers within one attestation; merged-note anchoring scoped to the annotated object; §2.2 and §4 reworded from "the MCP server" to "the producer" — the MCP interface is one informative producer shape, not a required component)  
 **Status:** Draft / Pending Review  
-**Target Scope:** `signoff` skill portability, MCP Server, Harness Adapters, Git Notes Attestation, and Open Commit Protocol Core  
+**Target Scope:** `signoff` skill portability, producer implementations (skill layer; optionally an MCP server), Harness Adapters, Git Notes Attestation, and Open Commit Protocol Core  
 **Canonical Spec Location:** `skills/signoff/specs/gsa-core.md`  
 **License:** This specification is licensed under the [Community Specification License 1.0](https://github.com/jerrylin96/git-signoff/blob/main/LICENSE-SPEC) (SPDX: `Community-Spec-1.0`); the reference implementations in this repository remain MIT.  
 
@@ -48,14 +48,14 @@ Signoff-Agent: harness=<harness-id>/<version|N/A> model=<model-id|N/A> reasoning
 
 *(Note: Optional cloud trailers like `Signoff-Cloud-Attestation-URL` are omitted entirely when unconfigured rather than written as `none`.)*
 
-### 2.2 Status Field Enum & Server Enforcement
+### 2.2 Status Field Enum & Producer Enforcement
 
-| Status Value | Meaning | Server Derivation & Enforcement Logic |
+| Status Value | Meaning | Producer Derivation & Enforcement Logic |
 |---|---|---|
-| `VERIFIED_BY_HUMAN` | Socratic interview completed; transcript resolved and hashed successfully. | Automatically set by MCP server if `TranscriptProvider` returns valid bytes and digest. |
-| `VERIFIED_BY_HUMAN_NO_TRANSCRIPT_DIGEST` | Socratic interview completed; transcript unavailable locally. | Set by MCP server ONLY if `TranscriptProvider` returns `None` AND caller passes `ack_no_transcript=True`. If `ack_no_transcript=False`, server MUST abort commit with error. |
+| `VERIFIED_BY_HUMAN` | Socratic interview completed; transcript resolved and hashed successfully. | Set by the producer if the `TranscriptProvider` returns valid bytes and digest. |
+| `VERIFIED_BY_HUMAN_NO_TRANSCRIPT_DIGEST` | Socratic interview completed; transcript unavailable locally. | Set by the producer ONLY if the `TranscriptProvider` returns `None` AND the human has explicitly acknowledged the downgrade (`ack_no_transcript=True`). Without that acknowledgement the producer MUST abort the commit with an error. |
 
-*(Note: `Signoff-Status` is derived deterministically by the MCP server; callers CANNOT override status string directly.)*
+*(Note: `Signoff-Status` is derived deterministically by the producer from transcript availability; the interviewing agent MUST NOT set it directly. "Producer" is whatever writes the attestation — the skill layer's helper in the shipped implementation, or an MCP server exposing the §4 interface.)*
 
 **Transcript Outcome & Status Cross-Field Rule:** An attestation MUST record its transcript outcome explicitly: `VERIFIED_BY_HUMAN` requires a well-formed `sha256:<64-hex>` `Signoff-Transcript-Digest` (and matching byte count); when no transcript bytes were captured or resolved, the digest MUST be `unavailable` and the status MUST be `VERIFIED_BY_HUMAN_NO_TRANSCRIPT_DIGEST`. An attestation omitting the digest trailer or pairing `VERIFIED_BY_HUMAN` with `unavailable` is invalid under either status.
 
@@ -100,7 +100,7 @@ To ensure attestations survive post-merge branch deletion and squash merges:
 
 ```mermaid
 graph TD
-    Agent[LLM Agent / Socratic Reasoner] -->|Deterministic Git Calls| MCPServer[Signoff MCP Server]
+    Agent[LLM Agent / Socratic Reasoner] -->|Deterministic Git Calls| MCPServer[Producer mechanics - skill helper or MCP server]
     MCPServer -->|Resolves Diff & Range| GitEngine[Git Engine]
     MCPServer -->|Fetches Bytes at Commit Time| AdapterFactory[Transcript Adapter Factory]
     AdapterFactory -. Informative Discovery .-> Antigravity[Antigravity Adapter]
@@ -147,9 +147,11 @@ class TranscriptProvider(Protocol):
 
 ---
 
-## 4. Scoped Model Context Protocol (MCP) Interface
+## 4. Scoped Model Context Protocol (MCP) Interface (informative)
 
-The Socratic interrogation logic (probing 4 axes, evaluating user clarity) remains in the LLM agent prompt. The MCP server is strictly scoped to **deterministic Git state and diff mechanics**.
+*Status: informative. This section specifies the tool surface a producer SHOULD expose if it offers GSA mechanics over MCP. No MCP server ships in this repository: one did from 2026-08 to 2026-09-08 and was removed for lack of adopter demand; the mechanics it wrapped remain as the `git_signoff` Python reference library and in the skill layer's helper. The interface is kept so that independent implementations converge on the same tool names and semantics.*
+
+The Socratic interrogation logic (probing 4 axes, evaluating user clarity) remains in the LLM agent prompt. An MCP producer is strictly scoped to **deterministic Git state and diff mechanics**.
 
 ### 4.1 MCP Tools
 

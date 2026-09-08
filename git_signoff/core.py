@@ -1,6 +1,6 @@
 """Deterministic GSA engine (spec §2, §4): git state, trailers, notes.
 
-No MCP dependency — pure stdlib, fully testable against scratch repos.
+Pure stdlib, fully testable against scratch repos.
 """
 
 import re
