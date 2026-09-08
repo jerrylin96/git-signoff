@@ -48,7 +48,7 @@ Take signoff from a local experimental tool to production-ready for a growing us
 - [x] `skills/signoff/SKILL.md` implements GSA v1.0 trailers, portable harness adapter resolution (`SIGNOFF_TRANSCRIPT_FILE` → `ANTIGRAVITY_CONVERSATION_ID` → `CLAUDE_CODE_SESSION_ID`), signed attestation commits, and `refs/notes/signoff` dual persistence.
 
 ### Phase 2 — MCP Server Implementation
-- [x] MCP server package (then `signoff-mcp` / `git_signoff/`, renamed `git-signoff` / `git_signoff/` 2026-09-08): programmatic `TranscriptProvider` adapters, MCP tools `signoff_prepare`/`signoff_commit`/`signoff_push_notes`, `ack_no_transcript` circuit breaker, stale-state checks, and `cat_sort_uniq` notes push flow.
+- [x] MCP server package (then `signoff-mcp` / `signoff_mcp/`, renamed `git-signoff` / `git_signoff/` 2026-09-08): programmatic `TranscriptProvider` adapters, MCP tools `signoff_prepare`/`signoff_commit`/`signoff_push_notes`, `ack_no_transcript` circuit breaker, stale-state checks, and `cat_sort_uniq` notes push flow.
 
 ### Phase 3a — Portability
 - [x] Per-harness install and portability guide (`skills/signoff/HARNESSES.md`); self-contained skill directory. Enforced by `test_skill_folder_is_self_contained`.
