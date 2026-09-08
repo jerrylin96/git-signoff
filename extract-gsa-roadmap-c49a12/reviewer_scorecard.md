@@ -1,34 +1,24 @@
 # Reviewer Signal Scorecard: extract-gsa-roadmap-c49a12
 
 **Feature:** `extract-gsa-roadmap-c49a12`  
-**Milestone:** Phase 1a (Spec Review Triage Round 2)  
-**Target Audited SHA:** `805d3bf98b17b2b0058b76008b655b3bc91f63aa`
+**Milestone:** Phase 1b (Plan Review Triage Round 3)  
+**Target Audited SHA:** `fa231149791722883da4c2f6d22ef1492cb44501`
 
 ---
 
 ## 1. Reviewer Triage & Ratings
 
-| Reviewer ID | Signal Rating | Mode & Branch | Round 1 Verdict | Round 2 Verdict | Status | Action Directive |
-|---|---|---|---|---|---|---|
-| `reviewer-20402` | **HIGH SIGNAL** | Mode B (`origin/arena/01a07ea0-signoff`) | `REVISE` | **`APPROVE`** (`71ed75c`) | Verified all 5 scope items; minor advisories A1–A4 incorporated | **Retain List (`CONVERGED / PASS`)** |
-| `reviewer-3203` | **HIGH SIGNAL** | Mode B (`origin/arena/01a07ea0-signoff`) | `REVISE` | *(Pending / Stuck)* | Prior catches incorporated in revised spec | **Retain List (`PENDING`)** |
-| `reviewer-20183` | **HIGH SIGNAL** | Mode B (`origin/arena/01a07ea0-signoff`) | `REVISE` | *(Pending / Stuck)* | Prior catches incorporated in revised spec | **Retain List (`PENDING`)** |
-| `unnamed-agent-1` | **NOISE / DEAD** | Arena Tab | N/A | Never produced output | Dropped | **Drop List (`STOP`)** |
-| `unnamed-agent-2` | **ERRORED / STUCK**| Arena Tab | N/A | Cannot proceed / unrecoverable | Dropped | **Drop List (`STOP`)** |
+| Reviewer ID | Signal Rating | Mode & Branch | Spec Verdict | Plan Verdict | Contribution Summary | Status | Action Directive |
+|---|---|---|---|---|---|---|---|
+| `reviewer-20402` | **HIGH SIGNAL** | Mode B (`origin/arena/01a07ea0-signoff`) | `APPROVE` (`71ed75c`) | `REVISE` (`054f613`) | Caught required deletion of legacy positive assertions (R3-1), self-defeating unscoped grep (R3-2), single-commit cadence (R3-3), and missing link checker (R3-4). | Resolved in plan revision | **Retain List (`CONTINUE`)** |
+| `reviewer-20183` | **HIGH SIGNAL** | Mode B (`origin/arena/01a07ea0-signoff`) | `APPROVE` (`c47346d`) | *(Working / Pending)* | Re-audited spec with APPROVE (`c47346d`); plan review pending | Active in background | **Retain List (`CONTINUE`)** |
+| `unnamed-agent-1` | **NOISE / DEAD** | Arena Tab | N/A | N/A | Never produced output | Dropped | **Drop List (`STOP`)** |
+| `unnamed-agent-2` | **ERRORED / STUCK**| Arena Tab | N/A | N/A | Cannot proceed / unrecoverable | Dropped | **Drop List (`STOP`)** |
 
 ---
 
 ## 2. Reviewer Action Directives
 
 ### Retain List (`CONTINUE`)
-- `reviewer-20402`: **CONVERGED (`APPROVE`)**. All findings resolved.
-- If the third agent (`reviewer-3203` or `reviewer-20183`) finishes, its commit will be triaged; otherwise, it can be demoted to Drop List if stuck/timed out.
-
-### Drop List (`STOP`)
-- Terminate the 2 dead/errored Arena agent tabs immediately.
-
----
-
-## 3. Dispatched Pointers
-- In-tree spec: `extract-gsa-roadmap-c49a12/spec.md`
-- In-tree scorecard: `extract-gsa-roadmap-c49a12/reviewer_scorecard.md`
+- `reviewer-20402`: Plan findings R3-1 through R3-7 resolved in revised `plan.md`. Re-audit prompt dispatched.
+- `reviewer-20183`: Plan audit pending.

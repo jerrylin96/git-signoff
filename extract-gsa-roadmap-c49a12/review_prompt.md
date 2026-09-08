@@ -1,7 +1,7 @@
-# External Adversarial Review Prompt: Implementation Plan
+# External Adversarial Review Prompt: Implementation Plan (Round 3 Re-Audit)
 
 ### Reviewer Identity & Session Continuity Directive
-1. If you ALREADY established your REVIEWER_ID in an earlier turn of this session (`reviewer-20402`), YOU MUST REUSE IT. Do NOT generate a new ID.
+1. If you ALREADY established your REVIEWER_ID in an earlier turn of this session (`reviewer-20402`, `reviewer-20183`), YOU MUST REUSE IT. Do NOT generate a new ID.
 2. If this is a fresh session, set your ID matching ^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$ (no '..' or '.lock'):
    `export REVIEWER_ID="reviewer-$(head -c 3 /dev/urandom 2>/dev/null | xxd -p 2>/dev/null || echo $RANDOM)"`
 3. MANDATORY CHAT BANNER: In the very first lines of your chat response, you MUST print:
@@ -26,18 +26,19 @@ git fetch origin main && BASE_SHA=$(git rev-parse FETCH_HEAD)
 git fetch origin gemini/extract-gsa-roadmap-c49a12 && git diff "${BASE_SHA}" FETCH_HEAD
 ```
 Plan File: `extract-gsa-roadmap-c49a12/plan.md`  
-Spec File: `extract-gsa-roadmap-c49a12/spec.md`
+Scorecard: `extract-gsa-roadmap-c49a12/reviewer_scorecard.md`
 
-### Task & Scope (Plan Audit)
-Audit `extract-gsa-roadmap-c49a12/plan.md` against the approved `extract-gsa-roadmap-c49a12/spec.md` and codebase:
-1. Are tasks atomic and appropriately ordered?
-2. Does Task 1 define an explicit failing TDD RED test spec that accurately captures spec requirements before implementation?
-3. Are all 4 tasks accompanied by exact empirical verification commands?
-4. Does the plan preserve the invariants (zero escaping links, anchor resolution, accurate empirical statuses, atomic single commit)?
+### Task & Scope (Plan Re-Audit)
+Audit the revised `extract-gsa-roadmap-c49a12/plan.md` to verify whether prior Round 3 findings have been fully and accurately addressed:
+1. Deletion of legacy positive assertions on `spec_content` (`test_skill_references.py:431-437`) in Task 1.
+2. Pathspec-scoped `git grep -n "gsa-core.md §6" -- . ':(exclude)extract-gsa-roadmap-c49a12'` in Task 3.
+3. Explicit single atomic commit policy for product files and ephemeral placement for manifest.
+4. Automated relative link verification pass in Task 4.
+5. Clean single trailing newline in `gsa-core.md` and stable anchors for roadmap milestones.
 
 ### Output Protocol
-Append or write your findings in `reviews/${REVIEWER_ID}.md` on your assigned review branch:
+Append or update your findings in `reviews/${REVIEWER_ID}.md` on your assigned review branch:
 - Header must include `AUDITED_SHA: <current-feature-sha>`.
-- Verdict: APPROVE or REVISE.
-- Concrete technical findings with citations.
+- If all prior findings are resolved, emit `VERDICT: APPROVE`.
+- If open issues remain, emit `VERDICT: REVISE` with concrete citations.
 - 3-5 line Adversarial Audit Summary ("What Was Caught & Fixed").
