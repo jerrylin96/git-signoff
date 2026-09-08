@@ -38,11 +38,11 @@ def temp_git_repo(tmp_path):
 @pytest.mark.parametrize(
     "url,expected",
     [
-        ("https://github.com/jerrylin96/signoff.git", "jerrylin96/signoff"),
-        ("https://github.com/jerrylin96/signoff", "jerrylin96/signoff"),
+        ("https://github.com/jerrylin96/git-signoff.git", "jerrylin96/git-signoff"),
+        ("https://github.com/jerrylin96/git-signoff", "jerrylin96/git-signoff"),
         ("https://x-access-token:ghp_123@github.com/org/repo.git", "org/repo"),
-        ("git@github.com:jerrylin96/signoff.git", "jerrylin96/signoff"),
-        ("git@github.com:jerrylin96/signoff", "jerrylin96/signoff"),
+        ("git@github.com:jerrylin96/git-signoff.git", "jerrylin96/git-signoff"),
+        ("git@github.com:jerrylin96/git-signoff", "jerrylin96/git-signoff"),
         ("ssh://git@github.com/org/custom-repo.git", "org/custom-repo"),
         ("ssh://git@github.com:22/org/custom-repo.git", "org/custom-repo"),
     ],
@@ -147,7 +147,7 @@ def test_scaffold_workflow_file(temp_git_repo):
     content = workflow.read_text(encoding="utf-8")
     assert "branches: [ master ]" in content
     assert "fetch-depth: 0" in content
-    assert "jerrylin96/signoff/verify@verify-v1.2" in content
+    assert "jerrylin96/git-signoff/verify@verify-v1.3" in content
 
 
 def test_scaffold_profile_file(temp_git_repo):
@@ -221,7 +221,7 @@ def test_skill_source_ref_pin_consistency():
     import re
 
     repo_root = Path(__file__).parent.parent
-    assert init.SKILL_SOURCE_REF == "init-v5", f"Expected init-v5, got {init.SKILL_SOURCE_REF}"
+    assert init.SKILL_SOURCE_REF == "init-v6", f"Expected init-v6, got {init.SKILL_SOURCE_REF}"
     ref = init.SKILL_SOURCE_REF
 
 
@@ -232,14 +232,24 @@ def test_skill_source_ref_pin_consistency():
         f"SKILL_SOURCE_REF {ref!r} missing from tag.yml PINS — the pin tag would never be created"
     )
 
-    snippet_re = re.compile(r"jerrylin96/signoff/(init-v[\w.]+)/init\.py")
-    for rel in ("README.md", "verify/README.md", "site/index.html"):
+    snippet_re = re.compile(r"jerrylin96/git-signoff/(init-v[\w.]+)/init\.py")
+    must_have = {"README.md", "verify/README.md", "site/index.html"}
+    seen = set()
+    # Every tracked doc or page that serves a snippet must serve the same pin —
+    # a hand-kept list once let two profile docs drift a pin behind.
+    tracked = subprocess.run(["git", "ls-files"], cwd=repo_root, capture_output=True, text=True).stdout.split()
+    for rel in tracked:
+        if not rel.endswith((".md", ".html", ".yml")):
+            continue
         text = (repo_root / rel).read_text(encoding="utf-8")
         served = snippet_re.findall(text)
-        assert served, f"{rel} has no pinned init.py install snippet"
+        if not served:
+            continue
+        seen.add(rel)
         assert set(served) == {ref}, (
             f"{rel} serves init.py at {sorted(set(served))}, but SKILL_SOURCE_REF is {ref!r}"
         )
+    assert must_have <= seen, f"missing pinned init.py install snippet in {sorted(must_have - seen)}"
 
 
 def test_vendor_skill_replaces_existing(temp_git_repo):
@@ -747,7 +757,7 @@ def test_base_branch_origin_fallback(tmp_path):
 
 
 def test_profile_text_byte_parity():
-    from signoff_mcp.profile import profile_block_digest
+    from git_signoff.profile import profile_block_digest
 
     repo_root = Path(__file__).parent.parent
     for pid in ("domain-science", "software-general"):
@@ -771,39 +781,36 @@ def test_profile_text_byte_parity():
         )
 
 
-def test_init_scripts_byte_parity():
+def test_initializer_is_not_duplicated_into_the_package():
+    """init.py lives once, at the repository root, where the install snippet
+    serves it. The former package copy (kept byte-identical by a test) existed
+    only for a console-script `init` subcommand that no longer exists."""
     repo_root = Path(__file__).parent.parent
-    root_init = (repo_root / "init.py").read_text(encoding="utf-8")
-    pkg_init = (repo_root / "signoff_mcp" / "init.py").read_text(encoding="utf-8")
-    assert root_init == pkg_init
-
-
-def test_package_namespaced_init():
-    from signoff_mcp import init as mcp_init
-    from signoff_mcp import init_cli
-
-    assert init_cli.init is mcp_init
-    assert hasattr(mcp_init, "run_init")
+    assert not (repo_root / "git_signoff" / "init.py").exists()
+    assert not (repo_root / "git_signoff" / "init_cli.py").exists()
+    pyproject = (repo_root / "pyproject.toml").read_text(encoding="utf-8")
+    assert "[project.scripts]" not in pyproject, "nothing is installed by name; the adoption path is curl-run init.py"
+    assert "Private :: Do Not Upload" in pyproject
 
 
 def test_pyproject_does_not_package_top_level_init():
     repo_root = Path(__file__).parent.parent
     pyproject_content = (repo_root / "pyproject.toml").read_text(encoding="utf-8")
     assert "py-modules" not in pyproject_content
-    assert 'include = ["signoff_mcp*"]' in pyproject_content
+    assert 'include = ["git_signoff*"]' in pyproject_content
 
 
 def test_versions_are_synchronized():
-    """pyproject.toml and signoff_mcp.__version__ agree (release.yml derives tags from pyproject)."""
+    """pyproject.toml and git_signoff.__version__ agree (release.yml derives tags from pyproject)."""
     import re
 
-    import signoff_mcp
+    import git_signoff
 
     repo_root = Path(__file__).parent.parent
     pyproject_content = (repo_root / "pyproject.toml").read_text(encoding="utf-8")
     m = re.search(r'^version = "([^"]+)"$', pyproject_content, re.MULTILINE)
     assert m, "pyproject.toml must declare a project version"
-    assert m.group(1) == signoff_mcp.__version__
+    assert m.group(1) == git_signoff.__version__
 
 
 # --- Slice 2: Multi-Harness Architecture & Policy A Tests ---
@@ -1702,12 +1709,17 @@ def test_unborn_repo_rollback_on_failure(tmp_path):
     branches = subprocess.check_output(["git", "branch", "--list"], cwd=repo_dir, text=True)
     assert "signoff/init" not in branches
 
-    # HEAD should be on main at the empty initial commit
-    head_branch = subprocess.check_output(["git", "rev-parse", "--abbrev-ref", "HEAD"], cwd=repo_dir, text=True).strip()
+    # A failed run leaves the repository exactly as found: still unborn on main,
+    # with init's bootstrap commit undone rather than left behind.
+    head_branch = subprocess.check_output(["git", "branch", "--show-current"], cwd=repo_dir, text=True).strip()
     assert head_branch == "main"
-    commits = subprocess.check_output(["git", "log", "main", "--oneline"], cwd=repo_dir, text=True).splitlines()
-    assert len(commits) == 1
-    assert "chore: initialize main" in commits[0]
+    assert subprocess.run(["git", "rev-parse", "--verify", "-q", "HEAD"], cwd=repo_dir, capture_output=True).returncode != 0
+    assert branches.strip() == ""
+    assert not (repo_dir / ".github").exists()
+    assert not (repo_dir / ".signoff").exists()
+    assert not (repo_dir / ".claude").exists()
+    status = subprocess.check_output(["git", "status", "--porcelain"], cwd=repo_dir, text=True)
+    assert status.strip() == ""
 
 
 @pytest.mark.parametrize("benign_name", [".DS_Store", "Thumbs.db", "desktop.ini"])
@@ -1809,3 +1821,285 @@ def test_with_remote_next_steps(tmp_path, monkeypatch, capsys):
     assert "git remote add origin" not in out
 
 
+
+
+# --- Regression: detached-HEAD rollback restores the exact original commit ---
+
+def test_rollback_detached_head_restores_original_commit(temp_git_repo):
+    """A run started from a detached HEAD that fails after branch creation must
+    re-detach at the user's original commit, not at the base branch's tip."""
+    first = subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=temp_git_repo, text=True).strip()
+    (temp_git_repo / "second.txt").write_text("second\n", encoding="utf-8")
+    subprocess.run(["git", "add", "second.txt"], cwd=temp_git_repo, check=True)
+    subprocess.run(["git", "commit", "-m", "second"], cwd=temp_git_repo, check=True, capture_output=True)
+    second = subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=temp_git_repo, text=True).strip()
+    assert first != second
+
+    subprocess.run(["git", "checkout", "--detach", first], cwd=temp_git_repo, check=True, capture_output=True)
+    assert subprocess.check_output(["git", "branch", "--show-current"], cwd=temp_git_repo, text=True).strip() == ""
+
+    empty_src = temp_git_repo.parent / "not-a-skill-detached"
+    empty_src.mkdir()
+    with pytest.raises(RuntimeError, match="does not contain SKILL.md"):
+        init.run_init(
+            repo_root=temp_git_repo,
+            branch="signoff/init",
+            skip_ruleset=True,
+            non_interactive=True,
+            skill_source=empty_src,
+        )
+
+    # Still detached, at exactly the original commit; setup branch gone.
+    assert subprocess.check_output(["git", "branch", "--show-current"], cwd=temp_git_repo, text=True).strip() == ""
+    head = subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=temp_git_repo, text=True).strip()
+    assert head == first
+    branches = subprocess.check_output(["git", "branch"], cwd=temp_git_repo, text=True)
+    assert "signoff/init" not in branches
+    assert not (temp_git_repo / "second.txt").exists()
+    status = subprocess.check_output(["git", "status", "--porcelain"], cwd=temp_git_repo, text=True)
+    assert status.strip() == ""
+
+
+# --- Regression: unborn repository must stay unborn when init fails ---
+
+def _is_unborn(repo_dir: Path) -> bool:
+    return subprocess.run(["git", "rev-parse", "--verify", "-q", "HEAD"], cwd=repo_dir, capture_output=True).returncode != 0
+
+
+def test_unborn_repo_guard_failure_leaves_repo_unborn(tmp_path):
+    """The clean-tree guard must run before any bootstrap commit is created, so a
+    guard failure on an unborn repo with files leaves the repo exactly as found."""
+    repo_dir = tmp_path / "unborn_guard"
+    repo_dir.mkdir()
+    subprocess.run(["git", "init", "-b", "main"], cwd=repo_dir, check=True, capture_output=True)
+    subprocess.run(["git", "config", "user.name", "Test User"], cwd=repo_dir, check=True)
+    subprocess.run(["git", "config", "user.email", "test@example.com"], cwd=repo_dir, check=True)
+    (repo_dir / "notes.txt").write_text("unreviewed\n", encoding="utf-8")
+    assert _is_unborn(repo_dir)
+
+    with pytest.raises(RuntimeError, match="uncommitted changes"):
+        init.run_init(
+            repo_root=repo_dir,
+            non_interactive=True,
+            skill_source=SKILL_SRC,
+            skip_ruleset=True,
+        )
+
+    assert _is_unborn(repo_dir), "guard failure must not leave a bootstrap commit behind"
+    assert subprocess.check_output(["git", "branch", "--show-current"], cwd=repo_dir, text=True).strip() == "main"
+    assert subprocess.check_output(["git", "branch", "--list"], cwd=repo_dir, text=True).strip() == ""
+    assert (repo_dir / "notes.txt").read_text(encoding="utf-8") == "unreviewed\n"
+    status = subprocess.check_output(["git", "status", "--porcelain"], cwd=repo_dir, text=True)
+    assert status.strip() == "?? notes.txt"
+
+
+# --- Regression: writers must never follow symlinks out of the repository ---
+
+def test_inject_readme_badge_refuses_symlinked_readme(temp_git_repo, tmp_path):
+    external = tmp_path / "external_readme.md"
+    external.write_text("# External\n", encoding="utf-8")
+    readme = temp_git_repo / "README.md"
+    readme.unlink()
+    readme.symlink_to(external)
+
+    with pytest.raises(RuntimeError, match=r"README.md is a symbolic link"):
+        init.inject_readme_badge(temp_git_repo, "org/proj")
+    assert external.read_text(encoding="utf-8") == "# External\n"
+    assert readme.is_symlink()
+
+
+def test_inject_readme_badge_refuses_dangling_symlinked_readme(temp_git_repo, tmp_path):
+    external = tmp_path / "does_not_exist_yet.md"
+    readme = temp_git_repo / "README.md"
+    readme.unlink()
+    readme.symlink_to(external)
+
+    with pytest.raises(RuntimeError, match=r"README.md is a symbolic link"):
+        init.inject_readme_badge(temp_git_repo, "org/proj")
+    assert not external.exists(), "must not create a file outside the repository"
+
+
+def test_scaffold_workflow_refuses_symlinked_parent(temp_git_repo, tmp_path):
+    external = tmp_path / "external_workflows"
+    external.mkdir()
+    (temp_git_repo / ".github").mkdir()
+    (temp_git_repo / ".github" / "workflows").symlink_to(external)
+
+    with pytest.raises(RuntimeError, match=r"\.github/workflows is a symbolic link"):
+        init.scaffold_workflow(temp_git_repo, default_branch="main")
+    assert list(external.iterdir()) == []
+
+
+def test_scaffold_profile_and_ruleset_refuse_symlinked_signoff_dir(temp_git_repo, tmp_path):
+    external = tmp_path / "external_signoff"
+    external.mkdir()
+    (temp_git_repo / ".signoff").symlink_to(external)
+
+    with pytest.raises(RuntimeError, match=r"\.signoff is a symbolic link"):
+        init.scaffold_profile(temp_git_repo, profile_id="software-general")
+    with pytest.raises(RuntimeError, match=r"\.signoff is a symbolic link"):
+        init.setup_ruleset(temp_git_repo, slug=None)
+    assert list(external.iterdir()) == []
+
+
+def test_run_init_refuses_symlinked_readme_before_mutation(temp_git_repo, tmp_path):
+    """A committed symlink README.md must abort before any branch or write, and
+    the symlink target outside the repo must be untouched."""
+    external = tmp_path / "external_readme.md"
+    external.write_text("# External\n", encoding="utf-8")
+    readme = temp_git_repo / "README.md"
+    readme.unlink()
+    readme.symlink_to(external)
+    subprocess.run(["git", "add", "README.md"], cwd=temp_git_repo, check=True)
+    subprocess.run(["git", "commit", "-m", "symlink readme"], cwd=temp_git_repo, check=True, capture_output=True)
+
+    with pytest.raises(RuntimeError, match=r"README.md is a symbolic link"):
+        init.run_init(
+            repo_root=temp_git_repo,
+            slug="org/proj",
+            branch="signoff/init",
+            skip_ruleset=True,
+            non_interactive=True,
+            skill_source=SKILL_SRC,
+        )
+
+    assert external.read_text(encoding="utf-8") == "# External\n"
+    assert readme.is_symlink()
+    assert subprocess.check_output(["git", "branch", "--show-current"], cwd=temp_git_repo, text=True).strip() == "main"
+    assert "signoff/init" not in subprocess.check_output(["git", "branch"], cwd=temp_git_repo, text=True)
+    assert not (temp_git_repo / ".github").exists()
+    assert not (temp_git_repo / ".signoff").exists()
+    assert not (temp_git_repo / ".claude").exists()
+    status = subprocess.check_output(["git", "status", "--porcelain"], cwd=temp_git_repo, text=True)
+    assert status.strip() == ""
+
+
+def test_rollback_prune_does_not_follow_symlinked_dir(temp_git_repo, tmp_path):
+    """Rollback pruning must leave a user-made symlinked directory (and its
+    external target) alone instead of traversing or reporting it."""
+    external = tmp_path / "external_signoff_dir"
+    external.mkdir()
+    link = temp_git_repo / ".signoff"
+    link.symlink_to(external)
+    subprocess.run(["git", "branch", "signoff/init"], cwd=temp_git_repo, check=True)
+
+    failures = init._rollback_scaffold(
+        temp_git_repo,
+        original_branch="main",
+        target_branch="signoff/init",
+        scaffold_paths=[temp_git_repo / ".signoff" / "profile.md"],
+        preexisting=set(),
+        preexisting_dirs=set(),
+        scaffold_started=True,
+    )
+
+    assert external.is_dir()
+    assert link.is_symlink()
+    assert not any(failure.startswith("prune") for failure in failures), failures
+
+
+# --- Regression: benign metadata allowance must hold in the real flow ---
+
+def _commit_prior_skill_install(repo_dir: Path, benign_name: str, *, ignore: bool) -> Path:
+    dest = repo_dir / ".claude" / "skills" / "signoff"
+    shutil.copytree(SKILL_SRC, dest)
+    subprocess.run(["git", "add", ".claude/skills/signoff"], cwd=repo_dir, check=True)
+    if ignore:
+        (repo_dir / ".gitignore").write_text(f"{benign_name}\n", encoding="utf-8")
+        subprocess.run(["git", "add", ".gitignore"], cwd=repo_dir, check=True)
+    subprocess.run(["git", "commit", "-m", "prior install"], cwd=repo_dir, check=True, capture_output=True)
+    (dest / benign_name).write_bytes(b"\x00\x00\x00\x01")
+    return dest
+
+
+@pytest.mark.parametrize("benign_name", sorted(init.BENIGN_METADATA_FILES))
+def test_end_to_end_tolerates_ignored_benign_metadata_in_skill_destination(temp_git_repo, benign_name):
+    """A git-ignored .DS_Store (etc.) inside an existing skill destination must
+    not abort init: the benign allowance applies to the whole pre-flight, not
+    only to validate_policy_a."""
+    dest = _commit_prior_skill_install(temp_git_repo, benign_name, ignore=True)
+
+    res = init.run_init(
+        repo_root=temp_git_repo,
+        skip_ruleset=True,
+        non_interactive=True,
+        skill_source=SKILL_SRC,
+        skill_target="claude",
+    )
+    assert res.success is True
+    assert res.branch == "signoff/init"
+    assert (dest / "SKILL.md").is_file()
+    assert (dest / init.VENDOR_STAMP_FILENAME).is_file()
+    status = subprocess.check_output(["git", "status", "--porcelain"], cwd=temp_git_repo, text=True)
+    assert status.strip() == ""
+
+
+def test_end_to_end_tolerates_untracked_benign_metadata_with_allow_dirty(temp_git_repo):
+    dest = _commit_prior_skill_install(temp_git_repo, ".DS_Store", ignore=False)
+
+    res = init.run_init(
+        repo_root=temp_git_repo,
+        skip_ruleset=True,
+        non_interactive=True,
+        skill_source=SKILL_SRC,
+        skill_target="claude",
+        allow_dirty=True,
+    )
+    assert res.success is True
+    assert (dest / "SKILL.md").is_file()
+
+
+def test_mutation_boundary_still_rejects_non_benign_ignored_file(temp_git_repo):
+    dest = _commit_prior_skill_install(temp_git_repo, ".DS_Store", ignore=True)
+    (dest / "secret.key").write_text("secret", encoding="utf-8")
+    (temp_git_repo / ".gitignore").write_text(".DS_Store\n*.key\n", encoding="utf-8")
+    subprocess.run(["git", "add", ".gitignore"], cwd=temp_git_repo, check=True)
+    subprocess.run(["git", "commit", "-m", "ignore keys"], cwd=temp_git_repo, check=True, capture_output=True)
+
+    with pytest.raises(RuntimeError) as exc_info:
+        init.ensure_mutation_boundary_clean(temp_git_repo, [dest])
+    err = str(exc_info.value)
+    assert "secret.key" in err
+    assert ".DS_Store" not in err
+
+
+def test_rollback_after_staging_leaves_index_clean(temp_git_repo):
+    """A failure after `git add` (the staged-paths check or the commit itself)
+    must not leave index entries pointing at files rollback deleted; the
+    repository must read as clean, on its original branch."""
+    with patch.object(init, "ensure_only_scaffold_paths_staged", side_effect=RuntimeError("boom after add")):
+        with pytest.raises(RuntimeError, match="boom after add"):
+            init.run_init(
+                repo_root=temp_git_repo,
+                branch="signoff/init",
+                skip_ruleset=True,
+                non_interactive=True,
+                skill_source=SKILL_SRC,
+            )
+
+    current = subprocess.check_output(["git", "branch", "--show-current"], cwd=temp_git_repo, text=True).strip()
+    assert current == "main"
+    staged = subprocess.check_output(["git", "diff", "--cached", "--name-only"], cwd=temp_git_repo, text=True)
+    assert staged.strip() == "", staged
+    status = subprocess.check_output(
+        ["git", "status", "--porcelain=v1", "--untracked-files=all"], cwd=temp_git_repo, text=True
+    )
+    assert status.strip() == "", status
+    assert not (temp_git_repo / ".claude").exists()
+    assert not (temp_git_repo / ".signoff").exists()
+
+
+def test_init_exits_loudly_below_python_floor(tmp_path):
+    """The initializer is curl-run under whatever python3 a machine has; below
+    the documented floor it must say so, not die on a syntax or type error."""
+    probe = tmp_path / "probe.py"
+    probe.write_text(
+        "import runpy, sys\n"
+        "sys.version_info = (3, 9, 18, 'final', 0)\n"
+        "sys.argv = ['init.py', '--help']\n"
+        f"runpy.run_path({str(Path(init.__file__).resolve())!r}, run_name='__main__')\n"
+    )
+    proc = subprocess.run([sys.executable, str(probe)], capture_output=True, text=True)
+    assert proc.returncode == 1
+    assert "needs Python 3.10 or newer" in proc.stderr
+    assert "3.9" in proc.stderr

@@ -1,9 +1,10 @@
 # Harness Setup & Portability Guide
 
 How to install and run `/signoff` on each agent harness. The skill is
-prompt-driven and self-contained (GSA Phase 1); the `signoff-mcp` server
-(GSA Phase 2) is an optional enforcement upgrade wherever MCP is supported.
-Canonical protocol: [specs/gsa-core.md](specs/gsa-core.md).
+prompt-driven and self-contained; nothing is installed by name and no
+Python package is required — the initializer and the verifier are
+standard-library scripts. Canonical protocol:
+[specs/gsa-core.md](specs/gsa-core.md).
 
 ## Portability Rules
 
@@ -28,7 +29,7 @@ Repositories can vendor `/signoff` into one or both candidate locations using `-
 - `.claude/skills/signoff`: Canonical destination for Claude Code (web, CLI, desktop).
 - `.agents/skills/signoff`: Cross-client convention for Antigravity CLI, Codex CLI, Cursor, and OpenCode (the Agent Skills specification defines the skill format; `.agents/skills` is client convention and implementation guidance, not a normative location).
 
-When invoked with `--skill-target auto` (the default), `init.py` inspects the repository for signals (`.claude`, `CLAUDE.md`, `.agents`, `AGENTS.md`, `GEMINI.md`, `.cursor`) and automatically selects the appropriate destination. In interactive greenfield setups without existing markers, it prompts the user; in non-interactive greenfield setups, it defaults to both destinations. Explicit choices (`--skill-target claude`, `--skill-target agents`, `--skill-target both`) are unioned with existing installations so re-running `init.py` always updates all configured harnesses together without version drift. A recognized existing install (a candidate path whose target contains `SKILL.md`, symlink or not) is always unioned into the destination set and cannot be excluded by any `--skill-target` value; a symlinked one is then refused by Policy A and must be replaced with a real copy first. A broken symlink is not recognized and is not unioned.
+When invoked with `--skill-target auto` (the default), `init.py` inspects the repository for signals (`.claude` or `CLAUDE.md` for the Claude destination; `.agents`, `.cursor`, `.gemini`, `.codex`, `.opencode`, `AGENTS.md`, or `GEMINI.md` for the cross-client destination) and automatically selects the appropriate destination. In interactive greenfield setups without existing markers, it prompts the user; in non-interactive greenfield setups, it defaults to both destinations. Explicit choices (`--skill-target claude`, `--skill-target agents`, `--skill-target both`) are unioned with existing installations so re-running `init.py` always updates all configured harnesses together without version drift. A recognized existing install (a candidate path whose target contains `SKILL.md`, symlink or not) is always unioned into the destination set and cannot be excluded by any `--skill-target` value; a symlinked one is then refused by Policy A and must be replaced with a real copy first. A broken symlink is not recognized and is not unioned.
 
 Re-running the initializer requires a clean working tree by default. `--allow-dirty` permits unrelated unstaged/untracked work only: pre-staged changes and any uncommitted or ignored state under managed scaffold paths are refused before branch creation, and the index is checked again before the scaffold commit.
 
@@ -67,7 +68,7 @@ initializer vendors the skill at the same pinned tag the
 install snippet serves the script from, and stamps source, ref, and commit
 into a `VENDORED-FROM` file inside the copy — so any vendored folder tells
 you exactly which version it holds. Offline installs pass
-`--skill-source <path-to-skills/signoff>` (stamped `ref: local`). Commit a
+`--skill-source <path-to-skills/signoff>` (stamped `ref: local (--skill-source)`). Commit a
 real copy, not a symlink — re-running the initializer over a destination
 containing a symlink at the destination or in any parent path component aborts
 per Policy A, refusing to mutate or traverse symlinked paths. This repository
@@ -85,14 +86,6 @@ automatically.
   verified live in a web session on 2026-08-05, including full adapter
   resolution of the running session's transcript).
 - Transcript path: `~/.claude/projects/<cwd-slug>/<session-id>.jsonl`
-
-Optional MCP enforcement (server-derived status, `ack_no_transcript` circuit
-breaker, stale-state checks — GSA §4):
-
-```bash
-pip install "signoff-mcp @ git+https://github.com/jerrylin96/signoff"
-claude mcp add signoff -- signoff-mcp   # server must run with cwd = target repo
-```
 
 Web-specific caveats:
 - **Ephemeral containers**: the transcript file is destroyed when the session

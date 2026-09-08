@@ -1,8 +1,13 @@
-# signoff — Git Signoff Attestation (GSA)
+# git-signoff — Git Signoff Attestation (GSA)
 
-[![attested by humans](https://github.com/jerrylin96/signoff/actions/workflows/signoff.yml/badge.svg)](https://github.com/jerrylin96/signoff/actions/workflows/signoff.yml)
+[![attested by humans](https://github.com/jerrylin96/git-signoff/actions/workflows/signoff.yml/badge.svg)](https://github.com/jerrylin96/git-signoff/actions/workflows/signoff.yml)
 
 **Verify that a human actually understands an AI-assisted diff before it merges.**
+
+Not `git commit --signoff` (the Developer Certificate of Origin trailer), and
+not an approval button: a sign-off button records that someone clicked, a GSA
+attestation records that someone understood — and it lives in your git
+history, not in a hosted dashboard.
 
 `/signoff` flips the usual review direction: instead of you interrogating the
 AI's code, the AI interviews **you** — then records the outcome as a
@@ -53,10 +58,10 @@ Inside your repository root, run the zero-touch initializer (Python 3.10+ stdlib
 
 ```bash
 # Standard software engineering profile:
-curl -fsSL https://raw.githubusercontent.com/jerrylin96/signoff/init-v5/init.py -o /tmp/signoff-init.py && python3 /tmp/signoff-init.py
+curl -fsSL https://raw.githubusercontent.com/jerrylin96/git-signoff/init-v6/init.py -o /tmp/signoff-init.py && python3 /tmp/signoff-init.py
 
 # Scientific & research computing profile (math, physics, bio, climate, ML):
-curl -fsSL https://raw.githubusercontent.com/jerrylin96/signoff/init-v5/init.py -o /tmp/signoff-init.py && python3 /tmp/signoff-init.py --profile domain-science
+curl -fsSL https://raw.githubusercontent.com/jerrylin96/git-signoff/init-v6/init.py -o /tmp/signoff-init.py && python3 /tmp/signoff-init.py --profile domain-science
 ```
 
 The script automatically:
@@ -154,7 +159,7 @@ nothing account-scoped.
 
 | Where you work | One-time action |
 |---|---|
-| **Any repository (Zero-touch)** | `curl -fsSL https://raw.githubusercontent.com/jerrylin96/signoff/init-v5/init.py -o /tmp/signoff-init.py && python3 /tmp/signoff-init.py` (use `--skill-target {auto,claude,agents,both}` to control destinations) |
+| **Any repository (Zero-touch)** | `curl -fsSL https://raw.githubusercontent.com/jerrylin96/git-signoff/init-v6/init.py -o /tmp/signoff-init.py && python3 /tmp/signoff-init.py` (use `--skill-target {auto,claude,agents,both}` to control destinations) |
 | **Any repository (manual)** | Copy this repo's `skills/signoff/` folder to `<your-repo>/.claude/skills/signoff/` (Claude Code) or `<your-repo>/.agents/skills/signoff/` (Antigravity, Codex, Cursor, etc.) and commit before running the initializer; an untracked skill destination now aborts as an unrelated working-tree change. Update by re-copying (or re-running the initializer) on new releases. |
 | **Other harnesses (Antigravity, Codex, Cursor, …)** | Same folder, cross-client convention: copy `skills/signoff/` into `.agents/skills/signoff` (or `.claude/skills/signoff`) and set the transcript adapter env vars — full matrix in [HARNESSES.md](skills/signoff/HARNESSES.md). |
 
@@ -265,15 +270,17 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0   # full history — attestations live in it
-      - uses: jerrylin96/signoff/verify@verify-v1.2
+      - uses: jerrylin96/git-signoff/verify@verify-v1.3
 ```
 
 Supports standard merge strategies: **2-parent PR merges** (verifies clean merge tree & attested PR head in `head` mode), **fast-forward merges** (`head` mode), **squash merges** (`history` mode; in `head` mode when base is unchanged), and **rebase merges** (`history` mode; in `head` mode, re-run `/signoff` after rebase). Enforce strictly with preconfigured [`ruleset.json`](verify/ruleset.json). Full setup & badge markdown: [`verify/`](verify/README.md).
 
 The protocol is harness-, model-, and vendor-neutral. The skill is
-prompt-driven and self-contained; the optional `signoff-mcp` server adds
-deterministic server-side enforcement (derived status, stale-state circuit
-breakers, notes concurrency handling).
+prompt-driven and self-contained, and nothing is installed by name: the
+initializer is a curl-run script and the verifier is a single file, both
+standard-library Python. A Python reference implementation of the producer
+mechanics lives in [`git_signoff/`](git_signoff/) as an executable,
+unit-tested specification; it is not distributed.
 
 - **Protocol spec:** [`skills/signoff/specs/gsa-core.md`](skills/signoff/specs/gsa-core.md)
 - **Project roadmap:** [`docs/roadmap.md`](docs/roadmap.md)
@@ -286,47 +293,33 @@ account-scoped channels (a Claude Code plugin marketplace and a release-zip
 skill upload) were retired in v0.4.0 — the vendored folder replaced them on
 every surface; [docs/roadmap.md#phase-4-amendment-2026-08-30](docs/roadmap.md#phase-4-amendment-2026-08-30) records the history.
 
-### MCP server (optional enforcement)
-
-```bash
-pip install "signoff-mcp @ git+https://github.com/jerrylin96/signoff"
-claude mcp add signoff -- signoff-mcp   # server must run with cwd = target repo
-```
-
-Tools: `signoff_prepare` (resolves the review range and also reports the
-active interview profile — source, ID, provenance digest — plus the
-science-guard signals detected in the diff), `signoff_commit`
-(server-derived status, `ack_no_transcript` circuit breaker),
-`signoff_push_notes` (`cat_sort_uniq` notes merge). PyPI release pending:
-the credential-free publish workflow (trusted publishing) is in place;
-it activates once the PyPI-side trusted-publisher configuration exists.
-
 ## Status & roadmap
 
-**v0.2.0** ships the researcher-facing feature set described above —
+**v0.4.0** ships the researcher-facing feature set described above —
 repo-local profiles, the default-on science guard, and profile provenance
-digests — verified end-to-end by scripted mechanics checks plus live
-interview runs: this repository signs off its own branches, and the
-resulting attestations are in its history (`git log --grep='SIGNOFF'`).
+digests — on a single distribution channel (the vendored skill folder),
+verified end-to-end by scripted mechanics checks plus live interview runs:
+this repository signs off its own branches, and the resulting attestations
+are in its history (`git log --grep='SIGNOFF'`).
 Phase 5 (tracked in [docs/roadmap.md](docs/roadmap.md))
-adds the production surface: a [project website](https://jerrylin96.github.io/signoff/),
+adds the production surface: a [project website](https://jerrylin96.github.io/git-signoff/),
 the [attested-by-humans badge + CI verifier](verify/README.md),
 automated `refs/notes/signoff` recovery, an open
 [spec license](LICENSE-SPEC) with [conformance vectors](conformance/README.md)
 for third-party implementations, and a reviewed
 [transcript-escrow spec](skills/signoff/specs/gsa-escrow.md) whose
 privacy baseline is user-owned storage with client-side encryption.
-Cloud escrow implementation and PyPI publish remain next.
+Cloud escrow implementation remains next.
 
 ## Development
 
 ```bash
-pip install -e . pytest
-pytest
+pip install -e . pytest ruff   # installs the in-repo reference library for the tests; no dependencies
+ruff check . && pytest
 ```
 
 Contract tests live in `scripts/tests/` (skill contracts), `tests/` (repo
-initializer), and `signoff_mcp/tests/` (server mechanics).
+initializer), and `git_signoff/tests/` (server mechanics).
 
 ## License
 

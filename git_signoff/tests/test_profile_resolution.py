@@ -5,8 +5,8 @@ import subprocess
 
 import pytest
 
-from signoff_mcp import core, profile
-from signoff_mcp.tests.helpers import git
+from git_signoff import core, profile
+from git_signoff.tests.helpers import git
 
 VALID_PROFILE = """# Repo-local profile
 <!-- INTERVIEW-PROFILE:BEGIN (sole customization point — replace only this block) -->

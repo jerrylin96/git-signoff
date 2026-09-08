@@ -1,13 +1,13 @@
 import os
 
-from signoff_mcp.adapters import (
+from git_signoff.adapters import (
     AntigravityAdapter,
     ClaudeCodeAdapter,
     CodexAdapter,
     GenericFileAdapter,
     resolve_adapter,
 )
-from signoff_mcp.tests.helpers import git, init_repo
+from git_signoff.tests.helpers import git, init_repo
 
 
 def _slug(p):

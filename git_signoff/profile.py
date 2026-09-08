@@ -7,7 +7,7 @@ only: the skill layer remains authoritative for interview conduct; these
 results let signoff_prepare report which question set will run, its
 provenance digest, and the science signals present in the range diff.
 
-Pure stdlib, no MCP dependency.
+Pure stdlib.
 """
 
 import hashlib

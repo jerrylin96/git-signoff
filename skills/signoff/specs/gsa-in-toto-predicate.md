@@ -3,7 +3,7 @@
 **Document Version:** 0.1.0  
 **Status:** Draft / Informative (open-standard milestone 4, ecosystem interop) — not yet submitted to the in-toto attestation registry.  
 **Canonical Location:** `skills/signoff/specs/gsa-in-toto-predicate.md`  
-**License:** [Community Specification License 1.0](https://github.com/jerrylin96/signoff/blob/main/LICENSE-SPEC)  
+**License:** [Community Specification License 1.0](https://github.com/jerrylin96/git-signoff/blob/main/LICENSE-SPEC)  
 
 ## Purpose
 
@@ -25,7 +25,7 @@ a substitute for it.
 ## Predicate type
 
 ```
-https://jerrylin96.github.io/signoff/predicates/gsa/v1
+https://jerrylin96.github.io/git-signoff/predicates/gsa/v1
 ```
 
 *Provisional identifier.* It moves to a project-owned domain or a neutral
@@ -45,7 +45,7 @@ rebases (gsa-core §5) — the reviewed tree.
     { "name": "git:commit", "digest": { "gitCommit": "453c633078ecdd82d93c33eefac4d5f4cbe2ef55" } },
     { "name": "git:tree",   "digest": { "gitTree":   "83679c5222ef2c7a7b8e5c83bc56c526d7f95567" } }
   ],
-  "predicateType": "https://jerrylin96.github.io/signoff/predicates/gsa/v1",
+  "predicateType": "https://jerrylin96.github.io/git-signoff/predicates/gsa/v1",
   "predicate": {
     "specVersion": "1.0",
     "status": "VERIFIED_BY_HUMAN",

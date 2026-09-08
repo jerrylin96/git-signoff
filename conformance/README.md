@@ -24,8 +24,16 @@ synthetic examples:
 | `invalid-status.txt` | synthetic | status outside the §2.2 enum |
 | `invalid-status-digest-mismatch.txt` | synthetic | `VERIFIED_BY_HUMAN` with `unavailable` digest (§2.2 cross-field enforcement) |
 | `invalid-missing-transcript-digest.txt` | synthetic | `VERIFIED_BY_HUMAN` with omitted transcript digest (§2.2 enforcement) |
+| `invalid-duplicate-reviewed-tree-sha.txt` | synthetic | a second `Signoff-Reviewed-Tree-SHA` following a trade-off — the shape a line break inside free text produces; one attestation carries each single-valued trailer exactly once (§2.3), so this must not anchor either tree |
 
 Scope notes:
+
+- Every vector is **one attestation payload** (a commit message or one note
+  block) and is judged under the §2.3 single-valued rule, except
+  `valid-note-cat-sort-uniq.txt`, flagged `merged_note` in `expected.json`:
+  a `cat_sort_uniq`-merged note blob whose constituent attestations cannot be
+  recovered, judged under the merge-aware rules of §5.1 (and, per §5.1,
+  usable to anchor only the object the note is attached to).
 
 - These vectors cover **structural validation and trailer parsing** —
   what a verifier can decide from a payload alone. Anchoring checks

@@ -1,10 +1,10 @@
 # Specification: Portable Git Signoff Attestation (GSA) Protocol Core
 
-**Document Version:** 3.5.0 (removes Section 6 project tracking; moved to docs/roadmap.md)  
+**Document Version:** 3.6.0 (single-valued trailer rule: producers keep values on one line, verifiers reject repeated single-valued trailers within one attestation; merged-note anchoring scoped to the annotated object; §2.2 and §4 reworded from "the MCP server" to "the producer" — the MCP interface is one informative producer shape, not a required component)  
 **Status:** Draft / Pending Review  
-**Target Scope:** `signoff` skill portability, MCP Server, Harness Adapters, Git Notes Attestation, and Open Commit Protocol Core  
+**Target Scope:** `signoff` skill portability, producer implementations (skill layer; optionally an MCP server), Harness Adapters, Git Notes Attestation, and Open Commit Protocol Core  
 **Canonical Spec Location:** `skills/signoff/specs/gsa-core.md`  
-**License:** This specification is licensed under the [Community Specification License 1.0](https://github.com/jerrylin96/signoff/blob/main/LICENSE-SPEC) (SPDX: `Community-Spec-1.0`); the reference implementations in this repository remain MIT.  
+**License:** This specification is licensed under the [Community Specification License 1.0](https://github.com/jerrylin96/git-signoff/blob/main/LICENSE-SPEC) (SPDX: `Community-Spec-1.0`); the reference implementations in this repository remain MIT.  
 
 ---
 
@@ -48,14 +48,14 @@ Signoff-Agent: harness=<harness-id>/<version|N/A> model=<model-id|N/A> reasoning
 
 *(Note: Optional cloud trailers like `Signoff-Cloud-Attestation-URL` are omitted entirely when unconfigured rather than written as `none`.)*
 
-### 2.2 Status Field Enum & Server Enforcement
+### 2.2 Status Field Enum & Producer Enforcement
 
-| Status Value | Meaning | Server Derivation & Enforcement Logic |
+| Status Value | Meaning | Producer Derivation & Enforcement Logic |
 |---|---|---|
-| `VERIFIED_BY_HUMAN` | Socratic interview completed; transcript resolved and hashed successfully. | Automatically set by MCP server if `TranscriptProvider` returns valid bytes and digest. |
-| `VERIFIED_BY_HUMAN_NO_TRANSCRIPT_DIGEST` | Socratic interview completed; transcript unavailable locally. | Set by MCP server ONLY if `TranscriptProvider` returns `None` AND caller passes `ack_no_transcript=True`. If `ack_no_transcript=False`, server MUST abort commit with error. |
+| `VERIFIED_BY_HUMAN` | Socratic interview completed; transcript resolved and hashed successfully. | Set by the producer if the `TranscriptProvider` returns valid bytes and digest. |
+| `VERIFIED_BY_HUMAN_NO_TRANSCRIPT_DIGEST` | Socratic interview completed; transcript unavailable locally. | Set by the producer ONLY if the `TranscriptProvider` returns `None` AND the human has explicitly acknowledged the downgrade (`ack_no_transcript=True`). Without that acknowledgement the producer MUST abort the commit with an error. |
 
-*(Note: `Signoff-Status` is derived deterministically by the MCP server; callers CANNOT override status string directly.)*
+*(Note: `Signoff-Status` is derived deterministically by the producer from transcript availability; the interviewing agent MUST NOT set it directly. "Producer" is whatever writes the attestation — the skill layer's helper in the shipped implementation, or an MCP server exposing the §4 interface.)*
 
 **Transcript Outcome & Status Cross-Field Rule:** An attestation MUST record its transcript outcome explicitly: `VERIFIED_BY_HUMAN` requires a well-formed `sha256:<64-hex>` `Signoff-Transcript-Digest` (and matching byte count); when no transcript bytes were captured or resolved, the digest MUST be `unavailable` and the status MUST be `VERIFIED_BY_HUMAN_NO_TRANSCRIPT_DIGEST`. An attestation omitting the digest trailer or pairing `VERIFIED_BY_HUMAN` with `unavailable` is invalid under either status.
 
@@ -72,6 +72,7 @@ Signoff-Agent: harness=<harness-id>/<version|N/A> model=<model-id|N/A> reasoning
 - `Signoff-Tradeoff` & `Signoff-Risk`:
   - **Repeat Rule:** Repeat the trailer key for each item acknowledged during interview.
   - **Empty Rule:** Write `Signoff-Tradeoff: none` or `Signoff-Risk: none` exactly once if zero items were identified.
+- **Single-Valued Trailers (all others):** Within one attestation, every trailer other than `Signoff-Tradeoff` and `Signoff-Risk` MUST appear exactly once if required (§2.1) and at most once if optional. Producers MUST write each value on a single line: free text (trade-offs, risks, the summary paragraph, the agent string, the email) MUST NOT contain line breaks, and no line of the summary paragraph may begin with `Signoff-`; a producer MUST refuse such input rather than write it. Verifiers MUST treat a payload that is one attestation — an attestation commit message, or one block of a note — as invalid when a single-valued trailer appears more than once, and MUST NOT use any value from such a payload to anchor a commit or tree. Rationale: the format is line-oriented, so a line break inside a trade-off is the difference between a comment and a second `Signoff-Reviewed-Tree-SHA` that anchors an unreviewed tree. (Added in 3.6.0 after the reference verifier was shown to accept exactly that; the conformance suite pins it via `invalid-duplicate-reviewed-tree-sha.txt`.)
 - `Signoff-Agent` (Interviewer Provenance):
   - **Grammar (SHOULD):** `harness=<id>/<version|N/A> model=<model-id|N/A> reasoning=<level|N/A> interview=<intensity-level>/<profile-id>[/sha256:<profile-digest-prefix>]` — space-separated `key=value` tokens in this fixed order, each value matching `[A-Za-z0-9._:/-]+`; the literal `N/A` marks fields the harness does not expose. The optional `/sha256:<profile-digest-prefix>` segment (12-hex prefix of the SHA256 of the delimited profile block) is REQUIRED when the interview profile was resolved from a file (resolution order defined in the skill layer: `SIGNOFF_PROFILE_FILE` env override → `<repo>/.signoff/profile.md` → embedded default block) and MUST be omitted when the embedded shipped block ran — verifiers can thereby distinguish shipped question sets from repo-authored ones.
   - **Sourcing:** `harness` mirrors `Signoff-Harness-ID` plus the harness version. `model` and `reasoning` identify the interviewing agent, deterministically sourced where the harness provides them (environment variables, transcript metadata from the same snapshot bytes as the digest), agent-self-reported otherwise. `interview` records the interview-intensity level actually run and the active INTERVIEW PROFILE identifier (both defined in the skill layer, `skills/signoff/SKILL.md`).
@@ -99,7 +100,7 @@ To ensure attestations survive post-merge branch deletion and squash merges:
 
 ```mermaid
 graph TD
-    Agent[LLM Agent / Socratic Reasoner] -->|Deterministic Git Calls| MCPServer[Signoff MCP Server]
+    Agent[LLM Agent / Socratic Reasoner] -->|Deterministic Git Calls| MCPServer[Producer mechanics - skill helper or MCP server]
     MCPServer -->|Resolves Diff & Range| GitEngine[Git Engine]
     MCPServer -->|Fetches Bytes at Commit Time| AdapterFactory[Transcript Adapter Factory]
     AdapterFactory -. Informative Discovery .-> Antigravity[Antigravity Adapter]
@@ -146,9 +147,11 @@ class TranscriptProvider(Protocol):
 
 ---
 
-## 4. Scoped Model Context Protocol (MCP) Interface
+## 4. Scoped Model Context Protocol (MCP) Interface (informative)
 
-The Socratic interrogation logic (probing 4 axes, evaluating user clarity) remains in the LLM agent prompt. The MCP server is strictly scoped to **deterministic Git state and diff mechanics**.
+*Status: informative. This section specifies the tool surface a producer SHOULD expose if it offers GSA mechanics over MCP. No MCP server ships in this repository: one did from 2026-08 to 2026-09-08 and was removed for lack of adopter demand; the mechanics it wrapped remain as the `git_signoff` Python reference library and in the skill layer's helper. The interface is kept so that independent implementations converge on the same tool names and semantics.*
+
+The Socratic interrogation logic (probing 4 axes, evaluating user clarity) remains in the LLM agent prompt. An MCP producer is strictly scoped to **deterministic Git state and diff mechanics**.
 
 ### 4.1 MCP Tools
 
@@ -173,5 +176,7 @@ To verify if a target commit or tree was attested:
 1. **Git Notes Lookup (`refs/notes/signoff`):** Check `git notes --ref=signoff show <commit-sha>` or `git notes --ref=signoff show <tree-sha>`. If a note exists, parse trailers directly.
 2. **Git Log Attestation Commit Lookup:** If notes are un-fetched, search git log for commit messages matching `[SIGNOFF *]`.
 3. **Tree-SHA Fallback:** If commit SHA is missing, compare `Signoff-Reviewed-Tree-SHA` against tree SHAs (`git rev-parse <commit>^{tree}`) in `refs/notes/signoff` or git log. If tree SHAs match, the attestation is verified valid for that exact code state.
+
+**One attestation, one anchor.** Every lookup above matches against the values of *one* attestation (§2.3 single-valued rule): a commit message or note block that repeats a single-valued trailer is malformed and anchors nothing. Notes are evaluated block by block (`git notes append` concatenates attestations; a re-attestation of the same commit first without and then with a transcript is two blocks with two statuses, not one contradictory payload). A `cat_sort_uniq`-merged note (§2.5) is the sorted union of several attestations' lines and cannot be split back into them; verifiers MAY accept such a blob — with the status/digest rule applied per status present — **only for the object the note is attached to**, never by tree- or commit-SHA membership for any other object, and never from a commit message, which is always exactly one attestation.
 
 **Verification MUST NOT mutate user attestation notes.** A verifier MUST NOT write to or modify `refs/notes/signoff`. Verifiers fetching remote notes MUST isolate remote state by writing exclusively to a dedicated mirror ref (e.g. `refs/notes/signoff-verify`) or an ephemeral namespace, preserving all local unpushed notes; alternatively they MAY merge with `cat_sort_uniq` per §2.5, which is additive rather than destructive. The concrete hazard: fetching a remote notes ref directly into the local one (`+refs/notes/signoff:refs/notes/signoff`) force-overwrites attestation notes not yet pushed — the same hazard §2.5 addresses for the push path. A reviewer who signs off offline and verifies before pushing must not lose the record by verifying it.

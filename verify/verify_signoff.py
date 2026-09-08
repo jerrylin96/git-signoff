@@ -25,19 +25,32 @@ Two modes:
 Exit 0 on pass, 1 on fail. No dependencies beyond Python 3.10+ and git;
 copy this file anywhere or run it via the companion composite action.
 
+Single-valued trailers appear exactly once per attestation (gsa-core §2.3):
+a commit message or note block that repeats one — the way a line break
+inside free text would smuggle a second Reviewed-Tree-SHA — is malformed
+and never anchors anything. cat_sort_uniq-merged notes, whose blocks cannot
+be separated, anchor only the object they are attached to.
+
 Verification is non-destructive to your signoff notes: origin's notes are
 fetched into an isolated mirror ref, never into refs/notes/signoff, so an
 attestation you have not pushed yet survives a verifier run.
 """
 
-import argparse
-import glob
-import hashlib
-import os
-from pathlib import Path
-import re
-import subprocess
 import sys
+
+if sys.version_info < (3, 10):  # loud, before anything that only parses on newer Pythons
+    sys.exit(
+        "verify_signoff.py needs Python 3.10 or newer; this is Python %d.%d. "
+        "Run it with a newer interpreter (python3.10+)." % sys.version_info[:2]
+    )
+
+import argparse  # noqa: E402
+import glob  # noqa: E402
+import hashlib  # noqa: E402
+import os  # noqa: E402
+from pathlib import Path  # noqa: E402
+import re  # noqa: E402
+import subprocess  # noqa: E402
 
 NOTES_REF = "refs/notes/signoff"
 # The verifier's own isolated mirror of origin's notes. Fetching origin straight
@@ -57,6 +70,25 @@ REQUIRED_TRAILERS = (
     "Signoff-Verified-By",
 )
 VALID_STATUSES = ("VERIFIED_BY_HUMAN", "VERIFIED_BY_HUMAN_NO_TRANSCRIPT_DIGEST")
+# Every trailer except Signoff-Tradeoff / Signoff-Risk carries exactly one value
+# per attestation (gsa-core §2.3). A payload that is one attestation — a commit
+# message, or one block of a note — is invalid if any of these repeats: the
+# format is line-oriented, so a repeated key is how free text (a tradeoff, a
+# summary) smuggles a second anchor past the gate.
+SINGLE_VALUED_TRAILERS = (
+    "Signoff-Spec-Version",
+    "Signoff-Status",
+    "Signoff-Timestamp",
+    "Signoff-Base-SHA",
+    "Signoff-Reviewed-Commit-SHA",
+    "Signoff-Reviewed-Tree-SHA",
+    "Signoff-Harness-ID",
+    "Signoff-Conversation-ID",
+    "Signoff-Transcript-Digest",
+    "Signoff-Transcript-Bytes",
+    "Signoff-Verified-By",
+    "Signoff-Agent",
+)
 
 
 def git(repo, *args, check=True):
@@ -80,7 +112,42 @@ DIGEST_RE = re.compile(r"^sha256:[0-9a-f]{64}$")
 
 
 def validate(trailers):
-    """Structural validation of one attestation's trailers -> list of problems."""
+    """Structural validation of an attestation payload -> list of problems.
+
+    Repeated-key-aware: every value of every key is checked, and the
+    status/digest cross-field rule (§2.2) is applied to the payload as a
+    whole. Use validate_single() for a payload that is one attestation and
+    validate_merged() for a cat_sort_uniq-merged note blob.
+    """
+    return _structural_problems(trailers) + _cross_field_problems(trailers, merged=False)
+
+
+def duplicate_problems(trailers):
+    """Single-valued trailers (§2.3) that appear more than once."""
+    return [
+        f"duplicate {key} ({len(values)} values; one attestation carries exactly one)"
+        for key in SINGLE_VALUED_TRAILERS
+        for values in (trailers.get(key, []),)
+        if len(values) > 1
+    ]
+
+
+def validate_single(trailers):
+    """Validation of a payload that is exactly one attestation: a commit message,
+    or one block of a note. Rejects repeated single-valued trailers."""
+    return validate(trailers) + duplicate_problems(trailers)
+
+
+def validate_merged(trailers):
+    """Validation of a cat_sort_uniq-merged note blob (§2.5): the sorted union
+    of several attestations' lines. Individual attestations cannot be recovered
+    from it, so single-valued trailers legitimately repeat and the status/digest
+    rule is applied per status rather than across the blob. Anchoring from such
+    a blob is valid only for the object the note is attached to (§5.1)."""
+    return _structural_problems(trailers) + _cross_field_problems(trailers, merged=True)
+
+
+def _structural_problems(trailers):
     problems = []
     for key in REQUIRED_TRAILERS:
         if key not in trailers:
@@ -98,13 +165,20 @@ def validate(trailers):
     for email in trailers.get("Signoff-Verified-By", []):
         if "@" not in email:
             problems.append(f"implausible Signoff-Verified-By {email!r}")
+    return problems
 
+
+def _cross_field_problems(trailers, merged):
     # Cross-field status vs transcript digest check (GSA §2.2)
+    problems = []
     statuses = trailers.get("Signoff-Status", [])
     digests = trailers.get("Signoff-Transcript-Digest", [])
     if "VERIFIED_BY_HUMAN" in statuses:
         if not digests:
             problems.append("status 'VERIFIED_BY_HUMAN' requires a Signoff-Transcript-Digest")
+        elif merged:
+            if not any(DIGEST_RE.match(d) for d in digests):
+                problems.append("status 'VERIFIED_BY_HUMAN' requires sha256 transcript digest, got 'unavailable'")
         else:
             for d in digests:
                 if d == "unavailable":
@@ -114,13 +188,19 @@ def validate(trailers):
     if "VERIFIED_BY_HUMAN_NO_TRANSCRIPT_DIGEST" in statuses:
         if not digests:
             problems.append("status 'VERIFIED_BY_HUMAN_NO_TRANSCRIPT_DIGEST' requires 'unavailable' digest")
+        elif merged:
+            if "unavailable" not in digests:
+                problems.append("status 'VERIFIED_BY_HUMAN_NO_TRANSCRIPT_DIGEST' requires 'unavailable' digest")
         else:
             for d in digests:
                 if d != "unavailable":
                     problems.append(
                         f"status 'VERIFIED_BY_HUMAN_NO_TRANSCRIPT_DIGEST' requires 'unavailable' digest, got {d!r}"
                     )
-
+    if merged:
+        for d in digests:
+            if d != "unavailable" and not DIGEST_RE.match(d):
+                problems.append(f"malformed Signoff-Transcript-Digest {d!r}")
     return problems
 
 
@@ -154,6 +234,43 @@ def note_payloads(repo, target):
     return out
 
 
+def _anchors(trailers, commit, tree):
+    return commit in trailers.get("Signoff-Reviewed-Commit-SHA", []) or tree in trailers.get(
+        "Signoff-Reviewed-Tree-SHA", []
+    )
+
+
+def _anchoring_note_attestation(repo, commit, tree):
+    """(source, trailers) of a valid attestation in a note on `commit` or `tree`
+    that covers it, or None.
+
+    Notes are evaluated block by block (git notes append concatenates
+    attestations; a re-attestation without and then with a transcript is two
+    blocks with two statuses, not one payload with a contradiction). The
+    strongest valid block wins the report. A cat_sort_uniq-merged blob cannot
+    be split into attestations; it is accepted only under the merge-aware
+    rules and only because the note is attached to the object being verified —
+    membership in a merged blob never anchors any other object (§5.1).
+    """
+    for note_target, how in ((commit, "note on commit"), (tree, "note on tree")):
+        for payload in note_payloads(repo, note_target):
+            blocks = split_attestation_blocks(payload)
+            valid = []
+            for block in blocks:
+                trailers = parse_trailers(block)
+                if not validate_single(trailers) and _anchors(trailers, commit, tree):
+                    valid.append(trailers)
+            if valid:
+                valid.sort(key=lambda t: t.get("Signoff-Status", [""])[0] != "VERIFIED_BY_HUMAN")
+                return how, valid[0]
+            # Sorting scatters a merged blob's lines, so the splitter may cut it
+            # into fragments that validate as nothing; judge the whole payload.
+            trailers = parse_trailers(payload)
+            if duplicate_problems(trailers) and not validate_merged(trailers) and _anchors(trailers, commit, tree):
+                return f"{how} (cat_sort_uniq-merged)", trailers
+    return None
+
+
 def check_head(repo, target):
     """PR-gate check: is `target` (or, for an attestation commit, its parent,
     or for a 2-parent merge commit, its attested PR head) attested?
@@ -164,7 +281,7 @@ def check_head(repo, target):
 
     if SUBJECT_RE.match(message):
         trailers = parse_trailers(message)
-        problems = validate(trailers)
+        problems = validate_single(trailers)
         parent = git(repo, "rev-parse", f"{commit}~1", check=False).stdout.strip()
         parent_tree = ""
         if parent:
@@ -186,22 +303,13 @@ def check_head(repo, target):
             f"  {describe(trailers)}",
         ]
 
-    candidates = []
-    for note_target, how in ((commit, "note on commit"), (tree, "note on tree")):
-        for payload in note_payloads(repo, note_target):
-            candidates.append((how, payload))
-
-    for source, payload in candidates:
-        trailers = parse_trailers(payload)
-        if validate(trailers):
-            continue
-        if commit in trailers.get("Signoff-Reviewed-Commit-SHA", []) or tree in trailers.get(
-            "Signoff-Reviewed-Tree-SHA", []
-        ):
-            return True, [
-                f"PASS: {commit[:7]} attested via {source}",
-                f"  {describe(trailers)}",
-            ]
+    found = _anchoring_note_attestation(repo, commit, tree)
+    if found:
+        source, trailers = found
+        return True, [
+            f"PASS: {commit[:7]} attested via {source}",
+            f"  {describe(trailers)}",
+        ]
 
     parents = git(repo, "log", "-1", "--format=%P", commit, check=False).stdout.split()
     if len(parents) > 2:
@@ -240,11 +348,9 @@ def check_head(repo, target):
 
     for source, payload in history_payloads(repo, commit):
         trailers = parse_trailers(payload)
-        if validate(trailers):
+        if validate_single(trailers):
             continue
-        if commit in trailers.get("Signoff-Reviewed-Commit-SHA", []) or tree in trailers.get(
-            "Signoff-Reviewed-Tree-SHA", []
-        ):
+        if _anchors(trailers, commit, tree):
             return True, [
                 f"PASS: {commit[:7]} attested via {source}",
                 f"  {describe(trailers)}",
@@ -271,11 +377,21 @@ def check_history(repo, ref, require):
                 annotated.append(entry.split()[1])
     for target in annotated:
         for payload in note_payloads(repo, target):
-            for block in split_attestation_blocks(payload):
+            blocks = split_attestation_blocks(payload)
+            if all(validate_single(parse_trailers(b)) for b in blocks):
+                # No block is one valid attestation: a cat_sort_uniq-merged blob
+                # (sorting scatters its lines across the splitter's fragments).
+                # Judge the whole payload under the merge-aware rules instead of
+                # reporting a legitimate merge as several invalid fragments.
+                merged = parse_trailers(payload)
+                if duplicate_problems(merged) and not validate_merged(merged):
+                    payloads.append((f"note on {target[:7]} (cat_sort_uniq-merged)", payload))
+                    continue
+            for block in blocks:
                 payloads.append((f"note on {target[:7]}", block))
     for source, payload in payloads:
         trailers = parse_trailers(payload)
-        problems = validate(trailers)
+        problems = [] if source.endswith("(cat_sort_uniq-merged)") else validate_single(trailers)
         key = tuple(trailers.get("Signoff-Reviewed-Commit-SHA", [source]))
         if key in seen:
             continue
@@ -354,7 +470,7 @@ def extract_attestation_trailers(repo, target, seen=None, depth=0):
     # 1. Check target commit's own message
     if SUBJECT_RE.match(message) or "Signoff-Spec-Version:" in message:
         t = parse_trailers(message)
-        if not validate(t):
+        if not validate_single(t):
             if commit in t.get("Signoff-Reviewed-Commit-SHA", []) or tree in t.get(
                 "Signoff-Reviewed-Tree-SHA", []
             ):
@@ -378,10 +494,7 @@ def extract_attestation_trailers(repo, target, seen=None, depth=0):
         for payload in note_payloads(repo, note_target):
             for block in split_attestation_blocks(payload):
                 t = parse_trailers(block)
-                if not validate(t) and (
-                    commit in t.get("Signoff-Reviewed-Commit-SHA", [])
-                    or tree in t.get("Signoff-Reviewed-Tree-SHA", [])
-                ):
+                if not validate_single(t) and _anchors(t, commit, tree):
                     return t
 
     # 3. Check if target is a 2-parent merge commit
@@ -396,10 +509,7 @@ def extract_attestation_trailers(repo, target, seen=None, depth=0):
     for _, payload in history_payloads(repo, commit):
         for block in split_attestation_blocks(payload):
             t = parse_trailers(block)
-            if not validate(t) and (
-                commit in t.get("Signoff-Reviewed-Commit-SHA", [])
-                or tree in t.get("Signoff-Reviewed-Tree-SHA", [])
-            ):
+            if not validate_single(t) and _anchors(t, commit, tree):
                 return t
 
     return None
@@ -411,7 +521,7 @@ def check_audit(repo, target="HEAD", export_path=None):
     if not trailers:
         return False, [f"FAIL: No signoff attestation found for {target}"]
 
-    errs = validate(trailers)
+    errs = validate_single(trailers)
     if errs:
         return False, [f"FAIL: Malformed signoff attestation on {target}: " + "; ".join(errs)]
 

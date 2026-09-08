@@ -136,7 +136,7 @@ land with the badge/verifier artifact available, so adoption is visible.
 Target end-state: GSA as a widely adopted open standard, conceivably donated
 to a neutral foundation, applicable across domains and industries. Candidate
 home, dual-track: the Linux Foundation's **Agentic AI Foundation (AAIF)** for
-governance — MCP itself was donated there, `signoff-mcp` is an MCP server,
+governance — MCP itself was donated there, GSA is agent-tooling infrastructure of the same kind,
 and human-accountability attestation for agentic coding is core AAIF
 territory — while the **OpenSSF** attestation ecosystem (in-toto, SLSA,
 Sigstore) remains the interop target rather than the home. Crucially, that
@@ -151,7 +151,7 @@ donation vehicle. Milestones, in order:
 2. **Spec licensing** — ✅ 2026-08-06: Community Specification License 1.0
    in `LICENSE-SPEC`, declared by `gsa-core.md` and `gsa-escrow.md`; code
    stays MIT.
-3. **Independent implementations**: the skill and signoff-mcp are two
+3. **Independent implementations**: the skill and the `git_signoff` Python reference library are two
    same-author implementations; the milestone is one *third-party* verifier
    or producer. The enabler shipped 2026-08-06 — `conformance/` publishes
    the test-vector suite (mostly real attestations, reference verifier
@@ -214,8 +214,8 @@ audit principle is dotgemini's ponytail skill: simplest working thing,
 deletion over addition, nothing speculative. Remaining candidates, each
 with a verdict and the trigger that changes it:
 
-- **`init.py` duplication** (674 byte-identical lines at root and
-  `signoff_mcp/init.py`, pinned by `test_init_scripts_byte_parity`):
+- **`init.py` duplication** (1328 byte-identical lines at root and
+  `git_signoff/init.py`, pinned by `test_init_scripts_byte_parity`):
   mechanical debt — the parity test makes it safe, but every change is
   written twice. Dedupe when packaging allows, or shrink the script itself:
   the vendor step is the essential one; ruleset/badge/branch automation is
@@ -233,11 +233,51 @@ with a verdict and the trigger that changes it:
   Candidate: compress to judgment guidance once live runs show the model
   doesn't need the full matrix. Cost of keeping: comprehension tax on every
   new reader; cost of cutting: re-litigating the rigor floors the tests pin.
-- **`signoff-mcp` server (~900 lines + tests) and the PyPI publish path**:
-  freeze until someone asks for deterministic server-side enforcement — no
-  adopter of the skill channel has, and the PyPI trusted-publisher setup
-  remains an unspent user action. Keep it out of the adoption path either
-  way.
+- **MCP server and the PyPI publish path — DELETED 2026-09-08.** The
+  verdict here had been "freeze until someone asks"; nobody asked, and the
+  component turned out to be the root of several other backlog items: the
+  repository's only non-stdlib dependency (`mcp`), the 1328-line duplicated
+  `init.py` (kept in parity by a test solely so a console-script `init`
+  subcommand could exist), a second implementation of the producer mechanics
+  that could drift from the skill's bash, a console-script guard, a publish
+  workflow, and a PyPI name that could not be registered (`signoff-mcp` taken
+  by an unrelated project; `git-signoff` rejected as too similar to the
+  unrelated `git-sign-off`). Its "server-side enforcement" pitch also
+  overstated: every target harness gives the agent a shell, so the server
+  never was a boundary. The enforcement layer is the verifier in CI plus the
+  branch ruleset — and it is worth being exact about what they enforce:
+  structure (well-formed trailers, the reviewed tree matches the merged
+  tree, an empty attestation commit, status consistent with digest format)
+  and *who may push*. They cannot tell a real transcript digest from any 64
+  hex characters, or a passed interview from a rubber stamp; anyone with push
+  rights can write a passing attestation for any commit. Authenticity — an
+  attestation a compromised or prompt-injected agent could not forge — would
+  need an identity the agent does not hold: mandatory reviewer signing (§2.4
+  is SHOULD today) or a service that creates the commit with its own
+  credentials (the escrow / in-toto / Sigstore direction). That is the
+  future in which "server-side enforcement" becomes necessary, and it is not
+  a client-side MCP server, which shares the agent's privileges. What
+  stays is `git_signoff/` as an unpublished Python reference implementation
+  of the producer mechanics (status derivation, notes merge, adapters,
+  profile resolution): the only executable, unit-tested form of the producer
+  rules, since the skill's bash cannot be unit tested. A thin MCP wrapper
+  (~100 lines over that core) is easy to add back if an adopter asks; that
+  is the test for bloat — cheaper to recreate on demand than to carry. The
+  one benefit the server did deliver — deterministic mechanics that protect
+  against agent *mistakes* (a miscomputed digest, a mis-derived status, a
+  skipped notes merge) — never needed MCP or pip: if live runs show agents
+  fumbling the mechanics, a stdlib helper script inside the vendored skill
+  folder, replacing the inline bash heredoc, gives the same determinism with
+  zero install.
+  Naming record: the GitHub repository was renamed `jerrylin96/git-signoff`
+  on 2026-09-08 (old URLs redirect). The surviving rationale is
+  discoverability — the bare word "signoff" is shared with two AI products,
+  the DCO `--signoff` trailer, and a chip-design discipline, while
+  `git-signoff` names what the tool is attached to and echoes the protocol
+  name — not PyPI consistency, which is moot. `/signoff`, `skills/signoff/`,
+  `refs/notes/signoff`, and the `Signoff-*` trailers keep the bare word
+  deliberately: `git-signoff` is the project, `signoff` is the action and the
+  protocol vocabulary.
 - **Escrow spec (`gsa-escrow.md`)**: already evidence-gated — correct
   shape; no further investment until its gates trip.
 - **Conformance vectors, spec license, in-toto draft**: *not* baggage —
@@ -329,10 +369,9 @@ Recorded so they never need re-derivation; each names its future fix.
 - Purchase custom domain; DNS to Pages.
 - Enable GitHub Pages in repo settings.
 - GitHub About sidebar text.
-- Configure the PyPI trusted publisher for `signoff-mcp` (pypi.org →
-  Publishing → add pending publisher: owner `jerrylin96`, repository
-  `signoff`, workflow `pypi-publish.yml`, environment `pypi`) — the
-  `pypi-publish` workflow then publishes with no stored credentials.
+- Dispatch the `release` workflow to cut the `v0.4.0` tag: `pyproject.toml`
+  has said 0.4.0 since the channel consolidation but the newest release tag
+  on origin is `v0.3.0`.
 - Discovery conversations with prospective users — script:
   [`docs/discovery-interview.md`](discovery-interview.md); keep filled
   notes private, record only aggregated evidence back into this document.

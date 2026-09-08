@@ -37,7 +37,10 @@ def test_reference_verifier_matches_expected_verdict(vector):
         payload = f.read()
 
     trailers = verify_signoff.parse_trailers(payload)
-    problems = verify_signoff.validate(trailers)
+    if exp.get("merged_note"):
+        problems = verify_signoff.validate_merged(trailers)
+    else:
+        problems = verify_signoff.validate_single(trailers)
 
     assert (not problems) == exp["valid"], problems
     for fragment in exp.get("problems_contain", []):
