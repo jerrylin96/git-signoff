@@ -244,13 +244,31 @@ with a verdict and the trigger that changes it:
   by an unrelated project; `git-signoff` rejected as too similar to the
   unrelated `git-sign-off`). Its "server-side enforcement" pitch also
   overstated: every target harness gives the agent a shell, so the server
-  never was a boundary — the verifier in CI plus the branch ruleset are. What
+  never was a boundary. The enforcement layer is the verifier in CI plus the
+  branch ruleset — and it is worth being exact about what they enforce:
+  structure (well-formed trailers, the reviewed tree matches the merged
+  tree, an empty attestation commit, status consistent with digest format)
+  and *who may push*. They cannot tell a real transcript digest from any 64
+  hex characters, or a passed interview from a rubber stamp; anyone with push
+  rights can write a passing attestation for any commit. Authenticity — an
+  attestation a compromised or prompt-injected agent could not forge — would
+  need an identity the agent does not hold: mandatory reviewer signing (§2.4
+  is SHOULD today) or a service that creates the commit with its own
+  credentials (the escrow / in-toto / Sigstore direction). That is the
+  future in which "server-side enforcement" becomes necessary, and it is not
+  a client-side MCP server, which shares the agent's privileges. What
   stays is `git_signoff/` as an unpublished Python reference implementation
   of the producer mechanics (status derivation, notes merge, adapters,
   profile resolution): the only executable, unit-tested form of the producer
   rules, since the skill's bash cannot be unit tested. A thin MCP wrapper
   (~100 lines over that core) is easy to add back if an adopter asks; that
-  is the test for bloat — cheaper to recreate on demand than to carry.
+  is the test for bloat — cheaper to recreate on demand than to carry. The
+  one benefit the server did deliver — deterministic mechanics that protect
+  against agent *mistakes* (a miscomputed digest, a mis-derived status, a
+  skipped notes merge) — never needed MCP or pip: if live runs show agents
+  fumbling the mechanics, a stdlib helper script inside the vendored skill
+  folder, replacing the inline bash heredoc, gives the same determinism with
+  zero install.
   Naming record: the GitHub repository was renamed `jerrylin96/git-signoff`
   on 2026-09-08 (old URLs redirect). The surviving rationale is
   discoverability — the bare word "signoff" is shared with two AI products,
