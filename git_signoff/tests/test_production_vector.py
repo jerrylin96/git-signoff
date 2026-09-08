@@ -10,7 +10,7 @@ import subprocess
 
 import pytest
 
-from signoff_mcp import core
+from git_signoff import core
 
 FIXTURE = os.path.join(os.path.dirname(__file__), "fixtures", "production_attestation.txt")
 REPO_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))

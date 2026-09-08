@@ -14,7 +14,7 @@ import pytest
 import sys
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", ".."))
-from signoff_mcp.tests.helpers import commit_file, git, init_repo  # noqa: E402
+from git_signoff.tests.helpers import commit_file, git, init_repo  # noqa: E402
 
 _SPEC = importlib.util.spec_from_file_location(
     "verify_signoff",

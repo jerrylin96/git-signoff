@@ -31,7 +31,7 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           python3 scripts/recover_notes.py --ref origin/main \
-            --payload-file signoff_mcp/tests/fixtures/production_attestation.txt
+            --payload-file git_signoff/tests/fixtures/production_attestation.txt
 
       - name: Push notes ref
         run: git push origin refs/notes/signoff

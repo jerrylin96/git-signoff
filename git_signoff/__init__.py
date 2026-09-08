@@ -1,4 +1,4 @@
-"""signoff-mcp: GSA Protocol v1.0 Phase 2 — deterministic MCP server mechanics.
+"""git-signoff: GSA Protocol v1.0 Phase 2 — deterministic MCP server mechanics.
 
 Implements skills/signoff/specs/gsa-core.md §3 (TranscriptProvider adapters),
 §4 (signoff_prepare / signoff_commit tools), and §2.5 (git-notes dual
@@ -6,7 +6,7 @@ persistence with tracking-ref cat_sort_uniq merge). The Socratic interview
 stays in the agent prompt; this package is deterministic Git mechanics only.
 """
 
-from signoff_mcp.adapters import (
+from git_signoff.adapters import (
     AntigravityAdapter,
     ClaudeCodeAdapter,
     CodexAdapter,
@@ -14,14 +14,14 @@ from signoff_mcp.adapters import (
     TranscriptProvider,
     resolve_adapter,
 )
-from signoff_mcp.profile import (
+from git_signoff.profile import (
     ProfileOverrideError,
     ProfileResolution,
     detect_science_signals,
     profile_block_digest,
     resolve_profile,
 )
-from signoff_mcp.core import (
+from git_signoff.core import (
     CommitResult,
     GitRepo,
     PrepareState,

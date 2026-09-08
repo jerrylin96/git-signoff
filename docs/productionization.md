@@ -136,7 +136,7 @@ land with the badge/verifier artifact available, so adoption is visible.
 Target end-state: GSA as a widely adopted open standard, conceivably donated
 to a neutral foundation, applicable across domains and industries. Candidate
 home, dual-track: the Linux Foundation's **Agentic AI Foundation (AAIF)** for
-governance — MCP itself was donated there, `signoff-mcp` is an MCP server,
+governance — MCP itself was donated there, `git-signoff` is an MCP server,
 and human-accountability attestation for agentic coding is core AAIF
 territory — while the **OpenSSF** attestation ecosystem (in-toto, SLSA,
 Sigstore) remains the interop target rather than the home. Crucially, that
@@ -151,7 +151,7 @@ donation vehicle. Milestones, in order:
 2. **Spec licensing** — ✅ 2026-08-06: Community Specification License 1.0
    in `LICENSE-SPEC`, declared by `gsa-core.md` and `gsa-escrow.md`; code
    stays MIT.
-3. **Independent implementations**: the skill and signoff-mcp are two
+3. **Independent implementations**: the skill and the `git-signoff` server are two
    same-author implementations; the milestone is one *third-party* verifier
    or producer. The enabler shipped 2026-08-06 — `conformance/` publishes
    the test-vector suite (mostly real attestations, reference verifier
@@ -215,7 +215,7 @@ deletion over addition, nothing speculative. Remaining candidates, each
 with a verdict and the trigger that changes it:
 
 - **`init.py` duplication** (1328 byte-identical lines at root and
-  `signoff_mcp/init.py`, pinned by `test_init_scripts_byte_parity`):
+  `git_signoff/init.py`, pinned by `test_init_scripts_byte_parity`):
   mechanical debt — the parity test makes it safe, but every change is
   written twice. Dedupe when packaging allows, or shrink the script itself:
   the vendor step is the essential one; ruleset/badge/branch automation is
@@ -233,7 +233,7 @@ with a verdict and the trigger that changes it:
   Candidate: compress to judgment guidance once live runs show the model
   doesn't need the full matrix. Cost of keeping: comprehension tax on every
   new reader; cost of cutting: re-litigating the rigor floors the tests pin.
-- **`signoff-mcp` server (~900 lines + tests) and the PyPI publish path**:
+- **`git-signoff` MCP server (~900 lines + tests) and the PyPI publish path**:
   freeze until someone asks for deterministic server-side enforcement — no
   adopter of the skill channel has, and the PyPI trusted-publisher setup
   remains an unspent user action. The distribution was renamed
@@ -242,8 +242,10 @@ with a verdict and the trigger that changes it:
   AI-agent space now use the bare word "signoff", so adoption-path surfaces
   lead with "Git Signoff Attestation" rather than the bare word. The primary
   command is `git-signoff` too (`serve` / `init` subcommands; bare prints
-  help since git dispatches `git signoff` to it), with `signoff-mcp` as an
-  alias, so what a user installs, types, and reads match. Nothing is on PyPI
+  help since git dispatches `git signoff` to it) and the import package is
+  `git_signoff`; no alias — there were no users or MCP registrations to keep
+  compatible with, and getting the name right once before adoption beats
+  carrying two. Nothing is on PyPI
   until the pending-publisher user action below is done. Keep the server out
   of the adoption path either way.
 - **Escrow spec (`gsa-escrow.md`)**: already evidence-gated — correct

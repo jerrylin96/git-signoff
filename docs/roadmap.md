@@ -15,7 +15,7 @@ This document tracks development milestones, retrospective phase gate logs, and 
 - [x] **Prompt-Level Implementation**: Dynamic auto-classification of interview intensity based on diff semantics and blast radius when bare `/signoff` is invoked without explicit modifiers: Tier 0 (`cursory` for pure docs/types <50 LoC), Tier 1 (`standard` for default feature work, with pure docs of any size capped at Tier 1), and Tier 2 (`skeptical` for high-impact changes: security/auth, schema/migrations, public APIs, numerical/science invariants, or >200 LoC / >5 files). Safety clamps strictly block `--quick` on high-impact diffs and enforce graduated one-way escalation.
 - [x] **Contract Test**: Enforced by `scripts/tests/test_skill_references.py::test_signoff_phase3f_adaptive_intensity_contract`.
 - [x] **Live Dogfood Attestations**: Live classification dogfood verified on `main` in commit `20c7120` (Tier 1 standard intensity) and commit `2558ebc` (Tier 2 skeptical intensity).
-- [ ] **Release (deferred)**: Release cut deferred to post-merge release workflow. Adaptive tiering is prompt-level only and is not mirrored server-side in `signoff_mcp`.
+- [ ] **Release (deferred)**: Release cut deferred to post-merge release workflow. Adaptive tiering is prompt-level only and is not mirrored server-side in `git_signoff`.
 
 ---
 
@@ -31,7 +31,7 @@ Take signoff from a local experimental tool to production-ready for a growing us
 #### Operational Checklist & Standardization:
 - [x] **Pin Tag**: Tag `verify-v1` created and verified on origin (`f01ac253`), self-healed via `.github/workflows/tag.yml`.
 - [ ] **Pins `verify-v1.3` and `init-v6`** (2026-09-08): created by `tag.yml` on the next push to `main`. `verify-v1.3` closes the trailer-injection PR-gate bypass and the multi-block note rejection (gsa-core 3.6.0 §2.3/§5.1); `init-v6` carries the initializer rollback/symlink fixes, the Python-floor guard, and the `git-signoff` command. Install snippets and the scaffolded workflow already reference the new pins; they resolve once the tags exist.
-- [x] **PyPI Package Name Conflict (resolved by rename)**: the PyPI name `signoff-mcp` has been held since 2026-05-02 by an unrelated project (a verification layer for AI agents; no relation to GSA). The distribution and primary command are renamed `git-signoff` (`git-signoff serve` / `git-signoff init`; bare invocation prints help because git dispatches `git signoff` to it); `signoff-mcp` stays as a compatibility alias and the import package `signoff_mcp` is unchanged. Nothing is on PyPI yet. Remaining user action: register `git-signoff` on PyPI as a pending trusted publisher (see `docs/productionization.md` → User actions), then dispatch `pypi-publish.yml`.
+- [x] **PyPI Package Name Conflict (resolved by rename)**: the PyPI name `signoff-mcp` has been held since 2026-05-02 by an unrelated project (a verification layer for AI agents; no relation to GSA). The distribution and primary command are renamed `git-signoff` (`git-signoff serve` / `git-signoff init`; bare invocation prints help because git dispatches `git signoff` to it); the import package is `git_signoff`; there is no `signoff-mcp` alias (no users or MCP registrations existed to keep compatible with, and one name is clearer for the users to come). Nothing is on PyPI yet. Remaining user action: register `git-signoff` on PyPI as a pending trusted publisher (see `docs/productionization.md` → User actions), then dispatch `pypi-publish.yml`.
 - [x] **Standardization Track**: Badge and CI verifier (`verify/`), specification licensing (`LICENSE-SPEC`), conformance vectors (`conformance/`), and in-toto predicate draft (`skills/signoff/specs/gsa-in-toto-predicate.md`).
 
 ---
@@ -48,7 +48,7 @@ Take signoff from a local experimental tool to production-ready for a growing us
 - [x] `skills/signoff/SKILL.md` implements GSA v1.0 trailers, portable harness adapter resolution (`SIGNOFF_TRANSCRIPT_FILE` → `ANTIGRAVITY_CONVERSATION_ID` → `CLAUDE_CODE_SESSION_ID`), signed attestation commits, and `refs/notes/signoff` dual persistence.
 
 ### Phase 2 — MCP Server Implementation
-- [x] `signoff-mcp` package (`signoff_mcp/`): programmatic `TranscriptProvider` adapters, MCP tools `signoff_prepare`/`signoff_commit`/`signoff_push_notes`, `ack_no_transcript` circuit breaker, stale-state checks, and `cat_sort_uniq` notes push flow.
+- [x] MCP server package (then `signoff-mcp` / `git_signoff/`, renamed `git-signoff` / `git_signoff/` 2026-09-08): programmatic `TranscriptProvider` adapters, MCP tools `signoff_prepare`/`signoff_commit`/`signoff_push_notes`, `ack_no_transcript` circuit breaker, stale-state checks, and `cat_sort_uniq` notes push flow.
 
 ### Phase 3a — Portability
 - [x] Per-harness install and portability guide (`skills/signoff/HARNESSES.md`); self-contained skill directory. Enforced by `test_skill_folder_is_self_contained`.

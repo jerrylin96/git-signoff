@@ -856,17 +856,17 @@ def test_cross_harness_matrix_coverage():
 
 
 def test_domain_science_profile_block_parity():
-    """Verify domain-science profile block is byte-identical across domain-science.md, init.py, signoff_mcp/init.py, and profiles/README.md."""
+    """Verify domain-science profile block is byte-identical across domain-science.md, init.py, git_signoff/init.py, and profiles/README.md."""
     root_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "../.."))
     science_md = os.path.join(root_dir, "skills/signoff/profiles/domain-science.md")
     readme_md = os.path.join(root_dir, "skills/signoff/profiles/README.md")
     init_py = os.path.join(root_dir, "init.py")
-    mcp_init_py = os.path.join(root_dir, "signoff_mcp/init.py")
+    mcp_init_py = os.path.join(root_dir, "git_signoff/init.py")
 
     with open(science_md, "r", encoding="utf-8") as f:
         canonical_block = _extract_profile_block(f.read(), "domain-science.md")
 
-    for path, label in [(init_py, "init.py"), (mcp_init_py, "signoff_mcp/init.py")]:
+    for path, label in [(init_py, "init.py"), (mcp_init_py, "git_signoff/init.py")]:
         with open(path, "r", encoding="utf-8") as f:
             content = f.read()
         m = re.search(r'"domain-science":\s*"""(.*?)"""', content, re.DOTALL)

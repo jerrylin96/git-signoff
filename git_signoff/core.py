@@ -9,8 +9,8 @@ import warnings
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 
-from signoff_mcp.adapters import TranscriptProvider, resolve_adapter
-from signoff_mcp.profile import ProfileOverrideError, detect_science_signals, resolve_profile
+from git_signoff.adapters import TranscriptProvider, resolve_adapter
+from git_signoff.profile import ProfileOverrideError, detect_science_signals, resolve_profile
 
 SPEC_VERSION = "1.0"
 NOTES_REF = "refs/notes/signoff"

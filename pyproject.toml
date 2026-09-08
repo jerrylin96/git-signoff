@@ -16,15 +16,13 @@ Homepage = "https://github.com/jerrylin96/signoff"
 Repository = "https://github.com/jerrylin96/signoff"
 
 [project.scripts]
-# Primary command. git dispatches `git signoff` to it, so bare invocation prints
+# The one command. git dispatches `git signoff` to it, so bare invocation prints
 # help; `git-signoff serve` runs the MCP server, `git-signoff init` the initializer.
-git-signoff = "signoff_mcp.server:cli_main"
-# Compatibility alias: bare `signoff-mcp` still runs the server.
-signoff-mcp = "signoff_mcp.server:main"
+git-signoff = "git_signoff.server:main"
 
 [tool.setuptools.packages.find]
-include = ["signoff_mcp*"]
-exclude = ["signoff_mcp.tests*"]
+include = ["git_signoff*"]
+exclude = ["git_signoff.tests*"]
 
 [tool.ruff]
 line-length = 120

@@ -298,10 +298,10 @@ pip install "git-signoff @ git+https://github.com/jerrylin96/signoff"
 claude mcp add signoff -- git-signoff serve   # server must run with cwd = target repo
 ```
 
-The command is `git-signoff` (`git-signoff serve` runs the server,
-`git-signoff init` the initializer; bare `git-signoff` prints help, because
-git dispatches `git signoff` to it). `signoff-mcp` remains as a
-compatibility alias.
+One name everywhere: `pip install git-signoff`, `import git_signoff`, and the
+`git-signoff` command (`git-signoff serve` runs the server, `git-signoff init`
+the initializer; bare `git-signoff` prints help, because git dispatches
+`git signoff` to it).
 
 Tools: `signoff_prepare` (resolves the review range and also reports the
 active interview profile — source, ID, provenance digest — plus the
@@ -339,7 +339,7 @@ pytest
 ```
 
 Contract tests live in `scripts/tests/` (skill contracts), `tests/` (repo
-initializer), and `signoff_mcp/tests/` (server mechanics).
+initializer), and `git_signoff/tests/` (server mechanics).
 
 ## License
 

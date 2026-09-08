@@ -747,7 +747,7 @@ def test_base_branch_origin_fallback(tmp_path):
 
 
 def test_profile_text_byte_parity():
-    from signoff_mcp.profile import profile_block_digest
+    from git_signoff.profile import profile_block_digest
 
     repo_root = Path(__file__).parent.parent
     for pid in ("domain-science", "software-general"):
@@ -774,13 +774,13 @@ def test_profile_text_byte_parity():
 def test_init_scripts_byte_parity():
     repo_root = Path(__file__).parent.parent
     root_init = (repo_root / "init.py").read_text(encoding="utf-8")
-    pkg_init = (repo_root / "signoff_mcp" / "init.py").read_text(encoding="utf-8")
+    pkg_init = (repo_root / "git_signoff" / "init.py").read_text(encoding="utf-8")
     assert root_init == pkg_init
 
 
 def test_package_namespaced_init():
-    from signoff_mcp import init as mcp_init
-    from signoff_mcp import init_cli
+    from git_signoff import init as mcp_init
+    from git_signoff import init_cli
 
     assert init_cli.init is mcp_init
     assert hasattr(mcp_init, "run_init")
@@ -790,20 +790,20 @@ def test_pyproject_does_not_package_top_level_init():
     repo_root = Path(__file__).parent.parent
     pyproject_content = (repo_root / "pyproject.toml").read_text(encoding="utf-8")
     assert "py-modules" not in pyproject_content
-    assert 'include = ["signoff_mcp*"]' in pyproject_content
+    assert 'include = ["git_signoff*"]' in pyproject_content
 
 
 def test_versions_are_synchronized():
-    """pyproject.toml and signoff_mcp.__version__ agree (release.yml derives tags from pyproject)."""
+    """pyproject.toml and git_signoff.__version__ agree (release.yml derives tags from pyproject)."""
     import re
 
-    import signoff_mcp
+    import git_signoff
 
     repo_root = Path(__file__).parent.parent
     pyproject_content = (repo_root / "pyproject.toml").read_text(encoding="utf-8")
     m = re.search(r'^version = "([^"]+)"$', pyproject_content, re.MULTILINE)
     assert m, "pyproject.toml must declare a project version"
-    assert m.group(1) == signoff_mcp.__version__
+    assert m.group(1) == git_signoff.__version__
 
 
 # --- Slice 2: Multi-Harness Architecture & Policy A Tests ---

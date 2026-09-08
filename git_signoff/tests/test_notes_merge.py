@@ -2,9 +2,9 @@
 
 import pytest
 
-from signoff_mcp import core
-from signoff_mcp.adapters import GenericFileAdapter
-from signoff_mcp.tests.helpers import commit_file, git, init_repo
+from git_signoff import core
+from git_signoff.adapters import GenericFileAdapter
+from git_signoff.tests.helpers import commit_file, git, init_repo
 
 
 @pytest.fixture

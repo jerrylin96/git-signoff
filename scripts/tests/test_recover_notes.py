@@ -14,7 +14,7 @@ import sys
 import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", ".."))
-from signoff_mcp.tests.helpers import commit_file, git, init_repo  # noqa: E402
+from git_signoff.tests.helpers import commit_file, git, init_repo  # noqa: E402
 
 _SPEC = importlib.util.spec_from_file_location(
     "recover_notes",
@@ -173,7 +173,7 @@ def test_end_to_end_against_this_repo(tmp_path):
     git(clone, "config", "user.email", "tester@example.com")
     git(clone, "config", "user.name", "Tester")
     fixture = os.path.join(
-        REPO_ROOT, "signoff_mcp", "tests", "fixtures", "production_attestation.txt"
+        REPO_ROOT, "git_signoff", "tests", "fixtures", "production_attestation.txt"
     )
     assert recover_notes.recover(str(clone), "origin/main", [fixture]) == 0
     # Recent attestations: notes resolve on the reviewed commits in main.

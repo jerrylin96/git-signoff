@@ -2,8 +2,8 @@
 
 How to install and run `/signoff` on each agent harness. The skill is
 prompt-driven and self-contained (GSA Phase 1); the optional MCP server
-(GSA Phase 2; distribution and command `git-signoff`, `signoff-mcp` kept as an
-alias) is an enforcement upgrade wherever MCP is supported.
+(GSA Phase 2; distribution, import package, and command all named
+`git-signoff`) is an enforcement upgrade wherever MCP is supported.
 Canonical protocol: [specs/gsa-core.md](specs/gsa-core.md).
 
 ## Portability Rules
@@ -93,7 +93,7 @@ breaker, stale-state checks — GSA §4):
 ```bash
 pip install "git-signoff @ git+https://github.com/jerrylin96/signoff"
 claude mcp add signoff -- git-signoff serve   # server must run with cwd = target repo
-# (`signoff-mcp` remains as a compatibility alias; bare `git-signoff` prints help because git dispatches `git signoff` to it)
+# (bare `git-signoff` prints help because git dispatches `git signoff` to it)
 ```
 
 Web-specific caveats:
