@@ -1,7 +1,7 @@
-# External Adversarial Review Prompt: Feature Spec (Round 2 Re-Audit)
+# External Adversarial Review Prompt: Implementation Plan
 
 ### Reviewer Identity & Session Continuity Directive
-1. If you ALREADY established your REVIEWER_ID in an earlier turn of this session (`reviewer-3203`, `reviewer-20402`, `reviewer-20183`), YOU MUST REUSE IT. Do NOT generate a new ID.
+1. If you ALREADY established your REVIEWER_ID in an earlier turn of this session (`reviewer-20402`), YOU MUST REUSE IT. Do NOT generate a new ID.
 2. If this is a fresh session, set your ID matching ^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$ (no '..' or '.lock'):
    `export REVIEWER_ID="reviewer-$(head -c 3 /dev/urandom 2>/dev/null | xxd -p 2>/dev/null || echo $RANDOM)"`
 3. MANDATORY CHAT BANNER: In the very first lines of your chat response, you MUST print:
@@ -25,20 +25,19 @@
 git fetch origin main && BASE_SHA=$(git rev-parse FETCH_HEAD)
 git fetch origin gemini/extract-gsa-roadmap-c49a12 && git diff "${BASE_SHA}" FETCH_HEAD
 ```
-Spec File: `extract-gsa-roadmap-c49a12/spec.md`  
-Scorecard: `extract-gsa-roadmap-c49a12/reviewer_scorecard.md`
+Plan File: `extract-gsa-roadmap-c49a12/plan.md`  
+Spec File: `extract-gsa-roadmap-c49a12/spec.md`
 
-### Task & Scope (Re-Audit)
-Audit the revised `extract-gsa-roadmap-c49a12/spec.md` to verify whether prior Round 1 findings have been fully and accurately addressed:
-1. Retention of `Phase 4 amendment 2026-08-30` anchor for `docs/productionization.md:212`.
-2. Clean self-containment with zero escaping relative markdown links in `skills/signoff/specs/gsa-core.md`.
-3. Open Phase 5 gates (0)–(3) retention with accurate empirical status (Pages deployed, live dogfood done, PyPI name squatted, actionable checklists preserved).
-4. Atomic single commit and updated contract tests in `scripts/tests/test_skill_references.py`.
-5. Document Version bump to `3.5.0` on `gsa-core.md` line 3.
+### Task & Scope (Plan Audit)
+Audit `extract-gsa-roadmap-c49a12/plan.md` against the approved `extract-gsa-roadmap-c49a12/spec.md` and codebase:
+1. Are tasks atomic and appropriately ordered?
+2. Does Task 1 define an explicit failing TDD RED test spec that accurately captures spec requirements before implementation?
+3. Are all 4 tasks accompanied by exact empirical verification commands?
+4. Does the plan preserve the invariants (zero escaping links, anchor resolution, accurate empirical statuses, atomic single commit)?
 
 ### Output Protocol
-Append or update your findings in `reviews/${REVIEWER_ID}.md` on your assigned review branch:
+Append or write your findings in `reviews/${REVIEWER_ID}.md` on your assigned review branch:
 - Header must include `AUDITED_SHA: <current-feature-sha>`.
-- If all prior findings are resolved, emit `VERDICT: APPROVE` and mark resolved items `[x] (Resolved in commit <sha>)`.
-- If open issues remain, emit `VERDICT: REVISE` with concrete line citations.
+- Verdict: APPROVE or REVISE.
+- Concrete technical findings with citations.
 - 3-5 line Adversarial Audit Summary ("What Was Caught & Fixed").
