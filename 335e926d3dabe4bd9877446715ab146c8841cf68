@@ -1,0 +1,31 @@
+[SIGNOFF 335e926]: human comprehension and risk attestation
+
+Skeptical-intensity interview over nine probes on four axes, two prediction
+challenges plus one re-probe. The reviewer explained which layer closes the
+trailer-injection PR-gate bypass and why the notes-recovery guard was needed,
+why cat_sort_uniq-merged notes anchor only their attached object, predicted
+the squash-merge outcomes for appended and merged re-attestations, predicted
+the initializer's refusal on a dirty managed path, judged the stale-pin
+failure mode as silent, and stated in their own words the risk carried by
+removing the deterministic producer.
+
+Signoff-Spec-Version: 1.0
+Signoff-Status: VERIFIED_BY_HUMAN
+Signoff-Timestamp: 2026-09-08T23:51:45Z
+Signoff-Base-SHA: 8e60161965ca538ad08917c5ead724fce022f376
+Signoff-Reviewed-Commit-SHA: 335e926d3dabe4bd9877446715ab146c8841cf68
+Signoff-Reviewed-Tree-SHA: 8e491257e716c6327cf9b36c9786a01199ff2a7c
+Signoff-Harness-ID: claude-code
+Signoff-Conversation-ID: db272c93-8182-5971-a745-eb23f52fe37d
+Signoff-Transcript-Digest: sha256:4a71ce10651c721d34693010ccf6340c5c5c8f28f57e87c44ab3e86cfb5142c4
+Signoff-Transcript-Bytes: 3777328
+Signoff-Tradeoff: MCP server and PyPI publish path deleted; producer mechanics now run only as prompt-executed bash, with git_signoff/ kept as an unpublished, tested reference implementation
+Signoff-Tradeoff: gsa-core 3.6.0 single-valued trailer rule tightens verification; existing history re-verified unaffected (25 valid, 4 pre-spec invalid, unchanged), but a third-party verifier pinned to the pre-3.6.0 suite fails open on the new vector
+Signoff-Tradeoff: cat_sort_uniq-merged notes are accepted under a relaxed per-status cross-field rule and anchor only the object they are attached to
+Signoff-Tradeoff: repository renamed jerrylin96/git-signoff for discoverability; the bare word signoff is kept for the command, skill folder, notes ref, and trailers
+Signoff-Risk: adopters pinned to verify-v1.2 keep the PR-gate bypass with nothing in the system telling them; named fix is a verifier-emitted newer-pin warning from v1.3 onward, not in this branch
+Signoff-Risk: a well-formed but factually wrong attestation (e.g. an agent hashing the wrong transcript file) passes CI; only a deliberate --audit can notice, and someone must choose to run it
+Signoff-Risk: pin tags verify-v1.3 and init-v6 exist only after merge; install snippets and the scaffolded workflow 404 until tag.yml runs on main
+Signoff-Risk: a single prompt-executed attestation path means a defect in SKILL.md bash has no second implementation to catch it in the field
+Signoff-Verified-By: jlin404@bu.edu
+Signoff-Agent: harness=claude-code/2.1.42 model=claude-fable-5-1 reasoning=high interview=skeptical/software-general
