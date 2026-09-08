@@ -1,4 +1,4 @@
-# External Adversarial Review Prompt: RED Test Suite
+# External Adversarial Review Prompt: Code Implementation (GREEN)
 
 ### Reviewer Identity & Session Continuity Directive
 1. If you ALREADY established your REVIEWER_ID in an earlier turn of this session (`reviewer-20402`, `reviewer-20183`), YOU MUST REUSE IT. Do NOT generate a new ID.
@@ -25,18 +25,25 @@
 git fetch origin main && BASE_SHA=$(git rev-parse FETCH_HEAD)
 git fetch origin gemini/extract-gsa-roadmap-c49a12 && git diff "${BASE_SHA}" FETCH_HEAD
 ```
-Test File: `scripts/tests/test_skill_references.py`  
-Plan File: `extract-gsa-roadmap-c49a12/plan.md`
+Files:
+- `skills/signoff/specs/gsa-core.md`
+- `docs/roadmap.md`
+- `scripts/tests/test_skill_references.py`
+- `README.md`
+- `docs/productionization.md`
+- `scripts/recover_notes.py`
+- `.github/workflows/notes-recovery.yml`
 
-### Task & Scope (RED Test Suite Audit)
-Verify cryptographic proof of TDD rigor:
-1. `scripts/tests/test_skill_references.py::test_signoff_phase3f_adaptive_intensity_contract` fails cleanly with `AssertionError: docs/roadmap.md does not exist` at line 422.
-2. Positive assertions on `roadmap_content` cover all required tokens (`Phase 3f`, test identifier, `Phase 5`, `Gate 0`, `Gate 1`, `Gate 2`, `Gate 3`, `Phase 4 amendment 2026-08-30`).
-3. Negative assertions on `spec_content` guard against Section 6, Phase Gate Status, Phase 3f, Phase 5, and Stage 1a.
-4. Legacy positive assertions on `spec_content` are deleted to avoid contradiction.
+### Task & Scope (GREEN Implementation Audit)
+Audit full implementation against `extract-gsa-roadmap-c49a12/spec.md` and `plan.md`:
+1. `skills/signoff/specs/gsa-core.md`: Section 6 removed; Version 3.5.0; status Draft / Pending Review; ends cleanly at Section 5.1 with single newline; self-containment intact (no relative links escaping `skills/signoff/`).
+2. `docs/roadmap.md`: Full provenance, MIT license, back-link `../skills/signoff/specs/gsa-core.md`, stable heading `### Phase 4 amendment 2026-08-30`, Phase 3f dogfood notes on `main`, open Phase 5 gates with accurate empirical statuses.
+3. Cross-references: Scoped grep `git grep -n "gsa-core.md §6" -- . ':(exclude)extract-gsa-roadmap-c49a12'` yields 0 hits.
+4. Relative link resolution: All relative markdown links across touched files resolve to real repository paths.
+5. Tests: `pytest scripts/tests/` passes 100% (113 passed), `ruff check .` passes cleanly.
 
 ### Output Protocol
 Commit findings to `reviews/${REVIEWER_ID}.md`:
 - Header must include `AUDITED_SHA: <current-feature-sha>`.
 - Verdict: APPROVE or REVISE.
-- 3-5 line Adversarial Audit Summary.
+- 3-5 line Adversarial Audit Summary ("What Was Caught & Fixed").
