@@ -60,7 +60,9 @@ Take signoff from a local experimental tool to production-ready for a growing us
 
 ### Phase 4 — Extraction & Distribution
 - [x] Dedicated GitHub repository `jerrylin96/signoff` created via `git filter-repo`.
-- [x] **Phase 4 amendment 2026-08-30**: Distribution consolidated on a single per-repo channel — vendoring into `.claude/skills/signoff/` (via `init.py` or symlink). Plugin-marketplace and release-zip channels retired. (Note: historical reference `scripts/sync_signoff_subtree.sh` was an external dotgemini-side script, not present in this repo).
+
+### Phase 4 amendment 2026-08-30
+- [x] Distribution consolidated on a single per-repo channel — vendoring into `.claude/skills/signoff/` (via `init.py` or symlink). Plugin-marketplace and release-zip channels retired. (Note: historical reference `scripts/sync_signoff_subtree.sh` was an external dotgemini-side script, not present in this repo).
 
 ### Phase 3d — Research Accessibility
 - [x] Repo-local profile selection (`.signoff/profile.md`), science-detection escalation guard, profile provenance SHA256 digest in `interview=` token, and domain-science profile authoring guidelines.

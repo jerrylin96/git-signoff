@@ -441,8 +441,8 @@ def test_signoff_phase3f_adaptive_intensity_contract():
     )
     for gate in ("Gate 0", "Gate 1", "Gate 2", "Gate 3"):
         assert gate in roadmap_content, f"Missing {gate} in docs/roadmap.md"
-    assert "Phase 4 amendment 2026-08-30" in roadmap_content, (
-        "Missing Phase 4 amendment 2026-08-30 anchor in docs/roadmap.md"
+    assert "### Phase 4 amendment 2026-08-30" in roadmap_content, (
+        "Missing ### Phase 4 amendment 2026-08-30 heading anchor in docs/roadmap.md"
     )
 
     # gsa-core.md must not contain internal project tracking or Section 6
