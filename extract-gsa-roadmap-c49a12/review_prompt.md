@@ -1,4 +1,4 @@
-# External Adversarial Review Prompt: Implementation Plan (Final Re-Audit)
+# External Adversarial Review Prompt: RED Test Suite
 
 ### Reviewer Identity & Session Continuity Directive
 1. If you ALREADY established your REVIEWER_ID in an earlier turn of this session (`reviewer-20402`, `reviewer-20183`), YOU MUST REUSE IT. Do NOT generate a new ID.
@@ -25,19 +25,18 @@
 git fetch origin main && BASE_SHA=$(git rev-parse FETCH_HEAD)
 git fetch origin gemini/extract-gsa-roadmap-c49a12 && git diff "${BASE_SHA}" FETCH_HEAD
 ```
-Plan File: `extract-gsa-roadmap-c49a12/plan.md`  
-Scorecard: `extract-gsa-roadmap-c49a12/reviewer_scorecard.md`
+Test File: `scripts/tests/test_skill_references.py`  
+Plan File: `extract-gsa-roadmap-c49a12/plan.md`
 
-### Task & Scope
-Verify that all remaining plan review items are resolved:
-1. Back-link literal from `docs/roadmap.md` is `[skills/signoff/specs/gsa-core.md](../skills/signoff/specs/gsa-core.md)`.
-2. Task 1 RED expected failure accurately describes trip point at `test_skill_references.py:422`.
-3. In-repo `pytest` commands prioritized; worktree runner parameterized.
-4. Gate 1 custom domain action retained.
-5. Task 4 single atomic product commit policy clearly specified.
+### Task & Scope (RED Test Suite Audit)
+Verify cryptographic proof of TDD rigor:
+1. `scripts/tests/test_skill_references.py::test_signoff_phase3f_adaptive_intensity_contract` fails cleanly with `AssertionError: docs/roadmap.md does not exist` at line 422.
+2. Positive assertions on `roadmap_content` cover all required tokens (`Phase 3f`, test identifier, `Phase 5`, `Gate 0`, `Gate 1`, `Gate 2`, `Gate 3`, `Phase 4 amendment 2026-08-30`).
+3. Negative assertions on `spec_content` guard against Section 6, Phase Gate Status, Phase 3f, Phase 5, and Stage 1a.
+4. Legacy positive assertions on `spec_content` are deleted to avoid contradiction.
 
 ### Output Protocol
-Append or update your findings in `reviews/${REVIEWER_ID}.md` on your assigned review branch:
+Commit findings to `reviews/${REVIEWER_ID}.md`:
 - Header must include `AUDITED_SHA: <current-feature-sha>`.
-- Emit `VERDICT: APPROVE` if all items are resolved.
-- 3-5 line Adversarial Audit Summary ("What Was Caught & Fixed").
+- Verdict: APPROVE or REVISE.
+- 3-5 line Adversarial Audit Summary.
