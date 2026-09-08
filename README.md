@@ -276,6 +276,7 @@ deterministic server-side enforcement (derived status, stale-state circuit
 breakers, notes concurrency handling).
 
 - **Protocol spec:** [`skills/signoff/specs/gsa-core.md`](skills/signoff/specs/gsa-core.md)
+- **Project roadmap:** [`docs/roadmap.md`](docs/roadmap.md)
 - **Per-harness install & portability guide:** [`skills/signoff/HARNESSES.md`](skills/signoff/HARNESSES.md)
 - **Skill entry point:** [`skills/signoff/SKILL.md`](skills/signoff/SKILL.md)
 
@@ -283,7 +284,7 @@ Distribution is deliberately boring: a folder of Markdown committed to the
 repository under review, loaded by the harness from disk. Earlier
 account-scoped channels (a Claude Code plugin marketplace and a release-zip
 skill upload) were retired in v0.4.0 — the vendored folder replaced them on
-every surface; the spec's phase log records the history.
+every surface; [docs/roadmap.md#phase-4-amendment-2026-08-30](docs/roadmap.md#phase-4-amendment-2026-08-30) records the history.
 
 ### MCP server (optional enforcement)
 
@@ -307,7 +308,7 @@ repo-local profiles, the default-on science guard, and profile provenance
 digests — verified end-to-end by scripted mechanics checks plus live
 interview runs: this repository signs off its own branches, and the
 resulting attestations are in its history (`git log --grep='SIGNOFF'`).
-Phase 5 (tracked in [gsa-core.md §6](skills/signoff/specs/gsa-core.md))
+Phase 5 (tracked in [docs/roadmap.md](docs/roadmap.md))
 adds the production surface: a [project website](https://jerrylin96.github.io/signoff/),
 the [attested-by-humans badge + CI verifier](verify/README.md),
 automated `refs/notes/signoff` recovery, an open
