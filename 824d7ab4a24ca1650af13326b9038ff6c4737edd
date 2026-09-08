@@ -1,0 +1,16 @@
+[SIGNOFF 824d7ab]: human comprehension and risk attestation
+
+Signoff-Spec-Version: 1.0
+Signoff-Status: VERIFIED_BY_HUMAN
+Signoff-Timestamp: 2026-09-08T03:51:42Z
+Signoff-Base-SHA: 9ea80748e0de0874fe63552ff7e868251ddf1deb
+Signoff-Reviewed-Commit-SHA: 824d7ab4a24ca1650af13326b9038ff6c4737edd
+Signoff-Reviewed-Tree-SHA: 55f535c6c8996bb38f3392a074165963f4504a5f
+Signoff-Harness-ID: antigravity-cli
+Signoff-Conversation-ID: 68502741-2876-4ec0-87c1-650252044c70
+Signoff-Transcript-Digest: sha256:827fe23baf5c908d477596dc1fa1661e5d7eabd5cd631d1194a1ed507305fedd
+Signoff-Transcript-Bytes: 655521
+Signoff-Tradeoff: Separating project development tracking from gsa-core.md into docs/roadmap.md establishes independent document lifecycles and licenses (Community-Spec-1.0 vs MIT) at the cost of maintaining cross-references across two files.
+Signoff-Risk: External adopters or automated tools pinning gsa-core.md §6 must update references to docs/roadmap.md; future amendments must maintain explicit ATX headings to preserve anchor targets.
+Signoff-Verified-By: jerrylin247365@gmail.com
+Signoff-Agent: harness=antigravity-cli/N/A model=gemini-2.5-pro reasoning=N/A interview=standard/software-general
