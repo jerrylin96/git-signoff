@@ -24,7 +24,7 @@ Take signoff from a local experimental tool to production-ready for a growing us
 
 #### Numbered Gate Status:
 - [x] **Gate 0: Notes-recovery automation**: Automated CI workflow (`.github/workflows/notes-recovery.yml` running `scripts/recover_notes.py`) reconstructs `refs/notes/signoff` server-side from `[SIGNOFF *]` commit messages on pushes to `main`. Verified live on `main` (`refs/notes/signoff` resolves on origin).
-- [x] **Gate 1: Dedicated project website**: Shipped static site (`site/index.html`) deployed via GitHub Pages (`.github/workflows/pages.yml`). Live at `https://jerrylin96.github.io/signoff/`. Remaining open user action: purchase custom domain (top credibility item).
+- [x] **Gate 1: Dedicated project website**: Shipped static site (`site/index.html`) deployed via GitHub Pages (`.github/workflows/pages.yml`). Live at `https://jerrylin96.github.io/git-signoff/`. Remaining open user action: purchase custom domain (top credibility item).
 - [x] **Gate 2: Cloud concept promoted to reviewed spec**: Shipped reviewed specification draft in `skills/signoff/specs/gsa-escrow.md`. Establishes user-owned storage and client-side encryption as normative baseline.
 - [ ] **Gate 3: Cloud storage for conversations**: Transcript escrow implementation per `gsa-escrow.md` (deferred pending demand evidence).
 
@@ -60,7 +60,7 @@ Take signoff from a local experimental tool to production-ready for a growing us
 - [x] Attestations record interviewer provenance via `Signoff-Agent` trailer. Named interview intensity levels (`cursory`, `standard`, `skeptical`). Swappable interview profile blocks in `skills/signoff/profiles/`.
 
 ### Phase 4 — Extraction & Distribution
-- [x] Dedicated GitHub repository `jerrylin96/signoff` created via `git filter-repo`.
+- [x] Dedicated GitHub repository `jerrylin96/signoff` created via `git filter-repo` (renamed `jerrylin96/git-signoff` 2026-09-08 so repository, distribution, import package, and command share one name; GitHub redirects the old URL).
 
 ### Phase 4 amendment 2026-08-30
 - [x] Distribution consolidated on a single per-repo channel — vendoring into `.claude/skills/signoff/` (via `init.py` or symlink). Plugin-marketplace and release-zip channels retired. (Note: historical reference `scripts/sync_signoff_subtree.sh` was an external dotgemini-side script, not present in this repo).

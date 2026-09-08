@@ -245,7 +245,11 @@ with a verdict and the trigger that changes it:
   help since git dispatches `git signoff` to it) and the import package is
   `git_signoff`; no alias — there were no users or MCP registrations to keep
   compatible with, and getting the name right once before adoption beats
-  carrying two. Nothing is on PyPI
+  carrying two. The GitHub repository was renamed `jerrylin96/git-signoff`
+  the same day (old URLs redirect); `/signoff`, `skills/signoff/`,
+  `refs/notes/signoff`, and the `Signoff-*` trailers keep the bare word
+  deliberately — `git-signoff` is the tool, `signoff` is the action and the
+  protocol vocabulary. Nothing is on PyPI
   until the pending-publisher user action below is done. Keep the server out
   of the adoption path either way.
 - **Escrow spec (`gsa-escrow.md`)**: already evidence-gated — correct

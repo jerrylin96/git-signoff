@@ -38,11 +38,11 @@ def temp_git_repo(tmp_path):
 @pytest.mark.parametrize(
     "url,expected",
     [
-        ("https://github.com/jerrylin96/signoff.git", "jerrylin96/signoff"),
-        ("https://github.com/jerrylin96/signoff", "jerrylin96/signoff"),
+        ("https://github.com/jerrylin96/git-signoff.git", "jerrylin96/git-signoff"),
+        ("https://github.com/jerrylin96/git-signoff", "jerrylin96/git-signoff"),
         ("https://x-access-token:ghp_123@github.com/org/repo.git", "org/repo"),
-        ("git@github.com:jerrylin96/signoff.git", "jerrylin96/signoff"),
-        ("git@github.com:jerrylin96/signoff", "jerrylin96/signoff"),
+        ("git@github.com:jerrylin96/git-signoff.git", "jerrylin96/git-signoff"),
+        ("git@github.com:jerrylin96/git-signoff", "jerrylin96/git-signoff"),
         ("ssh://git@github.com/org/custom-repo.git", "org/custom-repo"),
         ("ssh://git@github.com:22/org/custom-repo.git", "org/custom-repo"),
     ],
@@ -147,7 +147,7 @@ def test_scaffold_workflow_file(temp_git_repo):
     content = workflow.read_text(encoding="utf-8")
     assert "branches: [ master ]" in content
     assert "fetch-depth: 0" in content
-    assert "jerrylin96/signoff/verify@verify-v1.3" in content
+    assert "jerrylin96/git-signoff/verify@verify-v1.3" in content
 
 
 def test_scaffold_profile_file(temp_git_repo):
@@ -232,14 +232,24 @@ def test_skill_source_ref_pin_consistency():
         f"SKILL_SOURCE_REF {ref!r} missing from tag.yml PINS — the pin tag would never be created"
     )
 
-    snippet_re = re.compile(r"jerrylin96/signoff/(init-v[\w.]+)/init\.py")
-    for rel in ("README.md", "verify/README.md", "site/index.html"):
+    snippet_re = re.compile(r"jerrylin96/git-signoff/(init-v[\w.]+)/init\.py")
+    must_have = {"README.md", "verify/README.md", "site/index.html"}
+    seen = set()
+    # Every tracked doc or page that serves a snippet must serve the same pin —
+    # a hand-kept list once let two profile docs drift a pin behind.
+    tracked = subprocess.run(["git", "ls-files"], cwd=repo_root, capture_output=True, text=True).stdout.split()
+    for rel in tracked:
+        if not rel.endswith((".md", ".html", ".yml")):
+            continue
         text = (repo_root / rel).read_text(encoding="utf-8")
         served = snippet_re.findall(text)
-        assert served, f"{rel} has no pinned init.py install snippet"
+        if not served:
+            continue
+        seen.add(rel)
         assert set(served) == {ref}, (
             f"{rel} serves init.py at {sorted(set(served))}, but SKILL_SOURCE_REF is {ref!r}"
         )
+    assert must_have <= seen, f"missing pinned init.py install snippet in {sorted(must_have - seen)}"
 
 
 def test_vendor_skill_replaces_existing(temp_git_repo):

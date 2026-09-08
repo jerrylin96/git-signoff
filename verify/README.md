@@ -17,7 +17,7 @@ squash merges.
 
 Run inside your repository root:
 ```bash
-curl -fsSL https://raw.githubusercontent.com/jerrylin96/signoff/init-v6/init.py -o /tmp/signoff-init.py && python3 /tmp/signoff-init.py
+curl -fsSL https://raw.githubusercontent.com/jerrylin96/git-signoff/init-v6/init.py -o /tmp/signoff-init.py && python3 /tmp/signoff-init.py
 ```
 
 This automatically scaffolds the workflow, selects your domain interview profile, configures the README badge, configures GitHub ruleset protection, and creates a setup branch ready for `/signoff`.
@@ -43,7 +43,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0   # full history — attestations live in it
-      - uses: jerrylin96/signoff/verify@verify-v1.3
+      - uses: jerrylin96/git-signoff/verify@verify-v1.3
 ```
 
 **2.** (Recommended) Enforce signoff before merge with the preconfigured GitHub Ruleset:
@@ -98,7 +98,7 @@ repository's development pace.
 Override with inputs:
 
 ```yaml
-      - uses: jerrylin96/signoff/verify@verify-v1.3
+      - uses: jerrylin96/git-signoff/verify@verify-v1.3
         with:
           mode: history      # or: head
           target: main       # commit (head) or ref (history)

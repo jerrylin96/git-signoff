@@ -12,8 +12,8 @@ requires-python = ">=3.10"
 dependencies = ["mcp"]
 
 [project.urls]
-Homepage = "https://github.com/jerrylin96/signoff"
-Repository = "https://github.com/jerrylin96/signoff"
+Homepage = "https://github.com/jerrylin96/git-signoff"
+Repository = "https://github.com/jerrylin96/git-signoff"
 
 [project.scripts]
 # The one command. git dispatches `git signoff` to it, so bare invocation prints

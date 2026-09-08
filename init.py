@@ -92,7 +92,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0   # full history — attestations live in it
-      - uses: jerrylin96/signoff/verify@verify-v1.3
+      - uses: jerrylin96/git-signoff/verify@verify-v1.3
 """
 
 RULESET_PAYLOAD = {
@@ -331,7 +331,7 @@ def scaffold_profile(repo_root: Path, profile_id: str = "domain-science") -> Pat
     return profile_file
 
 
-SKILL_SOURCE_REPO = "https://github.com/jerrylin96/signoff"
+SKILL_SOURCE_REPO = "https://github.com/jerrylin96/git-signoff"
 # Pin tag the default vendor clone fetches — the same tag the install
 # snippets serve this script from, so the vendored payload matches the
 # script version instead of silently tracking the default branch. Pin tags

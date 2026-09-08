@@ -91,7 +91,7 @@ Optional MCP enforcement (server-derived status, `ack_no_transcript` circuit
 breaker, stale-state checks — GSA §4):
 
 ```bash
-pip install "git-signoff @ git+https://github.com/jerrylin96/signoff"
+pip install "git-signoff @ git+https://github.com/jerrylin96/git-signoff"
 claude mcp add signoff -- git-signoff serve   # server must run with cwd = target repo
 # (bare `git-signoff` prints help because git dispatches `git signoff` to it)
 ```
