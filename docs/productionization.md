@@ -2,7 +2,7 @@
 
 Going from an internal tool with 1–2 users to software that dozens-to-hundreds
 of people rely on (some paying) demands orders-of-magnitude more scrutiny.
-This document records the strategic decisions behind gsa-core.md §6 Phase 5:
+This document records the strategic decisions behind docs/roadmap.md Phase 5:
 what is decided, what is deliberately deferred, and what evidence unlocks each
 deferred decision. Iterate it adversarially each session that touches Phase 5.
 
@@ -209,7 +209,7 @@ re-discovering it. Context: an outside-user review found the setup story
 convoluted, and distribution was consolidated to a single per-repo channel
 in v0.4.0 — the skill folder vendored into the target repo's
 `.claude/skills/signoff/`; the plugin-marketplace and release-zip channels
-were retired (decision log: gsa-core.md Phase 4 amendment 2026-08-30). The
+were retired (decision log: docs/roadmap.md Phase 4 amendment 2026-08-30). The
 audit principle is dotgemini's ponytail skill: simplest working thing,
 deletion over addition, nothing speculative. Remaining candidates, each
 with a verdict and the trigger that changes it:

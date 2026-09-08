@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Reconstruct refs/notes/signoff from [SIGNOFF *] attestation messages.
 
-Phase 5 Gate 0 (gsa-core.md §6): cloud sessions cannot push notes refs
+Phase 5 Gate 0 (docs/roadmap.md): cloud sessions cannot push notes refs
 through the session git proxy (403), so attestation notes have never reached
 origin. This script rebuilds the notes ref deterministically from the
 attestation payloads already present in history — plus optional payload

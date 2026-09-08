@@ -415,6 +415,7 @@ def test_signoff_phase3f_adaptive_intensity_contract():
         "skills/signoff/HARNESSES.md": None,
         "README.md": None,
         "site/index.html": None,
+        "docs/roadmap.md": None,
     }
     for rel in paths:
         path = os.path.join(root_dir, rel)
@@ -426,15 +427,37 @@ def test_signoff_phase3f_adaptive_intensity_contract():
     harnesses_content = paths["skills/signoff/HARNESSES.md"]
     readme_content = paths["README.md"]
     site_content = paths["site/index.html"]
+    roadmap_content = paths["docs/roadmap.md"]
 
-    # (1) Phase 3f identifier and cross-references
-    assert "Phase 3f (Adaptive Signoff Interview Intensity)" in spec_content, "Missing Phase 3f entry in gsa-core.md"
-    assert "test_signoff_phase3f_adaptive_intensity_contract" in spec_content, (
-        "Phase 3f in gsa-core.md must reference test_signoff_phase3f_adaptive_intensity_contract"
+    # (1) Phase 3f identifier and roadmap cross-references
+    assert "Phase 3f (Adaptive Signoff Interview Intensity)" in roadmap_content, (
+        "Missing Phase 3f entry in docs/roadmap.md"
     )
-    assert "live classification dogfood pending" in spec_content, (
-        "Phase 3f status in gsa-core.md must note live classification dogfood pending"
+    assert "test_signoff_phase3f_adaptive_intensity_contract" in roadmap_content, (
+        "Phase 3f in docs/roadmap.md must reference test_signoff_phase3f_adaptive_intensity_contract"
     )
+    assert "Phase 5 (Cloud & Productionization)" in roadmap_content, (
+        "Missing Phase 5 entry in docs/roadmap.md"
+    )
+    for gate in ("Gate 0", "Gate 1", "Gate 2", "Gate 3"):
+        assert gate in roadmap_content, f"Missing {gate} in docs/roadmap.md"
+    assert "### Phase 4 amendment 2026-08-30" in roadmap_content, (
+        "Missing ### Phase 4 amendment 2026-08-30 heading anchor in docs/roadmap.md"
+    )
+    assert "docs/roadmap.md#phase-4-amendment-2026-08-30" in readme_content, (
+        "Missing docs/roadmap.md#phase-4-amendment-2026-08-30 deep link in README.md"
+    )
+
+    # gsa-core.md must not contain internal project tracking or Section 6
+    assert "## 6. Phase Gate Status" not in spec_content, (
+        "gsa-core.md must not contain Section 6 Phase Gate Status"
+    )
+    assert "Phase Gate Status" not in spec_content, (
+        "gsa-core.md must not contain Phase Gate Status"
+    )
+    assert "Phase 3f" not in spec_content, "gsa-core.md must not contain Phase 3f"
+    assert "Phase 5" not in spec_content, "gsa-core.md must not contain Phase 5"
+    assert "(Stage 1a)" not in spec_content, "gsa-core.md must not contain (Stage 1a)"
 
     # (2) Adaptive classification matrix & naming
     assert "Interview Intensity Levels & Adaptive Classification Matrix" in signoff_content, (
