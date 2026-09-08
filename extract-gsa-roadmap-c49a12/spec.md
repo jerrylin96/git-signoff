@@ -1,7 +1,7 @@
 # Specification: Extract Roadmap from GSA Core Protocol Specification
 
 **Feature:** `extract-gsa-roadmap-c49a12`  
-**Status:** Revised / Phase 1a  
+**Status:** Approved / Phase 1a  
 **Target Scope:** `skills/signoff/specs/gsa-core.md`, `docs/roadmap.md`, `scripts/tests/test_skill_references.py`, `README.md`, `docs/productionization.md`, `scripts/recover_notes.py`, `.github/workflows/notes-recovery.yml`
 
 ---
@@ -17,7 +17,7 @@ Mixing internal repo sprint tracking into a formal protocol specification violat
 ## 2. Requirements & Goals
 
 ### 2.1 Pure Protocol Spec (`skills/signoff/specs/gsa-core.md`)
-- Remove Section 6 (`## 6. Phase Gate Status`) in its entirety (lines 181 to EOF) from `skills/signoff/specs/gsa-core.md`, trimming the trailing horizontal rule (`---`) immediately preceding it.
+- Remove Section 6 (`## 6. Phase Gate Status`) in its entirety (lines 181 to EOF) from `skills/signoff/specs/gsa-core.md`, trimming the trailing horizontal rule (`---`) immediately preceding it (line 179).
 - Ensure `gsa-core.md` strictly contains normative protocol architecture, data structures, trailers, adapter interfaces, and verification algorithms (Sections 1 through 5).
 - Bump Document Version on line 3 from `3.4.0 (adds the specification license declaration)` to `3.5.0 (removes Section 6 project tracking; moved to docs/roadmap.md)`.
 - Clean up header metadata: standardize line 4 to `**Status:** Draft / Pending Review` (stripping `(Stage 1a)` only; preserving the existing `Community-Spec-1.0` declaration on line 7 without duplicate insertion into Status).
@@ -32,16 +32,16 @@ Mixing internal repo sprint tracking into a formal protocol specification violat
 - Content Cleanup:
   - Remove session-ephemeral instructions (e.g., *"before ending a session, adversarially review any plan changes..."*).
   - Prune obsolete Claude Code plugin marketplace notes from Phase 4, keeping the authoritative record of the current per-repo vendoring model (`.claude/skills/signoff/`).
-  - Prune or qualify unverified/retired external helper script paths (e.g., clarify that `scripts/sync_signoff_subtree.sh` was a dotgemini-side script, not present in this repository).
+  - Prune or qualify unverified/retired external helper script paths (clarify that `scripts/sync_signoff_subtree.sh` was a dotgemini-side script, not present in this repository).
 - Retained Backlog Items & Milestones:
-  - **Phase 4 Decision Log Anchor**: Explicitly retain the heading `### Phase 4 amendment 2026-08-30` (or `Phase 4 amendment 2026-08-30`) documenting the consolidation of distribution to per-repo vendoring and retirement of marketplace channels, ensuring the decision log citation in `docs/productionization.md:212` resolves.
+  - **Phase 4 Decision Log Anchor**: Explicitly retain the heading `### Phase 4 amendment 2026-08-30` documenting the consolidation of distribution to per-repo vendoring and retirement of marketplace channels, ensuring the decision log citation in `docs/productionization.md:212` and deep link from `README.md:286` resolve.
   - **Phase 3f (Adaptive Signoff Interview Intensity)**: Retain heading and test identifier `test_signoff_phase3f_adaptive_intensity_contract`; update status to reflect prompt-level shipped and note live adaptive-classification dogfood attestations recorded on `main` (`20c7120` and `2558ebc`).
   - **Phase 5 (Cloud & Productionization)**: Keep as an open backlog item (`[ ] Phase 5 (Cloud & Productionization)`) with numbered gates (0)–(3):
     - Gate 0: Notes-recovery automation (shipped & verified on `main`).
     - Gate 1: Dedicated project website (shipped and deployed via GitHub Pages).
     - Gate 2: Cloud concept promoted to reviewed spec (`specs/gsa-escrow.md` reviewed draft; user-owned baseline).
     - Gate 3: Cloud storage for conversations (deferred pending demand).
-    - Retain actionable to-do items: `verify-v1` tag self-healing check, and PyPI publish status updated to note package name `signoff-mcp` squatted on 2026-05-02.
+    - Status & Actionable items: record `refs/tags/verify-v1` tag self-healing check as verified-complete on origin (`f01ac253`), and update PyPI publish status to document package name `signoff-mcp` squatted on 2026-05-02.
     - Retain standing instruction: iterate `docs/productionization.md` whenever Phase 5 is touched.
   - **Historical Milestones**: Concisely summarize Stages 1a–b, Phases 1–4, and Phases 3a–e with stable markdown anchors.
 
@@ -50,7 +50,7 @@ Mixing internal repo sprint tracking into a formal protocol specification violat
 - Update `scripts/tests/test_skill_references.py`:
   - In `test_signoff_phase3f_adaptive_intensity_contract`:
     - Add `"docs/roadmap.md": None` to the `paths` dictionary while retaining `"skills/signoff/specs/gsa-core.md": None`.
-    - Assert `docs/roadmap.md` contains `"Phase 3f (Adaptive Signoff Interview Intensity)"`, `"test_signoff_phase3f_adaptive_intensity_contract"`, `"Phase 5 (Cloud & Productionization)"`, `"Gate 0"`, `"Gate 1"`, and `"Phase 4 amendment 2026-08-30"`.
+    - Assert `docs/roadmap.md` contains `"Phase 3f (Adaptive Signoff Interview Intensity)"`, `"test_signoff_phase3f_adaptive_intensity_contract"`, `"Phase 5 (Cloud & Productionization)"`, `"Gate 0"`, `"Gate 1"`, `"Gate 2"`, `"Gate 3"`, and `"Phase 4 amendment 2026-08-30"`.
     - Assert `skills/signoff/specs/gsa-core.md` does NOT contain `"## 6. Phase Gate Status"`, `"Phase Gate Status"`, `"Phase 3f"`, `"Phase 5"`, or `"(Stage 1a)"`.
 - Update documentation cross-links:
   - `README.md`:
@@ -76,7 +76,7 @@ Mixing internal repo sprint tracking into a formal protocol specification violat
   - `pytest scripts/tests/test_skill_references.py`
   - `pytest`
 - Isolated runner:
-  - `python3 ~/.gemini/scripts/run_in_env.py /Users/jerrylin/.gemini/tmp/worktrees/gemini_extract-gsa-roadmap-c49a12 pytest`
+  - `python3 ~/.gemini/scripts/run_in_env.py <worktree> pytest`
 - Automated cross-reference verification:
   - Verify grep returns 0 hits for `gsa-core.md §6` across the entire repository.
   - Verify all relative links across touched documents resolve to valid existing files.
