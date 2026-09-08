@@ -1,4 +1,4 @@
-# External Adversarial Review Prompt: Implementation Plan (Round 3 Re-Audit)
+# External Adversarial Review Prompt: Implementation Plan (Final Re-Audit)
 
 ### Reviewer Identity & Session Continuity Directive
 1. If you ALREADY established your REVIEWER_ID in an earlier turn of this session (`reviewer-20402`, `reviewer-20183`), YOU MUST REUSE IT. Do NOT generate a new ID.
@@ -28,17 +28,16 @@ git fetch origin gemini/extract-gsa-roadmap-c49a12 && git diff "${BASE_SHA}" FET
 Plan File: `extract-gsa-roadmap-c49a12/plan.md`  
 Scorecard: `extract-gsa-roadmap-c49a12/reviewer_scorecard.md`
 
-### Task & Scope (Plan Re-Audit)
-Audit the revised `extract-gsa-roadmap-c49a12/plan.md` to verify whether prior Round 3 findings have been fully and accurately addressed:
-1. Deletion of legacy positive assertions on `spec_content` (`test_skill_references.py:431-437`) in Task 1.
-2. Pathspec-scoped `git grep -n "gsa-core.md §6" -- . ':(exclude)extract-gsa-roadmap-c49a12'` in Task 3.
-3. Explicit single atomic commit policy for product files and ephemeral placement for manifest.
-4. Automated relative link verification pass in Task 4.
-5. Clean single trailing newline in `gsa-core.md` and stable anchors for roadmap milestones.
+### Task & Scope
+Verify that all remaining plan review items are resolved:
+1. Back-link literal from `docs/roadmap.md` is `[skills/signoff/specs/gsa-core.md](../skills/signoff/specs/gsa-core.md)`.
+2. Task 1 RED expected failure accurately describes trip point at `test_skill_references.py:422`.
+3. In-repo `pytest` commands prioritized; worktree runner parameterized.
+4. Gate 1 custom domain action retained.
+5. Task 4 single atomic product commit policy clearly specified.
 
 ### Output Protocol
 Append or update your findings in `reviews/${REVIEWER_ID}.md` on your assigned review branch:
 - Header must include `AUDITED_SHA: <current-feature-sha>`.
-- If all prior findings are resolved, emit `VERDICT: APPROVE`.
-- If open issues remain, emit `VERDICT: REVISE` with concrete citations.
+- Emit `VERDICT: APPROVE` if all items are resolved.
 - 3-5 line Adversarial Audit Summary ("What Was Caught & Fixed").
