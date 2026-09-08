@@ -6,19 +6,26 @@ skill, README badges, and GitHub ruleset enforcement.
 
 from __future__ import annotations
 
-import argparse
-import json
-import os
-import re
-import shutil
-import subprocess
 import sys
-import tempfile
-import time
-import webbrowser
-from dataclasses import dataclass, field
-from pathlib import Path
-from typing import Optional
+
+if sys.version_info < (3, 10):  # loud, before anything that only runs on newer Pythons
+    sys.exit(
+        "signoff init.py needs Python 3.10 or newer; this is Python %d.%d. "
+        "Run it with a newer interpreter, e.g. `python3.10 /tmp/signoff-init.py`." % sys.version_info[:2]
+    )
+
+import argparse  # noqa: E402
+import json  # noqa: E402
+import os  # noqa: E402
+import re  # noqa: E402
+import shutil  # noqa: E402
+import subprocess  # noqa: E402
+import tempfile  # noqa: E402
+import time  # noqa: E402
+import webbrowser  # noqa: E402
+from dataclasses import dataclass, field  # noqa: E402
+from pathlib import Path  # noqa: E402
+from typing import Optional  # noqa: E402
 
 SKILL_DEST_CANDIDATES: tuple[str, ...] = (
     ".claude/skills/signoff",
@@ -85,7 +92,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0   # full history — attestations live in it
-      - uses: jerrylin96/signoff/verify@verify-v1.2
+      - uses: jerrylin96/signoff/verify@verify-v1.3
 """
 
 RULESET_PAYLOAD = {
@@ -277,18 +284,48 @@ def detect_recommended_profile(repo_root: Path) -> str:
     return "software-general"
 
 
+def ensure_no_symlink_in_path(repo_root: Path, target: Path) -> None:
+    """Refuse to write through a symlink anywhere between repo_root and target.
+
+    Scaffold writers create real files inside the repository. A symlinked
+    README.md, ``.github/workflows``, or ``.signoff`` would otherwise redirect
+    the write outside the repository while init reports success. The path is
+    never resolved: every component from the target up to (but excluding)
+    repo_root is inspected lexically with ``is_symlink``, so a dangling link is
+    refused as well.
+    """
+    target = Path(target)
+    try:
+        target.relative_to(repo_root)
+    except ValueError:
+        raise RuntimeError(f"Refusing to write outside the repository: {target} is not under {repo_root}.")
+    curr = target
+    while curr != repo_root and curr != curr.parent:
+        if curr.is_symlink():
+            rel = curr.relative_to(repo_root)
+            raise RuntimeError(
+                f"Destination {rel} is a symbolic link. "
+                "The signoff initializer writes real files inside the repository and "
+                "does not write through symlinks. "
+                "Remove the symlink or commit a real copy, then re-run."
+            )
+        curr = curr.parent
+
+
 def scaffold_workflow(repo_root: Path, default_branch: str = "main") -> Path:
     wf_dir = repo_root / ".github" / "workflows"
-    wf_dir.mkdir(parents=True, exist_ok=True)
     wf_file = wf_dir / "signoff.yml"
+    ensure_no_symlink_in_path(repo_root, wf_file)
+    wf_dir.mkdir(parents=True, exist_ok=True)
     wf_file.write_text(WORKFLOW_TEMPLATE.format(default_branch=default_branch), encoding="utf-8")
     return wf_file
 
 
 def scaffold_profile(repo_root: Path, profile_id: str = "domain-science") -> Path:
     profile_dir = repo_root / ".signoff"
-    profile_dir.mkdir(parents=True, exist_ok=True)
     profile_file = profile_dir / "profile.md"
+    ensure_no_symlink_in_path(repo_root, profile_file)
+    profile_dir.mkdir(parents=True, exist_ok=True)
     content = PROFILES.get(profile_id, PROFILES["software-general"])
     profile_file.write_text(content, encoding="utf-8")
     return profile_file
@@ -300,7 +337,7 @@ SKILL_SOURCE_REPO = "https://github.com/jerrylin96/signoff"
 # script version instead of silently tracking the default branch. Pin tags
 # never move; bump this together with the install snippets (README,
 # verify/README.md, site/index.html) and tag.yml's PINS list.
-SKILL_SOURCE_REF = "init-v5"
+SKILL_SOURCE_REF = "init-v6"
 VENDOR_STAMP_FILENAME = "VENDORED-FROM"
 BENIGN_METADATA_FILES: set[str] = {".DS_Store", "Thumbs.db", "desktop.ini"}
 
@@ -621,6 +658,7 @@ def single_destination_hint(
 
 def inject_readme_badge(repo_root: Path, slug: str) -> Path:
     readme = repo_root / "README.md"
+    ensure_no_symlink_in_path(repo_root, readme)
     badge_md = f"[![attested by humans](https://github.com/{slug}/actions/workflows/signoff.yml/badge.svg)](https://github.com/{slug}/actions/workflows/signoff.yml)"
     
     if not readme.is_file():
@@ -716,9 +754,24 @@ def ensure_mutation_boundary_clean(repo_root: Path, scaffold_paths: list[Path]) 
     )
     if managed.returncode != 0:
         raise RuntimeError(f"git status for managed scaffold paths failed: {managed.stderr.strip()}")
-    if managed.stdout.strip():
+    # Untracked/ignored OS metadata (BENIGN_METADATA_FILES) is tolerated under
+    # managed paths, mirroring validate_policy_a: vendoring replaces the
+    # destination wholesale, so losing a .DS_Store is harmless, and refusing it
+    # here would make Policy A's allowance unreachable in the real flow.
+    offending = [
+        line
+        for line in managed.stdout.splitlines()
+        if line.strip()
+        and not (
+            line[:2] in ("??", "!!")
+            and Path(line[3:].strip().strip('"')).name in BENIGN_METADATA_FILES
+        )
+    ]
+    if offending:
         raise RuntimeError(
-            f"Managed scaffold paths contain uncommitted or ignored state:\n{managed.stdout.rstrip()}\n"
+            "Managed scaffold paths contain uncommitted or ignored state:\n"
+            + "\n".join(offending)
+            + "\n"
             "Commit, stash, or remove that state before running init; --allow-dirty does not override this boundary."
         )
 
@@ -792,6 +845,7 @@ def setup_ruleset(
         return RulesetResult(status="skipped")
 
     ruleset_path = repo_root / ".signoff" / "ruleset.json"
+    ensure_no_symlink_in_path(repo_root, ruleset_path)
     ruleset_path.parent.mkdir(parents=True, exist_ok=True)
     ruleset_path.write_text(json.dumps(RULESET_PAYLOAD, indent=2) + "\n", encoding="utf-8")
 
@@ -889,8 +943,11 @@ def _remove_scaffold_path(path: Path) -> str | None:
 def _prune_empty_dir(path: Path) -> str | None:
     """Remove a directory only if it exists and is empty, so pruning never
     touches a directory that still holds unrelated user content (e.g. a
-    pre-existing .github/ with other workflows)."""
+    pre-existing .github/ with other workflows). A symlink is never followed:
+    init never creates symlinks, so one here is the user's and is left alone."""
     try:
+        if path.is_symlink():
+            return None
         if path.is_dir() and not any(path.iterdir()):
             path.rmdir()
     except OSError as exc:
@@ -933,6 +990,8 @@ def _rollback_scaffold(
     preexisting_dirs: Optional[set[Path]] = None,
     preexisting_skill_dirs: Optional[dict[Path, list[Path]]] = None,
     scaffold_started: bool = True,
+    original_head: Optional[str] = None,
+    bootstrap_branch: Optional[str] = None,
 ) -> list[str]:
     """Undo a partial init when a step after branch creation fails.
 
@@ -947,6 +1006,13 @@ def _rollback_scaffold(
     pre-scaffolding failures require only branch cleanup: file removal/restoration
     and directory pruning are skipped entirely so pre-existing untracked files and
     empty directories are never disturbed.
+
+    ``original_head`` is the commit SHA HEAD pointed at when init started; it is
+    required to restore a detached HEAD exactly (the setup branch was created
+    from the base branch, whose tip may differ from the detached commit).
+    ``bootstrap_branch`` names the branch whose first commit init itself created
+    on an unborn repository; that ref is deleted so the repository is left
+    unborn again, exactly as found.
 
     Local git state only — a GitHub ruleset already created via `gh` is idempotent
     and left in place. Best-effort: every step is attempted and failures are
@@ -967,6 +1033,15 @@ def _rollback_scaffold(
         return proc
 
     if scaffold_started:
+        # 0. Unstage everything init may have `git add`ed. A failure after
+        # stage_signoff_files (the staged-paths check or the commit itself)
+        # otherwise leaves index entries for files the steps below delete,
+        # and `git status` reports the repository as dirty after "rollback".
+        # `git reset -q -- <paths>` restores the index for those paths from
+        # HEAD (dropping entries HEAD does not have) and touches nothing else;
+        # HEAD is still the setup branch's start commit here.
+        staged_rels = sorted({p.relative_to(root).as_posix() for p in scaffold_paths})
+        run_git(["reset", "-q", "--", *staged_rels], "unstage scaffold paths")
         # 1. Undo file scaffolding.
         for path in scaffold_paths:
             if path in preexisting:
@@ -981,10 +1056,10 @@ def _rollback_scaffold(
                     # Policy A validation changes, re-audit this removal order so rmtree never
                     # attempts to traverse or silently ignore a symlink.
                     try:
-                        if path.is_dir():
-                            shutil.rmtree(path)
-                        elif path.is_file() or path.is_symlink():
+                        if path.is_symlink() or path.is_file():
                             path.unlink(missing_ok=True)
+                        elif path.is_dir():
+                            shutil.rmtree(path)
                     except OSError as exc:
                         failures.append(f"remove managed destination {rel}: {exc}")
                     checkout_proc = run_git(
@@ -1028,10 +1103,20 @@ def _rollback_scaffold(
     if original_branch:
         run_git(["checkout", original_branch], f"restore branch {original_branch}")
         run_git(["branch", "-D", target_branch], f"delete abandoned branch {target_branch}")
+        if bootstrap_branch:
+            # Init created this branch's only commit on an unborn repository.
+            # Dropping the ref (HEAD still points at it symbolically) returns
+            # the repository to its unborn state.
+            run_git(
+                ["update-ref", "-d", f"refs/heads/{bootstrap_branch}"],
+                f"undo bootstrap commit on {bootstrap_branch}",
+            )
     else:
-        # Detached HEAD at start: re-detach at the current commit (the setup
-        # branch shares it), then drop the branch name.
-        run_git(["checkout", "--detach"], "restore detached HEAD")
+        # Detached HEAD at start: re-detach at the exact original commit. The
+        # setup branch was cut from the base branch, so detaching at the
+        # current commit would strand HEAD on the base branch's tip instead.
+        detach = ["checkout", "--detach"] + ([original_head] if original_head else [])
+        run_git(detach, "restore detached HEAD")
         run_git(["branch", "-D", target_branch], f"delete abandoned branch {target_branch}")
 
     rels = sorted({path.relative_to(root).as_posix() for path in scaffold_paths})
@@ -1081,23 +1166,6 @@ def run_init(
             raise RuntimeError(
                 "Cannot initialize unborn repository with staged changes; unstage or commit them first."
             )
-        subprocess.run(
-            ["git", "symbolic-ref", "HEAD", f"refs/heads/{ctx.default_branch}"],
-            cwd=root,
-            check=True,
-            capture_output=True,
-        )
-        c_proc = subprocess.run(
-            ["git", "commit", "--allow-empty", "-m", f"chore: initialize {ctx.default_branch}"],
-            cwd=root,
-            capture_output=True,
-            text=True,
-            env=_get_commit_env(root),
-        )
-        if c_proc.returncode != 0:
-            raise RuntimeError(f"Failed to create initial commit on {ctx.default_branch}: {c_proc.stderr.strip()}")
-        ctx.current_branch = ctx.default_branch
-        ctx.is_unborn = False
 
     # Step 0.1: Clean tree guard
     ensure_clean_working_tree(root, allow_dirty=allow_dirty)
@@ -1120,11 +1188,52 @@ def run_init(
     # Step 0.3: Policy A verification before branch creation
     for dest in resolved_dests:
         validate_policy_a(dest, root, allow_dirty=allow_dirty)
+    # Scaffold writers must not write through a symlink out of the repository;
+    # refuse here so nothing (no branch, no bootstrap commit) is created first.
+    symlink_checked = [
+        root / ".github" / "workflows" / "signoff.yml",
+        root / ".signoff" / "profile.md",
+    ]
+    if not skip_ruleset:
+        symlink_checked.append(root / ".signoff" / "ruleset.json")
+    if effective_slug and not skip_badge:
+        symlink_checked.append(root / "README.md")
+    for target in symlink_checked:
+        ensure_no_symlink_in_path(root, target)
 
     # Step 0.4: Guard the mutation boundary even when --allow-dirty is set.
     ensure_mutation_boundary_clean(root, scaffold_paths)
 
-    # Step 0.5: Checkout target branch FIRST before scaffolding any files
+    # Step 0.5: Unborn repository bootstrap. This is the first mutation and runs
+    # only after every guard above has passed, so a guard failure leaves an
+    # unborn repository exactly as found (no permanent commit).
+    bootstrap_branch: Optional[str] = None
+    if ctx.is_unborn:
+        subprocess.run(
+            ["git", "symbolic-ref", "HEAD", f"refs/heads/{ctx.default_branch}"],
+            cwd=root,
+            check=True,
+            capture_output=True,
+        )
+        c_proc = subprocess.run(
+            ["git", "commit", "--allow-empty", "-m", f"chore: initialize {ctx.default_branch}"],
+            cwd=root,
+            capture_output=True,
+            text=True,
+            env=_get_commit_env(root),
+        )
+        if c_proc.returncode != 0:
+            raise RuntimeError(f"Failed to create initial commit on {ctx.default_branch}: {c_proc.stderr.strip()}")
+        ctx.current_branch = ctx.default_branch
+        ctx.is_unborn = False
+        bootstrap_branch = ctx.default_branch
+
+    # Capture the concrete commit HEAD points at so a detached HEAD can be
+    # restored exactly on rollback (a branch name alone cannot express it).
+    head_proc = subprocess.run(["git", "rev-parse", "--verify", "HEAD^{commit}"], cwd=root, capture_output=True, text=True)
+    original_head: Optional[str] = head_proc.stdout.strip() if head_proc.returncode == 0 else None
+
+    # Step 0.6: Checkout target branch FIRST before scaffolding any files
     target_branch = resolve_branch_name(root, branch)
     base_ref = ctx.default_branch
     verify_local = subprocess.run(["git", "rev-parse", "--verify", f"{base_ref}^{{commit}}"], cwd=root, capture_output=True, text=True)
@@ -1218,6 +1327,8 @@ def run_init(
             preexisting_dirs=preexisting_dirs,
             preexisting_skill_dirs=preexisting_skill_dirs,
             scaffold_started=scaffold_started,
+            original_head=original_head,
+            bootstrap_branch=bootstrap_branch,
         )
         restored = ctx.current_branch or "the previous state"
         if rollback_failures:

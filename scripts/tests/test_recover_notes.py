@@ -182,3 +182,23 @@ def test_end_to_end_against_this_repo(tmp_path):
     # Pre-extraction production attestation: entry present for missing object.
     listing = git(clone, "ls-tree", "-r", "refs/notes/signoff").stdout
     assert MISSING_COMMIT in listing
+
+
+def test_payload_with_repeated_target_trailer_is_skipped_loudly(repo, capsys):
+    """An attestation whose Reviewed-Tree-SHA appears twice is not one
+    attestation; recovery must not attach it to either tree (a second value
+    smuggled via free text would otherwise attach a note to an unreviewed tree)."""
+    reviewed = git(repo, "rev-parse", "HEAD").stdout.strip()
+    tree = git(repo, "rev-parse", "HEAD^{tree}").stdout.strip()
+    git(
+        repo,
+        "commit",
+        "--allow-empty",
+        "-m",
+        attestation_message(reviewed, tree, extra=f"Signoff-Reviewed-Tree-SHA: {'9' * 40}\n"),
+    )
+    assert recover_notes.recover(str(repo), "HEAD", []) == 0
+    out = capsys.readouterr().out
+    assert "skip" in out and "Signoff-Reviewed-Tree-SHA" in out
+    assert git(repo, "notes", "--ref=signoff", "show", "9" * 40, check=False).returncode != 0
+    assert git(repo, "notes", "--ref=signoff", "show", tree, check=False).returncode != 0

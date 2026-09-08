@@ -55,11 +55,26 @@ def attestation_payloads(repo, ref):
 
 
 def payload_targets(label, payload):
-    """Extract valid 40-hex attachment targets from a payload's trailers."""
-    targets = []
+    """Extract valid 40-hex attachment targets from a payload's trailers.
+
+    One attestation names exactly one reviewed commit and one reviewed tree
+    (gsa-core §2.3). A payload that repeats either trailer is skipped whole:
+    attaching it would put a note on whichever tree the extra line names,
+    which is exactly how a value smuggled through free text would turn into
+    a passing verification for an unreviewed commit.
+    """
+    found = {}
     for trailer in TARGET_TRAILERS:
-        for m in re.finditer(rf"^{trailer}: (\S+)$", payload, re.MULTILINE):
-            sha = m.group(1)
+        found[trailer] = [
+            m.group(1) for m in re.finditer(rf"^{trailer}: (\S+)$", payload, re.MULTILINE)
+        ]
+    repeated = [t for t, shas in found.items() if len(shas) > 1]
+    if repeated:
+        print(f"skip {label}: repeated {', '.join(repeated)} (one attestation carries exactly one)")
+        return []
+    targets = []
+    for trailer, shas in found.items():
+        for sha in shas:
             if not SHA_RE.match(sha):
                 print(f"skip {label}: malformed {trailer} {sha!r}")
             elif sha not in targets:

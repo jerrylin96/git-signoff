@@ -73,3 +73,77 @@ def test_server_help_flag(monkeypatch, capsys):
     assert "init" in captured.out
 
 
+
+
+def test_git_signoff_bare_prints_help_and_never_starts_server(monkeypatch, capsys):
+    """`git signoff` dispatches to the git-signoff executable; bare invocation must not
+    block on stdin waiting for an MCP client."""
+    import sys
+    from unittest.mock import patch
+    from signoff_mcp import server as server_mod
+
+    monkeypatch.setattr(sys, "argv", ["git-signoff"])
+    with patch.object(server_mod, "create_server") as mock_create:
+        with pytest.raises(SystemExit) as exc:
+            server_mod.cli_main()
+    assert exc.value.code == 0
+    mock_create.assert_not_called()
+    out = capsys.readouterr().out
+    assert "usage: git-signoff" in out and "serve" in out and "init" in out
+
+
+def test_git_signoff_serve_runs_server(monkeypatch):
+    import sys
+    from unittest.mock import MagicMock, patch
+    from signoff_mcp import server as server_mod
+
+    monkeypatch.setattr(sys, "argv", ["git-signoff", "serve"])
+    fake = MagicMock()
+    with patch.object(server_mod, "create_server", return_value=fake):
+        server_mod.cli_main()
+    fake.run.assert_called_once_with("stdio")
+
+
+def test_git_signoff_init_dispatches_to_initializer(monkeypatch):
+    import sys
+    from unittest.mock import patch
+    from signoff_mcp import server as server_mod
+
+    monkeypatch.setattr(sys, "argv", ["git-signoff", "init", "--help"])
+    with patch("signoff_mcp.init.main", return_value=0) as mock_init:
+        with pytest.raises(SystemExit) as exc:
+            server_mod.cli_main()
+    assert exc.value.code == 0
+    mock_init.assert_called_once()
+
+
+def test_git_signoff_unknown_command_exits_2(monkeypatch, capsys):
+    import sys
+    from signoff_mcp import server as server_mod
+
+    monkeypatch.setattr(sys, "argv", ["git-signoff", "frobnicate"])
+    with pytest.raises(SystemExit) as exc:
+        server_mod.cli_main()
+    assert exc.value.code == 2
+    assert "unknown command" in capsys.readouterr().err
+
+
+def test_signoff_mcp_alias_bare_still_runs_server(monkeypatch):
+    import sys
+    from unittest.mock import MagicMock, patch
+    from signoff_mcp import server as server_mod
+
+    monkeypatch.setattr(sys, "argv", ["signoff-mcp"])
+    fake = MagicMock()
+    with patch.object(server_mod, "create_server", return_value=fake):
+        server_mod.main()
+    fake.run.assert_called_once_with("stdio")
+
+
+def test_console_scripts_declared():
+    from pathlib import Path
+
+    # No tomllib: the suite also runs on Python 3.10.
+    text = (Path(__file__).resolve().parents[2] / "pyproject.toml").read_text()
+    assert 'git-signoff = "signoff_mcp.server:cli_main"' in text
+    assert 'signoff-mcp = "signoff_mcp.server:main"' in text

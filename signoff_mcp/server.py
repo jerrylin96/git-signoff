@@ -38,7 +38,9 @@ def create_server(repo_path: str | None = None) -> MCPServer:
         categories detected in the range diff (non-empty means the
         domain-science emphases apply additively and cursory must be
         refused). reference_ref defaults to the target's configured upstream;
-        pass it explicitly when no upstream exists.
+        pass it explicitly when no upstream exists. target_ref must resolve to
+        HEAD (the attestation is committed on the checked-out branch); any
+        other ref is refused here rather than failing as stale at commit time.
         """
         try:
             prep = core.prepare(repo, target_ref, reference_ref)
@@ -95,20 +97,55 @@ def create_server(repo_path: str | None = None) -> MCPServer:
     return server
 
 
-def main() -> None:
-    if len(sys.argv) > 1:
-        if sys.argv[1] == "init":
-            from signoff_mcp import init_cli
+def _usage(prog: str, bare_runs_server: bool) -> str:
+    bare = "Runs the stdio MCP server for agent harnesses" if bare_runs_server else "Prints this help"
+    return (
+        f"usage: {prog} [serve|init] [options]\n\n"
+        "Git Signoff Attestation (GSA): deterministic MCP server mechanics and the\n"
+        "zero-touch repository initializer.\n\n"
+        "commands:\n"
+        "  serve   Run the stdio MCP server for agent harnesses (e.g. `claude mcp add signoff -- git-signoff serve`)\n"
+        "  init    Zero-touch repository initializer (scaffolds workflow, profile, ruleset)\n"
+        f"  (none)  {bare}\n"
+    )
 
-            sys.exit(init_cli.main())
-        elif sys.argv[1] in ("-h", "--help"):
-            print("usage: signoff-mcp [init] [options]\n")
-            print("Deterministic MCP server mechanics for Git Signoff Attestations (GSA).\n")
-            print("commands:")
-            print("  init    Zero-touch repository initializer (scaffolds workflow, profile, ruleset)")
-            print("  (none)  Runs stdio MCP server for agent harnesses\n")
-            sys.exit(0)
-    create_server().run("stdio")
+
+def _dispatch(prog: str, argv: list[str], bare_runs_server: bool) -> None:
+    if argv and argv[0] == "init":
+        from signoff_mcp import init_cli
+
+        sys.exit(init_cli.main())
+    if argv and argv[0] == "serve":
+        create_server().run("stdio")
+        return
+    if argv and argv[0] in ("-h", "--help"):
+        print(_usage(prog, bare_runs_server))
+        sys.exit(0)
+    if argv:
+        print(f"{prog}: unknown command {argv[0]!r}\n\n{_usage(prog, bare_runs_server)}", file=sys.stderr)
+        sys.exit(2)
+    if bare_runs_server:
+        create_server().run("stdio")
+        return
+    print(_usage(prog, bare_runs_server))
+    sys.exit(0)
+
+
+def cli_main() -> None:
+    """`git-signoff` entry point.
+
+    git dispatches `git signoff` to any `git-signoff` executable on PATH, so
+    the bare command must never start a stdio server that sits waiting on
+    stdin; it prints help. `git-signoff serve` runs the MCP server and
+    `git-signoff init` the initializer.
+    """
+    _dispatch("git-signoff", sys.argv[1:], bare_runs_server=False)
+
+
+def main() -> None:
+    """`signoff-mcp` entry point — kept as a compatibility alias. Bare
+    invocation still runs the server so existing `claude mcp add` registrations keep working."""
+    _dispatch("signoff-mcp", sys.argv[1:], bare_runs_server=True)
 
 
 if __name__ == "__main__":

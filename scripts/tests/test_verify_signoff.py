@@ -980,3 +980,153 @@ def test_check_audit_rejects_malformed_trailers(repo):
     assert ok is False
     assert any("Malformed signoff attestation" in line or "No signoff attestation found" in line for line in lines)
 
+
+
+# --- Trailer-injection hardening (single-valued trailers appear exactly once) ---
+
+
+def _no_digest_message(reviewed_sha, tree_sha):
+    return (
+        f"[SIGNOFF {reviewed_sha[:7]}]: human comprehension and risk attestation\n"
+        "\n"
+        "Signoff-Spec-Version: 1.0\n"
+        "Signoff-Status: VERIFIED_BY_HUMAN_NO_TRANSCRIPT_DIGEST\n"
+        "Signoff-Timestamp: 2026-09-01T00:00:00Z\n"
+        f"Signoff-Reviewed-Commit-SHA: {reviewed_sha}\n"
+        f"Signoff-Reviewed-Tree-SHA: {tree_sha}\n"
+        "Signoff-Transcript-Digest: unavailable\n"
+        "Signoff-Transcript-Bytes: unavailable\n"
+        "Signoff-Verified-By: tester@example.com\n"
+    )
+
+
+def test_validate_single_rejects_repeated_single_valued_trailers():
+    payload = attestation_message("1" * 40, "2" * 40) + "Signoff-Reviewed-Tree-SHA: " + "3" * 40 + "\n"
+    trailers = verify_signoff.parse_trailers(payload)
+    assert verify_signoff.validate(trailers) == []  # structurally well-formed values
+    problems = verify_signoff.validate_single(trailers)
+    assert any("duplicate Signoff-Reviewed-Tree-SHA" in p for p in problems)
+
+
+def test_head_mode_rejects_tree_sha_injected_via_tradeoff_text(repo):
+    """A tradeoff containing a newline + a second Reviewed-Tree-SHA line must not
+    let a later unreviewed commit with that tree pass the PR gate via history."""
+    # Stage the future (unreviewed) content and learn its tree without committing.
+    (repo / "evil.sh").write_text("rm -rf /\n")
+    git(repo, "add", "evil.sh")
+    future_tree = git(repo, "write-tree").stdout.strip()
+    git(repo, "reset", "-q")  # unstage; keep the file untracked for now
+    reviewed = git(repo, "rev-parse", "HEAD").stdout.strip()
+    tree = git(repo, "rev-parse", "HEAD^{tree}").stdout.strip()
+    injected = attestation_message(reviewed, tree) + (
+        "Signoff-Tradeoff: accepted\n" f"Signoff-Reviewed-Tree-SHA: {future_tree}\n"
+    )
+    git(repo, "commit", "--allow-empty", "-m", injected)
+    # The attestation commit itself is malformed at the tip.
+    ok, lines = verify_signoff.check_head(str(repo), "HEAD")
+    assert not ok
+    assert "duplicate Signoff-Reviewed-Tree-SHA" in "\n".join(lines)
+    # Now land the unreviewed commit; its tree equals the injected value.
+    git(repo, "add", "evil.sh")
+    git(repo, "commit", "-q", "-m", "unreviewed")
+    assert git(repo, "rev-parse", "HEAD^{tree}").stdout.strip() == future_tree
+    ok, lines = verify_signoff.check_head(str(repo), "HEAD")
+    assert not ok, "\n".join(lines)
+
+
+def test_history_mode_reports_duplicate_single_valued_trailer_as_invalid(repo):
+    reviewed, tree = attest_head(repo)
+    commit_file(repo, "b.txt", "x", "more work")
+    reviewed2 = git(repo, "rev-parse", "HEAD").stdout.strip()
+    tree2 = git(repo, "rev-parse", "HEAD^{tree}").stdout.strip()
+    git(
+        repo,
+        "commit",
+        "--allow-empty",
+        "-m",
+        attestation_message(reviewed2, tree2) + "Signoff-Status: VERIFIED_BY_HUMAN\n",
+    )
+    ok, lines = verify_signoff.check_history(str(repo), "HEAD", require=1)
+    text = "\n".join(lines)
+    assert ok
+    assert "1 valid attestation(s)" in lines[0]
+    assert "duplicate Signoff-Status" in text
+
+
+def test_head_mode_squash_passes_when_note_holds_no_digest_then_digest_blocks(repo, tmp_path):
+    """Re-attesting the same commit (first without a transcript, then with one)
+    appends two blocks to the same note; the squash-merge tree lookup must
+    evaluate them per block, not as one payload with two statuses."""
+    reviewed = git(repo, "rev-parse", "HEAD").stdout.strip()
+    tree = git(repo, "rev-parse", "HEAD^{tree}").stdout.strip()
+    squashed = init_repo(tmp_path / "squashed")
+    commit_file(squashed, "a.txt", "hello", "squash-merged")
+    assert git(squashed, "rev-parse", "HEAD^{tree}").stdout.strip() == tree
+    git(squashed, "notes", "--ref=refs/notes/signoff", "add", "-m", _no_digest_message(reviewed, tree), "HEAD^{tree}")
+    git(squashed, "notes", "--ref=refs/notes/signoff", "append", "-m", attestation_message(reviewed, tree), "HEAD^{tree}")
+    ok, lines = verify_signoff.check_head(str(squashed), "HEAD")
+    assert ok, "\n".join(lines)
+    assert "status=VERIFIED_BY_HUMAN " in lines[1] or "status=VERIFIED_BY_HUMAN\n" in lines[1] + "\n"
+
+
+def test_head_mode_accepts_cat_sort_uniq_merged_note_on_the_verified_object(repo, tmp_path):
+    """A cat_sort_uniq-merged note cannot be split into attestations; it is
+    accepted only on the strength of its attachment to the verified object."""
+    reviewed = git(repo, "rev-parse", "HEAD").stdout.strip()
+    tree = git(repo, "rev-parse", "HEAD^{tree}").stdout.strip()
+    a = attestation_message(reviewed, tree) + "Signoff-Timestamp: 2026-09-01T00:00:00Z\n"
+    b = attestation_message(reviewed, tree) + "Signoff-Timestamp: 2026-09-02T00:00:00Z\n"
+    merged = "\n".join(sorted(set(a.splitlines()) | set(b.splitlines()))) + "\n"
+    squashed = init_repo(tmp_path / "squashed")
+    commit_file(squashed, "a.txt", "hello", "squash-merged")
+    git(squashed, "notes", "--ref=refs/notes/signoff", "add", "-m", merged, "HEAD^{tree}")
+    ok, lines = verify_signoff.check_head(str(squashed), "HEAD")
+    assert ok, "\n".join(lines)
+    assert "merged" in lines[0]
+
+
+def test_head_mode_merged_note_does_not_anchor_an_unrelated_tree(repo, tmp_path):
+    """Membership in a merged note attached to object X anchors only X."""
+    reviewed = git(repo, "rev-parse", "HEAD").stdout.strip()
+    tree = git(repo, "rev-parse", "HEAD^{tree}").stdout.strip()
+    other = init_repo(tmp_path / "other")
+    commit_file(other, "z.txt", "unrelated", "unrelated work")
+    other_tree = git(other, "rev-parse", "HEAD^{tree}").stdout.strip()
+    a = attestation_message(reviewed, tree) + "Signoff-Timestamp: 2026-09-01T00:00:00Z\n"
+    b = attestation_message(reviewed, other_tree) + "Signoff-Timestamp: 2026-09-02T00:00:00Z\n"
+    merged = "\n".join(sorted(set(a.splitlines()) | set(b.splitlines()))) + "\n"
+    # Note lives on `tree`, but `other` is verified: nothing is attached to other_tree.
+    git(repo, "notes", "--ref=refs/notes/signoff", "add", "-m", merged, tree)
+    ok, _ = verify_signoff.check_head(str(other), "HEAD")
+    assert not ok
+
+
+def test_history_mode_counts_cat_sort_uniq_merged_note_once(repo):
+    reviewed, tree = attest_head(repo)
+    a = attestation_message(reviewed, tree) + "Signoff-Timestamp: 2026-09-01T00:00:00Z\n"
+    b = attestation_message(reviewed, tree) + "Signoff-Timestamp: 2026-09-02T00:00:00Z\n"
+    merged = "\n".join(sorted(set(a.splitlines()) | set(b.splitlines()))) + "\n"
+    git(repo, "notes", "--ref=refs/notes/signoff", "add", "-m", merged, tree)
+    ok, lines = verify_signoff.check_history(str(repo), "HEAD", require=1)
+    text = "\n".join(lines)
+    assert ok
+    assert "invalid" not in text, text
+    # The commit payload and the merged note describe the same reviewed commit: one attestation.
+    assert "1 valid attestation(s)" in lines[0]
+
+
+def test_verifier_exits_loudly_below_python_floor(tmp_path):
+    """The verifier runs under whatever python3 a runner or laptop has; below the
+    documented floor it must say so instead of dying on a syntax or type error."""
+    script = os.path.join(REPO_ROOT, "verify", "verify_signoff.py")
+    probe = tmp_path / "probe.py"
+    probe.write_text(
+        "import runpy, sys\n"
+        "sys.version_info = (3, 9, 18, 'final', 0)\n"
+        "sys.argv = ['verify_signoff.py', '--mode', 'history']\n"
+        f"runpy.run_path({script!r}, run_name='__main__')\n"
+    )
+    proc = subprocess.run([sys.executable, str(probe)], capture_output=True, text=True)
+    assert proc.returncode == 1
+    assert "needs Python 3.10 or newer" in proc.stderr
+    assert "3.9" in proc.stderr

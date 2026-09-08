@@ -35,7 +35,7 @@ def test_site_covers_install_channel_and_links():
     html = _html()
     # Candidate distribution channels: skill folders vendored into target repo.
     assert ".claude/skills/signoff/" in html
-    assert "raw.githubusercontent.com/jerrylin96/signoff/init-v5/init.py" in html
+    assert "raw.githubusercontent.com/jerrylin96/signoff/init-v6/init.py" in html
     assert ".agents/skills/signoff" in html
     assert "skills/signoff/specs/gsa-core.md" in html
     assert "HARNESSES.md" in html

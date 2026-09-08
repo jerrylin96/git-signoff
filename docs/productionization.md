@@ -240,8 +240,12 @@ with a verdict and the trigger that changes it:
   `git-signoff` (2026-09-08) because `signoff-mcp` on PyPI belongs to an
   unrelated project published 2026-05-02; three unrelated products in the
   AI-agent space now use the bare word "signoff", so adoption-path surfaces
-  lead with "Git Signoff Attestation" rather than the bare word. Keep the
-  server out of the adoption path either way.
+  lead with "Git Signoff Attestation" rather than the bare word. The primary
+  command is `git-signoff` too (`serve` / `init` subcommands; bare prints
+  help since git dispatches `git signoff` to it), with `signoff-mcp` as an
+  alias, so what a user installs, types, and reads match. Nothing is on PyPI
+  until the pending-publisher user action below is done. Keep the server out
+  of the adoption path either way.
 - **Escrow spec (`gsa-escrow.md`)**: already evidence-gated — correct
   shape; no further investment until its gates trip.
 - **Conformance vectors, spec license, in-toto draft**: *not* baggage —

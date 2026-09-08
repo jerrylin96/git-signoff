@@ -58,10 +58,10 @@ Inside your repository root, run the zero-touch initializer (Python 3.10+ stdlib
 
 ```bash
 # Standard software engineering profile:
-curl -fsSL https://raw.githubusercontent.com/jerrylin96/signoff/init-v5/init.py -o /tmp/signoff-init.py && python3 /tmp/signoff-init.py
+curl -fsSL https://raw.githubusercontent.com/jerrylin96/signoff/init-v6/init.py -o /tmp/signoff-init.py && python3 /tmp/signoff-init.py
 
 # Scientific & research computing profile (math, physics, bio, climate, ML):
-curl -fsSL https://raw.githubusercontent.com/jerrylin96/signoff/init-v5/init.py -o /tmp/signoff-init.py && python3 /tmp/signoff-init.py --profile domain-science
+curl -fsSL https://raw.githubusercontent.com/jerrylin96/signoff/init-v6/init.py -o /tmp/signoff-init.py && python3 /tmp/signoff-init.py --profile domain-science
 ```
 
 The script automatically:
@@ -159,7 +159,7 @@ nothing account-scoped.
 
 | Where you work | One-time action |
 |---|---|
-| **Any repository (Zero-touch)** | `curl -fsSL https://raw.githubusercontent.com/jerrylin96/signoff/init-v5/init.py -o /tmp/signoff-init.py && python3 /tmp/signoff-init.py` (use `--skill-target {auto,claude,agents,both}` to control destinations) |
+| **Any repository (Zero-touch)** | `curl -fsSL https://raw.githubusercontent.com/jerrylin96/signoff/init-v6/init.py -o /tmp/signoff-init.py && python3 /tmp/signoff-init.py` (use `--skill-target {auto,claude,agents,both}` to control destinations) |
 | **Any repository (manual)** | Copy this repo's `skills/signoff/` folder to `<your-repo>/.claude/skills/signoff/` (Claude Code) or `<your-repo>/.agents/skills/signoff/` (Antigravity, Codex, Cursor, etc.) and commit before running the initializer; an untracked skill destination now aborts as an unrelated working-tree change. Update by re-copying (or re-running the initializer) on new releases. |
 | **Other harnesses (Antigravity, Codex, Cursor, …)** | Same folder, cross-client convention: copy `skills/signoff/` into `.agents/skills/signoff` (or `.claude/skills/signoff`) and set the transcript adapter env vars — full matrix in [HARNESSES.md](skills/signoff/HARNESSES.md). |
 
@@ -270,13 +270,13 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0   # full history — attestations live in it
-      - uses: jerrylin96/signoff/verify@verify-v1.2
+      - uses: jerrylin96/signoff/verify@verify-v1.3
 ```
 
 Supports standard merge strategies: **2-parent PR merges** (verifies clean merge tree & attested PR head in `head` mode), **fast-forward merges** (`head` mode), **squash merges** (`history` mode; in `head` mode when base is unchanged), and **rebase merges** (`history` mode; in `head` mode, re-run `/signoff` after rebase). Enforce strictly with preconfigured [`ruleset.json`](verify/ruleset.json). Full setup & badge markdown: [`verify/`](verify/README.md).
 
 The protocol is harness-, model-, and vendor-neutral. The skill is
-prompt-driven and self-contained; the optional `signoff-mcp` server adds
+prompt-driven and self-contained; the optional `git-signoff` MCP server adds
 deterministic server-side enforcement (derived status, stale-state circuit
 breakers, notes concurrency handling).
 
@@ -295,18 +295,23 @@ every surface; [docs/roadmap.md#phase-4-amendment-2026-08-30](docs/roadmap.md#ph
 
 ```bash
 pip install "git-signoff @ git+https://github.com/jerrylin96/signoff"
-claude mcp add signoff -- signoff-mcp   # server must run with cwd = target repo
+claude mcp add signoff -- git-signoff serve   # server must run with cwd = target repo
 ```
+
+The command is `git-signoff` (`git-signoff serve` runs the server,
+`git-signoff init` the initializer; bare `git-signoff` prints help, because
+git dispatches `git signoff` to it). `signoff-mcp` remains as a
+compatibility alias.
 
 Tools: `signoff_prepare` (resolves the review range and also reports the
 active interview profile — source, ID, provenance digest — plus the
 science-guard signals detected in the diff), `signoff_commit`
 (server-derived status, `ack_no_transcript` circuit breaker),
-`signoff_push_notes` (`cat_sort_uniq` notes merge). The distribution is
-named `git-signoff` on PyPI (the console script stays `signoff-mcp`);
-`signoff-mcp` as a PyPI name belongs to an unrelated project. Not yet
-published: the credential-free publish workflow (trusted publishing) is in
-place and activates once the PyPI-side pending-publisher entry exists.
+`signoff_push_notes` (`cat_sort_uniq` notes merge). **Not yet on PyPI:**
+install from git as above. It will publish as `git-signoff` (the PyPI name
+`signoff-mcp` belongs to an unrelated project); the credential-free publish
+workflow (trusted publishing) is in place and runs once the name is
+registered as a pending publisher.
 
 ## Status & roadmap
 

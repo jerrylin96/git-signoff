@@ -17,7 +17,7 @@ squash merges.
 
 Run inside your repository root:
 ```bash
-curl -fsSL https://raw.githubusercontent.com/jerrylin96/signoff/init-v5/init.py -o /tmp/signoff-init.py && python3 /tmp/signoff-init.py
+curl -fsSL https://raw.githubusercontent.com/jerrylin96/signoff/init-v6/init.py -o /tmp/signoff-init.py && python3 /tmp/signoff-init.py
 ```
 
 This automatically scaffolds the workflow, selects your domain interview profile, configures the README badge, configures GitHub ruleset protection, and creates a setup branch ready for `/signoff`.
@@ -43,7 +43,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0   # full history — attestations live in it
-      - uses: jerrylin96/signoff/verify@verify-v1.2
+      - uses: jerrylin96/signoff/verify@verify-v1.3
 ```
 
 **2.** (Recommended) Enforce signoff before merge with the preconfigured GitHub Ruleset:
@@ -64,14 +64,20 @@ tags; a breaking change to the action's inputs or pass criteria would ship
 as `verify-v2`. Tracking `@main` works but couples your CI to this
 repository's development pace.
 
-> **If you pinned `@verify-v1` or `@verify-v1.1`, move to `@verify-v1.2`.**
-> `verify-v1` predates a fix for a bug that could destroy attestation notes you had
-> created but not yet pushed: the verifier fetched origin's notes directly
-> into `refs/notes/signoff`, force-overwriting local ones, while still
-> reporting `PASS`. Verdicts are unaffected — only the note-handling side
-> effect. `verify-v1.2` adds native 2-parent merge commit provenance verification
-> for standard GitHub PR merge workflows. Because pins never move, earlier pins
-> keep running older behavior until you re-pin.
+> **If you pinned `@verify-v1`, `@verify-v1.1`, or `@verify-v1.2`, move to `@verify-v1.3`.**
+> `verify-v1.3` closes a PR-gate bypass: earlier verifiers accepted an
+> attestation whose single-valued trailers appeared twice, so a line break
+> smuggled into a trade-off could carry a second `Signoff-Reviewed-Tree-SHA`
+> that made a later, unreviewed commit pass as attested. One attestation now
+> carries each single-valued trailer exactly once (gsa-core §2.3), notes are
+> judged block by block (so re-attesting a commit first without and then with
+> a transcript no longer fails the squash-merge check), and the verifier exits
+> with a clear message below Python 3.10. Earlier history: `verify-v1`
+> predates a fix for a bug that could destroy attestation notes you had
+> created but not yet pushed (origin's notes were fetched directly into
+> `refs/notes/signoff`); `verify-v1.2` added native 2-parent merge commit
+> provenance verification. Because pins never move, earlier pins keep running
+> older behavior until you re-pin.
 
 ## What it checks
 
@@ -92,7 +98,7 @@ repository's development pace.
 Override with inputs:
 
 ```yaml
-      - uses: jerrylin96/signoff/verify@verify-v1.2
+      - uses: jerrylin96/signoff/verify@verify-v1.3
         with:
           mode: history      # or: head
           target: main       # commit (head) or ref (history)

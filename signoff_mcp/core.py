@@ -127,8 +127,21 @@ def prepare(
     reference_ref: str | None = None,
     adapter: TranscriptProvider | None = None,
 ) -> PrepareState:
-    """Resolve reviewed/base/tree SHAs and range diff for Socratic auditing (§4.1)."""
+    """Resolve reviewed/base/tree SHAs and range diff for Socratic auditing (§4.1).
+
+    target_ref must resolve to HEAD: the attestation commit is created on the
+    checked-out branch and commit() refuses a HEAD that differs from the
+    reviewed commit, so a prepare for any other ref could never be committed.
+    Fail here, with the reason, instead of at commit time with "stale".
+    """
     reviewed = repo.out("rev-parse", f"{target_ref}^{{commit}}")
+    head = repo.out("rev-parse", "HEAD")
+    if reviewed != head:
+        raise SignoffError(
+            f"target_ref {target_ref!r} resolves to {reviewed[:7]} but HEAD is {head[:7]}; "
+            "the attestation commit is created on the checked-out branch, so check out the branch "
+            "under review first (or pass target_ref='HEAD')."
+        )
     reference = _resolve_reference(repo, target_ref, reference_ref)
     base = repo.out("merge-base", reference, reviewed)
     tree = repo.out("rev-parse", f"{reviewed}^{{tree}}")
@@ -185,6 +198,28 @@ def _sha256(data: bytes) -> str:
     import hashlib
 
     return hashlib.sha256(data).hexdigest()
+
+
+_TRAILER_LINE_RE = re.compile(r"^Signoff-[A-Za-z0-9-]+:")
+
+
+def _reject_unsafe_text(field: str, value: str, *, multiline: bool = False) -> None:
+    """Free text is interpolated into a line-oriented trailer format (§2.3).
+
+    A line break inside a tradeoff, risk, agent string, or email would start a
+    new line that the verifier reads as a trailer — a second
+    Signoff-Reviewed-Tree-SHA smuggled that way anchors an unreviewed tree.
+    The summary paragraph may span lines but none of them may look like a
+    trailer. Carriage returns are refused everywhere.
+    """
+    if "\r" in value:
+        raise SignoffError(f"{field} must not contain carriage returns (line-oriented trailer format)")
+    if not multiline and "\n" in value:
+        raise SignoffError(f"{field} must be a single line (line-oriented trailer format): {value!r}")
+    if multiline:
+        for line in value.splitlines():
+            if _TRAILER_LINE_RE.match(line.strip()):
+                raise SignoffError(f"{field} must not contain a line that reads as a Signoff- trailer: {line!r}")
 
 
 def build_message(
@@ -247,6 +282,14 @@ def commit(
     """
     if not user_email or "@" not in user_email:
         raise SignoffError(f"Invalid Signoff-Verified-By email: {user_email!r}")
+    _reject_unsafe_text("Signoff-Verified-By", user_email)
+    _reject_unsafe_text("Signoff-Agent", agent)
+    for t in tradeoffs:
+        _reject_unsafe_text("Signoff-Tradeoff", t)
+    for r in risks:
+        _reject_unsafe_text("Signoff-Risk", r)
+    if summary:
+        _reject_unsafe_text("summary", summary, multiline=True)
 
     _check_clean_and_current(repo, state)
 
