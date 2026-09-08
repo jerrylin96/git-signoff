@@ -1,8 +1,9 @@
 name: pypi-publish
 
-# Publishes signoff-mcp to PyPI via trusted publishing (OIDC) — no stored
-# credentials anywhere. One-time user action on pypi.org before the first
-# dispatch: add a trusted publisher for the signoff-mcp project (or as a
+# Publishes the git-signoff distribution to PyPI via trusted publishing (OIDC)
+# — no stored credentials anywhere. (The PyPI name signoff-mcp belongs to an
+# unrelated project.) One-time user action on pypi.org before the first
+# dispatch: add a trusted publisher for the git-signoff project (or as a
 # "pending publisher" if the name is not yet registered) with
 # owner=jerrylin96, repository=signoff, workflow=pypi-publish.yml,
 # environment=pypi. Until that exists, the publish job fails with an OIDC

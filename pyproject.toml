@@ -3,7 +3,7 @@ requires = ["setuptools>=61.0"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "signoff-mcp"
+name = "git-signoff"
 version = "0.4.0"
 description = "Git Signoff Attestation (GSA) Protocol v1.0 — deterministic MCP server mechanics for human comprehension attestations"
 readme = "README.md"

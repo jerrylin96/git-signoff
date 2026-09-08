@@ -4,6 +4,11 @@
 
 **Verify that a human actually understands an AI-assisted diff before it merges.**
 
+Not `git commit --signoff` (the Developer Certificate of Origin trailer), and
+not an approval button: a sign-off button records that someone clicked, a GSA
+attestation records that someone understood — and it lives in your git
+history, not in a hosted dashboard.
+
 `/signoff` flips the usual review direction: instead of you interrogating the
 AI's code, the AI interviews **you** — then records the outcome as a
 machine-parsable, tamper-evident **Git Signoff Attestation** inside your
@@ -289,7 +294,7 @@ every surface; [docs/roadmap.md#phase-4-amendment-2026-08-30](docs/roadmap.md#ph
 ### MCP server (optional enforcement)
 
 ```bash
-pip install "signoff-mcp @ git+https://github.com/jerrylin96/signoff"
+pip install "git-signoff @ git+https://github.com/jerrylin96/signoff"
 claude mcp add signoff -- signoff-mcp   # server must run with cwd = target repo
 ```
 
@@ -297,17 +302,20 @@ Tools: `signoff_prepare` (resolves the review range and also reports the
 active interview profile — source, ID, provenance digest — plus the
 science-guard signals detected in the diff), `signoff_commit`
 (server-derived status, `ack_no_transcript` circuit breaker),
-`signoff_push_notes` (`cat_sort_uniq` notes merge). PyPI release pending:
-the credential-free publish workflow (trusted publishing) is in place;
-it activates once the PyPI-side trusted-publisher configuration exists.
+`signoff_push_notes` (`cat_sort_uniq` notes merge). The distribution is
+named `git-signoff` on PyPI (the console script stays `signoff-mcp`);
+`signoff-mcp` as a PyPI name belongs to an unrelated project. Not yet
+published: the credential-free publish workflow (trusted publishing) is in
+place and activates once the PyPI-side pending-publisher entry exists.
 
 ## Status & roadmap
 
-**v0.2.0** ships the researcher-facing feature set described above —
+**v0.4.0** ships the researcher-facing feature set described above —
 repo-local profiles, the default-on science guard, and profile provenance
-digests — verified end-to-end by scripted mechanics checks plus live
-interview runs: this repository signs off its own branches, and the
-resulting attestations are in its history (`git log --grep='SIGNOFF'`).
+digests — on a single distribution channel (the vendored skill folder),
+verified end-to-end by scripted mechanics checks plus live interview runs:
+this repository signs off its own branches, and the resulting attestations
+are in its history (`git log --grep='SIGNOFF'`).
 Phase 5 (tracked in [docs/roadmap.md](docs/roadmap.md))
 adds the production surface: a [project website](https://jerrylin96.github.io/signoff/),
 the [attested-by-humans badge + CI verifier](verify/README.md),
@@ -316,7 +324,7 @@ automated `refs/notes/signoff` recovery, an open
 for third-party implementations, and a reviewed
 [transcript-escrow spec](skills/signoff/specs/gsa-escrow.md) whose
 privacy baseline is user-owned storage with client-side encryption.
-Cloud escrow implementation and PyPI publish remain next.
+Cloud escrow implementation and the first PyPI publish remain next.
 
 ## Development
 

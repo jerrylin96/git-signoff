@@ -2,7 +2,8 @@
 
 How to install and run `/signoff` on each agent harness. The skill is
 prompt-driven and self-contained (GSA Phase 1); the `signoff-mcp` server
-(GSA Phase 2) is an optional enforcement upgrade wherever MCP is supported.
+(GSA Phase 2, PyPI distribution `git-signoff`) is an optional enforcement
+upgrade wherever MCP is supported.
 Canonical protocol: [specs/gsa-core.md](specs/gsa-core.md).
 
 ## Portability Rules
@@ -90,7 +91,7 @@ Optional MCP enforcement (server-derived status, `ack_no_transcript` circuit
 breaker, stale-state checks — GSA §4):
 
 ```bash
-pip install "signoff-mcp @ git+https://github.com/jerrylin96/signoff"
+pip install "git-signoff @ git+https://github.com/jerrylin96/signoff"
 claude mcp add signoff -- signoff-mcp   # server must run with cwd = target repo
 ```
 

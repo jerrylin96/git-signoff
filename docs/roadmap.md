@@ -30,7 +30,7 @@ Take signoff from a local experimental tool to production-ready for a growing us
 
 #### Operational Checklist & Standardization:
 - [x] **Pin Tag**: Tag `verify-v1` created and verified on origin (`f01ac253`), self-healed via `.github/workflows/tag.yml`.
-- [ ] **PyPI Package Name Conflict (blocked)**: PyPI name `signoff-mcp` squatted since 2026-05-02 by unrelated third party. Publishing is blocked pending package rename or PEP 541 name reclamation.
+- [x] **PyPI Package Name Conflict (resolved by rename)**: the PyPI name `signoff-mcp` has been held since 2026-05-02 by an unrelated project (a verification layer for AI agents; no relation to GSA). The distribution is renamed `git-signoff` in `pyproject.toml`; the import package `signoff_mcp` and the `signoff-mcp` console script are unchanged. Remaining user action: register `git-signoff` on PyPI as a pending trusted publisher (see `docs/productionization.md` → User actions), then dispatch `pypi-publish.yml`.
 - [x] **Standardization Track**: Badge and CI verifier (`verify/`), specification licensing (`LICENSE-SPEC`), conformance vectors (`conformance/`), and in-toto predicate draft (`skills/signoff/specs/gsa-in-toto-predicate.md`).
 
 ---

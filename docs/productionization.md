@@ -214,7 +214,7 @@ audit principle is dotgemini's ponytail skill: simplest working thing,
 deletion over addition, nothing speculative. Remaining candidates, each
 with a verdict and the trigger that changes it:
 
-- **`init.py` duplication** (674 byte-identical lines at root and
+- **`init.py` duplication** (1328 byte-identical lines at root and
   `signoff_mcp/init.py`, pinned by `test_init_scripts_byte_parity`):
   mechanical debt — the parity test makes it safe, but every change is
   written twice. Dedupe when packaging allows, or shrink the script itself:
@@ -236,8 +236,12 @@ with a verdict and the trigger that changes it:
 - **`signoff-mcp` server (~900 lines + tests) and the PyPI publish path**:
   freeze until someone asks for deterministic server-side enforcement — no
   adopter of the skill channel has, and the PyPI trusted-publisher setup
-  remains an unspent user action. Keep it out of the adoption path either
-  way.
+  remains an unspent user action. The distribution was renamed
+  `git-signoff` (2026-09-08) because `signoff-mcp` on PyPI belongs to an
+  unrelated project published 2026-05-02; three unrelated products in the
+  AI-agent space now use the bare word "signoff", so adoption-path surfaces
+  lead with "Git Signoff Attestation" rather than the bare word. Keep the
+  server out of the adoption path either way.
 - **Escrow spec (`gsa-escrow.md`)**: already evidence-gated — correct
   shape; no further investment until its gates trip.
 - **Conformance vectors, spec license, in-toto draft**: *not* baggage —
@@ -329,10 +333,17 @@ Recorded so they never need re-derivation; each names its future fix.
 - Purchase custom domain; DNS to Pages.
 - Enable GitHub Pages in repo settings.
 - GitHub About sidebar text.
-- Configure the PyPI trusted publisher for `signoff-mcp` (pypi.org →
-  Publishing → add pending publisher: owner `jerrylin96`, repository
-  `signoff`, workflow `pypi-publish.yml`, environment `pypi`) — the
-  `pypi-publish` workflow then publishes with no stored credentials.
+- Register `git-signoff` on PyPI as a pending trusted publisher (pypi.org →
+  Publishing → add pending publisher: project `git-signoff`, owner
+  `jerrylin96`, repository `signoff`, workflow `pypi-publish.yml`,
+  environment `pypi`) — the `pypi-publish` workflow then publishes with no
+  stored credentials. Do this soon: `signoff-mcp` was taken by an unrelated
+  project before we published, and a pending publisher reserves the name.
+  Optionally also reserve `git-signoff-mcp` so the obvious variant cannot
+  point elsewhere.
+- Dispatch the `release` workflow to cut the `v0.4.0` tag: `pyproject.toml`
+  has said 0.4.0 since the channel consolidation but the newest release tag
+  on origin is `v0.3.0`.
 - Discovery conversations with prospective users — script:
   [`docs/discovery-interview.md`](discovery-interview.md); keep filled
   notes private, record only aggregated evidence back into this document.
