@@ -444,6 +444,9 @@ def test_signoff_phase3f_adaptive_intensity_contract():
     assert "### Phase 4 amendment 2026-08-30" in roadmap_content, (
         "Missing ### Phase 4 amendment 2026-08-30 heading anchor in docs/roadmap.md"
     )
+    assert "docs/roadmap.md#phase-4-amendment-2026-08-30" in readme_content, (
+        "Missing docs/roadmap.md#phase-4-amendment-2026-08-30 deep link in README.md"
+    )
 
     # gsa-core.md must not contain internal project tracking or Section 6
     assert "## 6. Phase Gate Status" not in spec_content, (

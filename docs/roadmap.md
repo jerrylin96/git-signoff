@@ -15,11 +15,11 @@ This document tracks development milestones, retrospective phase gate logs, and 
 - [x] **Prompt-Level Implementation**: Dynamic auto-classification of interview intensity based on diff semantics and blast radius when bare `/signoff` is invoked without explicit modifiers: Tier 0 (`cursory` for pure docs/types <50 LoC), Tier 1 (`standard` for default feature work, with pure docs of any size capped at Tier 1), and Tier 2 (`skeptical` for high-impact changes: security/auth, schema/migrations, public APIs, numerical/science invariants, or >200 LoC / >5 files). Safety clamps strictly block `--quick` on high-impact diffs and enforce graduated one-way escalation.
 - [x] **Contract Test**: Enforced by `scripts/tests/test_skill_references.py::test_signoff_phase3f_adaptive_intensity_contract`.
 - [x] **Live Dogfood Attestations**: Live classification dogfood verified on `main` in commit `20c7120` (Tier 1 standard intensity) and commit `2558ebc` (Tier 2 skeptical intensity).
-- [-] **Release**: Release cut deferred to post-merge release workflow. Adaptive tiering is prompt-level only and is not mirrored server-side in `signoff_mcp`.
+- [ ] **Release (deferred)**: Release cut deferred to post-merge release workflow. Adaptive tiering is prompt-level only and is not mirrored server-side in `signoff_mcp`.
 
 ---
 
-### [ ] Phase 5 (Cloud & Productionization)
+### Phase 5 (Cloud & Productionization)
 Take signoff from a local experimental tool to production-ready for a growing user base. Strategy and evidence milestones are maintained in `docs/productionization.md` (iterate whenever Phase 5 is touched).
 
 #### Numbered Gate Status:
@@ -30,7 +30,7 @@ Take signoff from a local experimental tool to production-ready for a growing us
 
 #### Operational Checklist & Standardization:
 - [x] **Pin Tag**: Tag `verify-v1` created and verified on origin (`f01ac253`), self-healed via `.github/workflows/tag.yml`.
-- [!] **PyPI Package Name Conflict**: PyPI name `signoff-mcp` squatted since 2026-05-02 by unrelated owner `dschwartz0815`. Publishing is blocked pending package rename or PEP 541 name reclamation.
+- [ ] **PyPI Package Name Conflict (blocked)**: PyPI name `signoff-mcp` squatted since 2026-05-02 by unrelated third party. Publishing is blocked pending package rename or PEP 541 name reclamation.
 - [x] **Standardization Track**: Badge and CI verifier (`verify/`), specification licensing (`LICENSE-SPEC`), conformance vectors (`conformance/`), and in-toto predicate draft (`skills/signoff/specs/gsa-in-toto-predicate.md`).
 
 ---
@@ -53,7 +53,7 @@ Take signoff from a local experimental tool to production-ready for a growing us
 - [x] Per-harness install and portability guide (`skills/signoff/HARNESSES.md`); self-contained skill directory. Enforced by `test_skill_folder_is_self_contained`.
 
 ### Phase 3b — Dogfood Attestations
-- [x] End-to-end `/signoff` runs on Claude Code web (`ad1f5ee`, `0c54122`) and Antigravity. Notes recovery automated via Gate 0.
+- [x] End-to-end `/signoff` runs on Claude Code web (`ad1f5ee`, `0c54122`), and later `codex-cli` and `antigravity-cli` (see `git log --grep=SIGNOFF`). Notes recovery automated via Gate 0.
 
 ### Phase 3c — Interview Customization & Provenance
 - [x] Attestations record interviewer provenance via `Signoff-Agent` trailer. Named interview intensity levels (`cursory`, `standard`, `skeptical`). Swappable interview profile blocks in `skills/signoff/profiles/`.
