@@ -83,8 +83,12 @@ attest.py --version
 ### `prepare`
 
 Refuses a dirty tree (exit 3). Resolves HEAD as the reviewed commit, the
-reference (`--reference`, else `HEAD@{upstream}`, else `main`/`master` with a
-warning; on `main`/`master` itself with no upstream, exit 2), the merge-base,
+reference (`--reference`, else `HEAD@{upstream}` when it is behind HEAD — after
+`git push -u origin <feature>` the upstream is the branch's own remote
+counterpart and is skipped with a warning — else `main`/`master`/`origin/main`/
+`origin/master` with a warning; an explicit reference that already contains
+HEAD is honored with an empty-range warning; on `main`/`master` itself with no
+usable base, exit 2), the merge-base,
 and the tree. Prints:
 
 | Field | Meaning |

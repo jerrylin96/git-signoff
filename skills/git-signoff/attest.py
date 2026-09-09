@@ -592,30 +592,53 @@ class PrepareState:
         }
 
 
-def _resolve_reference(repo: GitRepo, reference: str | None, warnings: list[str]) -> str:
+def _range_is_empty(repo: GitRepo, reference: str, reviewed: str) -> bool:
+    """True when `reference` already contains `reviewed`: there is nothing to review."""
+    return repo.git("merge-base", "--is-ancestor", reviewed, reference, check=False).returncode == 0
+
+
+def _resolve_reference(repo: GitRepo, reference: str | None, reviewed: str, warnings: list[str]) -> str:
     if reference:
         if repo.git("rev-parse", "--verify", "-q", f"{reference}^{{commit}}", check=False).returncode != 0:
             raise AttestError(EXIT_USAGE, f"--reference {reference!r} does not resolve to a commit")
+        if _range_is_empty(repo, reference, reviewed):
+            # Explicit choice: honored (a post-hoc attestation of a merged
+            # commit has Base-SHA == Reviewed-Commit-SHA), but said out loud.
+            warnings.append(
+                f"--reference {reference!r} already contains HEAD: the range to review is empty "
+                "(Base-SHA will equal the reviewed commit). If you meant the base branch, pass that instead."
+            )
         return reference
     proc = repo.git("rev-parse", "--abbrev-ref", "HEAD@{upstream}", check=False)
-    if proc.returncode == 0 and proc.stdout.strip():
-        return proc.stdout.strip()
+    upstream = proc.stdout.strip() if proc.returncode == 0 else ""
+    # After `git push -u origin <feature>` the upstream is the branch's own
+    # remote counterpart, which contains HEAD — an empty range, not a base.
+    # Only an upstream that is *behind* HEAD (the base branch) is usable.
+    if upstream and not _range_is_empty(repo, upstream, reviewed):
+        return upstream
+    if upstream:
+        warnings.append(
+            f"Upstream '{upstream}' already contains HEAD (it is this branch's own remote counterpart, "
+            "not a base); falling back."
+        )
     head_full = repo.git("rev-parse", "--symbolic-full-name", "HEAD", check=False).stdout.strip()
     # On main or master itself there is no sensible default base: never diff a
     # default branch against the other one.
-    candidates = () if head_full in ("refs/heads/main", "refs/heads/master") else ("main", "master")
+    candidates = () if head_full in ("refs/heads/main", "refs/heads/master") else ("main", "master", "origin/main", "origin/master")
     for candidate in candidates:
-        cand_ref = f"refs/heads/{candidate}"
-        if repo.git("rev-parse", "--verify", "-q", cand_ref, check=False).returncode == 0:
-            warnings.append(
-                f"No upstream configured for HEAD; assuming base branch '{candidate}'. "
-                "If this is incorrect, pass --reference explicitly."
-            )
-            return candidate
+        if repo.git("rev-parse", "--verify", "-q", f"{candidate}^{{commit}}", check=False).returncode != 0:
+            continue
+        if _range_is_empty(repo, candidate, reviewed):
+            continue
+        warnings.append(
+            f"No usable upstream for HEAD; assuming base branch '{candidate}'. "
+            "If this is incorrect, pass --reference explicitly."
+        )
+        return candidate
     raise AttestError(
         EXIT_USAGE,
-        "No upstream configured for HEAD and no main/master branch to fall back to; "
-        "pass --reference <branch-or-commit> (no hardcoded remote assumptions per GSA §2.3).",
+        "No base branch could be inferred for HEAD (no upstream behind it, and no main/master that does not "
+        "already contain it); pass --reference <branch-or-commit> (no hardcoded remote assumptions per GSA §2.3).",
     )
 
 
@@ -649,7 +672,7 @@ def prepare(
     reviewed = head.stdout.strip()
     check_clean_tree(repo)
 
-    ref = _resolve_reference(repo, reference, warnings)
+    ref = _resolve_reference(repo, reference, reviewed, warnings)
     base = repo.out("merge-base", ref, reviewed)
     tree = repo.out("rev-parse", f"{reviewed}^{{tree}}")
     rng = f"{base}..{reviewed}"

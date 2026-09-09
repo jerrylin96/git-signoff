@@ -150,6 +150,59 @@ def test_prepare_reference_falls_back_to_master(tmp_path, monkeypatch, capsys):
     assert code == 0 and data["reference"] == "master"
 
 
+def test_prepare_ignores_an_upstream_that_is_the_branch_itself(tmp_path, monkeypatch, capsys):
+    """`git push -u origin feature` makes origin/feature the upstream; it contains
+    HEAD, so it is an empty range, not a base. prepare must fall back to main."""
+    origin = tmp_path / "origin.git"
+    origin.mkdir()
+    git(origin, "init", "-q", "--bare", "-b", "main")
+    work = init_repo(tmp_path / "work")
+    commit_file(work, "base.txt", "base\n", "base commit")
+    git(work, "remote", "add", "origin", str(origin))
+    git(work, "push", "-q", "-u", "origin", "main")
+    git(work, "checkout", "-q", "-b", "feature")
+    commit_file(work, "feat.py", "x = 1\n", "feature commit")
+    git(work, "push", "-q", "-u", "origin", "feature")
+    assert git(work, "rev-parse", "--abbrev-ref", "HEAD@{upstream}").stdout.strip() == "origin/feature"
+    code, data, err = run_json(monkeypatch, capsys, work, "prepare")
+    assert code == 0, err
+    assert data["reference"] == "main"
+    assert data["base_sha"] == git(work, "rev-parse", "main").stdout.strip()
+    assert data["name_status"] == ["A\tfeat.py"]
+    assert any("origin/feature" in w and "already contains HEAD" in w for w in data["warnings"])
+
+
+def test_prepare_falls_back_to_origin_main_when_no_local_main(tmp_path, monkeypatch, capsys):
+    origin = tmp_path / "origin.git"
+    origin.mkdir()
+    git(origin, "init", "-q", "--bare", "-b", "main")
+    seed = init_repo(tmp_path / "seed")
+    commit_file(seed, "base.txt", "base\n", "base commit")
+    git(seed, "remote", "add", "origin", str(origin))
+    git(seed, "push", "-q", "origin", "main")
+    work = tmp_path / "work"
+    git(tmp_path, "clone", "-q", str(origin), "work")
+    git(work, "config", "user.email", "t@example.com")
+    git(work, "config", "user.name", "T")
+    git(work, "checkout", "-q", "-b", "feature", "origin/main")
+    git(work, "branch", "-q", "-D", "main")
+    commit_file(work, "feat.py", "x = 1\n", "feature commit")
+    git(work, "push", "-q", "-u", "origin", "feature")
+    code, data, err = run_json(monkeypatch, capsys, work, "prepare")
+    assert code == 0, err
+    assert data["reference"] == "origin/main"
+
+
+def test_prepare_warns_when_explicit_reference_contains_head(scratch_repo, monkeypatch, capsys):
+    """An explicit --reference is honored even when it already contains HEAD
+    (post-hoc attestation of a merged commit), but the empty range is announced."""
+    code, data, err = run_json(monkeypatch, capsys, scratch_repo, "prepare", "--reference", "HEAD")
+    assert code == 0
+    assert data["base_sha"] == data["reviewed_commit_sha"] and data["name_status"] == []
+    assert any("range to review is empty" in w for w in data["warnings"])
+    assert "range to review is empty" in err
+
+
 def test_prepare_never_diffs_main_against_itself(tmp_path, monkeypatch, capsys):
     path = init_repo(tmp_path / "repo_main", branch="main")
     commit_file(path, "base.txt", "base\n", "base commit")
