@@ -8,7 +8,7 @@ import pytest
 ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 RULESET_PATH = os.path.join(ROOT, "verify", "ruleset.json")
 LEGACY_PATH = os.path.join(ROOT, "Signoff Enforcement.json")
-WORKFLOW_PATH = os.path.join(ROOT, ".github", "workflows", "signoff.yml")
+WORKFLOW_PATH = os.path.join(ROOT, ".github", "workflows", "git-signoff.yml")
 
 ALLOWED_TOP_LEVEL_KEYS = {
     "name",
@@ -59,7 +59,7 @@ def extract_signoff_workflow_job_name():
         content = f.read()
     # Find job names declared under `jobs:` indented by 2 spaces
     m = re.search(r"^jobs:\s*\n\s{2}([a-zA-Z0-9_-]+):", content, re.MULTILINE)
-    assert m, "Could not extract primary job name from .github/workflows/signoff.yml"
+    assert m, "Could not extract primary job name from .github/workflows/git-signoff.yml"
     return m.group(1)
 
 
@@ -147,7 +147,7 @@ def test_ruleset_status_check_context(ruleset_data):
 
 
 def test_ruleset_and_workflow_status_check_synchronized(ruleset_data):
-    """Regression test: workflow job name in signoff.yml and required context in ruleset.json are synchronized."""
+    """Regression test: workflow job name in git-signoff.yml and required context in ruleset.json are synchronized."""
     workflow_job_name = extract_signoff_workflow_job_name()
     rules = ruleset_data.get("rules", [])
     check_rule = next((r for r in rules if r.get("type") == "required_status_checks"), None)
@@ -156,6 +156,6 @@ def test_ruleset_and_workflow_status_check_synchronized(ruleset_data):
     contexts = [c.get("context") for c in checks]
 
     assert workflow_job_name in contexts, (
-        f"Workflow job name '{workflow_job_name}' in .github/workflows/signoff.yml "
+        f"Workflow job name '{workflow_job_name}' in .github/workflows/git-signoff.yml "
         f"does not match required status checks in verify/ruleset.json ({contexts})"
     )

@@ -30,13 +30,13 @@ A scientific interview profile shifts the probe weight to:
 To initialize a repository with the built-in scientific profile, pass `--profile domain-science`:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/jerrylin96/git-signoff/init-v6/init.py -o /tmp/signoff-init.py && python3 /tmp/signoff-init.py --profile domain-science
+curl -fsSL https://raw.githubusercontent.com/jerrylin96/git-signoff/init-v7/init.py -o /tmp/signoff-init.py && python3 /tmp/signoff-init.py --profile domain-science
 ```
 
-This automatically writes `.signoff/profile.md` configured for scientific computing, vendors the skill, and sets up CI verification.
+This automatically writes `.git-signoff/profile.md` configured for scientific computing, vendors the skill, and sets up CI verification.
 
-### Option B: Commit `.signoff/profile.md` Manually
-In any existing repository using `/signoff`, create `.signoff/profile.md` at the repository root and paste the canonical profile block from [`domain-science.md`](domain-science.md) (or copy verbatim below):
+### Option B: Commit `.git-signoff/profile.md` Manually
+In any existing repository using `/git-signoff`, create `.git-signoff/profile.md` at the repository root and paste the canonical profile block from [`domain-science.md`](domain-science.md) (or copy verbatim below):
 
 ```markdown
 <!-- INTERVIEW-PROFILE:BEGIN (sole customization point — replace only this block) -->
@@ -69,7 +69,7 @@ or lower pass criteria:
 <!-- INTERVIEW-PROFILE:END -->
 ```
 
-Every collaborator running `/signoff` in that repository will now be interviewed against these scientific emphases.
+Every collaborator running `/git-signoff` in that repository will now be interviewed against these scientific emphases.
 
 ---
 
@@ -94,7 +94,7 @@ Profiles **cannot** remove axes or lower pass criteria. Instead, your profile pr
 
 ## 4. Discipline-Specific Profile Templates
 
-Copy the template that best matches your lab's domain, rename `Profile-ID:`, and paste into `.signoff/profile.md`.
+Copy the template that best matches your lab's domain, rename `Profile-ID:`, and paste into `.git-signoff/profile.md`.
 
 ### Template A: Physical & Geophysical Simulation (Climate, Fluids, Astrophysics)
 ```markdown
@@ -184,7 +184,7 @@ or lower pass criteria:
 
 ## 5. Audit Trail & Provenance
 
-When you customize `.signoff/profile.md`, signoff computes a SHA-256 digest of your profile block and records it directly into the immutable git attestation trailer:
+When you customize `.git-signoff/profile.md`, signoff computes a SHA-256 digest of your profile block and records it directly into the immutable git attestation trailer:
 
 ```text
 Signoff-Agent: ... interview=standard/fluid-climate-sim/sha256:7b9a4c12f08e
@@ -193,4 +193,4 @@ Signoff-Agent: ... interview=standard/fluid-climate-sim/sha256:7b9a4c12f08e
 This guarantees:
 1. **Auditable Peer Review:** Reviewers, lab PIs, and journal editors can inspect the exact question set used during signoff.
 2. **Dilution Detection:** If someone weakens the profile to make signoff easier, the digest changes, creating an indelible tamper-evident trail in git history.
-3. **Survives Updates:** Repo-local `.signoff/profile.md` files survive skill updates, harness migrations, and git worktrees.
+3. **Survives Updates:** Repo-local `.git-signoff/profile.md` files survive skill updates, harness migrations, and git worktrees.

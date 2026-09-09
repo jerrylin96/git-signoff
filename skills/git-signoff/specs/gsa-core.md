@@ -3,7 +3,7 @@
 **Document Version:** 3.6.0 (single-valued trailer rule: producers keep values on one line, verifiers reject repeated single-valued trailers within one attestation; merged-note anchoring scoped to the annotated object; §2.2 and §4 reworded from "the MCP server" to "the producer" — the MCP interface is one informative producer shape, not a required component)  
 **Status:** Draft / Pending Review  
 **Target Scope:** `signoff` skill portability, producer implementations (skill layer; optionally an MCP server), Harness Adapters, Git Notes Attestation, and Open Commit Protocol Core  
-**Canonical Spec Location:** `skills/signoff/specs/gsa-core.md`  
+**Canonical Spec Location:** `skills/git-signoff/specs/gsa-core.md`  
 **License:** This specification is licensed under the [Community Specification License 1.0](https://github.com/jerrylin96/git-signoff/blob/main/LICENSE-SPEC) (SPDX: `Community-Spec-1.0`); the reference implementations in this repository remain MIT.  
 
 ---
@@ -74,8 +74,8 @@ Signoff-Agent: harness=<harness-id>/<version|N/A> model=<model-id|N/A> reasoning
   - **Empty Rule:** Write `Signoff-Tradeoff: none` or `Signoff-Risk: none` exactly once if zero items were identified.
 - **Single-Valued Trailers (all others):** Within one attestation, every trailer other than `Signoff-Tradeoff` and `Signoff-Risk` MUST appear exactly once if required (§2.1) and at most once if optional. Producers MUST write each value on a single line: free text (trade-offs, risks, the summary paragraph, the agent string, the email) MUST NOT contain line breaks, and no line of the summary paragraph may begin with `Signoff-`; a producer MUST refuse such input rather than write it. Verifiers MUST treat a payload that is one attestation — an attestation commit message, or one block of a note — as invalid when a single-valued trailer appears more than once, and MUST NOT use any value from such a payload to anchor a commit or tree. Rationale: the format is line-oriented, so a line break inside a trade-off is the difference between a comment and a second `Signoff-Reviewed-Tree-SHA` that anchors an unreviewed tree. (Added in 3.6.0 after the reference verifier was shown to accept exactly that; the conformance suite pins it via `invalid-duplicate-reviewed-tree-sha.txt`.)
 - `Signoff-Agent` (Interviewer Provenance):
-  - **Grammar (SHOULD):** `harness=<id>/<version|N/A> model=<model-id|N/A> reasoning=<level|N/A> interview=<intensity-level>/<profile-id>[/sha256:<profile-digest-prefix>]` — space-separated `key=value` tokens in this fixed order, each value matching `[A-Za-z0-9._:/-]+`; the literal `N/A` marks fields the harness does not expose. The optional `/sha256:<profile-digest-prefix>` segment (12-hex prefix of the SHA256 of the delimited profile block) is REQUIRED when the interview profile was resolved from a file (resolution order defined in the skill layer: `SIGNOFF_PROFILE_FILE` env override → `<repo>/.signoff/profile.md` → embedded default block) and MUST be omitted when the embedded shipped block ran — verifiers can thereby distinguish shipped question sets from repo-authored ones.
-  - **Sourcing:** `harness` mirrors `Signoff-Harness-ID` plus the harness version. `model` and `reasoning` identify the interviewing agent, deterministically sourced where the harness provides them (environment variables, transcript metadata from the same snapshot bytes as the digest), agent-self-reported otherwise. `interview` records the interview-intensity level actually run and the active INTERVIEW PROFILE identifier (both defined in the skill layer, `skills/signoff/SKILL.md`).
+  - **Grammar (SHOULD):** `harness=<id>/<version|N/A> model=<model-id|N/A> reasoning=<level|N/A> interview=<intensity-level>/<profile-id>[/sha256:<profile-digest-prefix>]` — space-separated `key=value` tokens in this fixed order, each value matching `[A-Za-z0-9._:/-]+`; the literal `N/A` marks fields the harness does not expose. The optional `/sha256:<profile-digest-prefix>` segment (12-hex prefix of the SHA256 of the delimited profile block) is REQUIRED when the interview profile was resolved from a file (resolution order defined in the skill layer: `GIT_SIGNOFF_PROFILE_FILE` env override → `<repo>/.git-signoff/profile.md` → embedded default block) and MUST be omitted when the embedded shipped block ran — verifiers can thereby distinguish shipped question sets from repo-authored ones.
+  - **Sourcing:** `harness` mirrors `Signoff-Harness-ID` plus the harness version. `model` and `reasoning` identify the interviewing agent, deterministically sourced where the harness provides them (environment variables, transcript metadata from the same snapshot bytes as the digest), agent-self-reported otherwise. `interview` records the interview-intensity level actually run and the active INTERVIEW PROFILE identifier (both defined in the skill layer, `skills/git-signoff/SKILL.md`).
   - **Backward Compatibility:** Values not matching this grammar (including all pre-3c attestations) remain valid opaque strings; verifiers MUST NOT reject an attestation on `Signoff-Agent` format.
 
 ### 2.4 Cryptographic Developer Identity Binding
@@ -143,7 +143,7 @@ class TranscriptProvider(Protocol):
    - Env: `CODEX_SESSION_ID` (optional `CODEX_HOME`)
    - Path: `$CODEX_HOME/sessions/**/rollout-*-{session-id}.jsonl` (newest by mtime, tie-broken by path)
 4. **`GenericFileAdapter`**:
-   - Env: `SIGNOFF_TRANSCRIPT_FILE=/path/to/transcript.log`
+   - Env: `GIT_SIGNOFF_TRANSCRIPT_FILE=/path/to/transcript.log`
 
 ---
 
@@ -159,7 +159,7 @@ The Socratic interrogation logic (probing 4 axes, evaluating user clarity) remai
   - Resolves `reviewed_commit_sha`, `base_sha`, and `tree_sha`.
   - Generates raw range diff, modified file list, and patch stats for LLM Socratic auditing.
   - Detects active `TranscriptProvider` and returns current transcript status (informative only).
-  - Reports the resolved interview profile (source, path, `Profile-ID`, 12-hex block digest — the skill-layer resolution order of §2.3, with an unreadable `SIGNOFF_PROFILE_FILE` aborting and a malformed file-sourced profile falling back to the embedded default with the reason surfaced) and the science-guard signal categories detected in the range diff (informative mirror of the skill layer's Section 1 step 5 and science-detection escalation guard; the agent prompt remains authoritative for interview conduct).
+  - Reports the resolved interview profile (source, path, `Profile-ID`, 12-hex block digest — the skill-layer resolution order of §2.3, with an unreadable `GIT_SIGNOFF_PROFILE_FILE` aborting and a malformed file-sourced profile falling back to the embedded default with the reason surfaced) and the science-guard signal categories detected in the range diff (informative mirror of the skill layer's Section 1 step 5 and science-detection escalation guard; the agent prompt remains authoritative for interview conduct).
 * **`signoff_commit(tradeoffs: list[str], risks: list[str], user_email: str, sign_commit: bool = True, ack_no_transcript: bool = False)`**:
   - **Stale State Circuit Breaker:** Re-verifies `HEAD == reviewed_commit_sha`, `git diff --quiet`, and `git diff --cached --quiet`. Aborts if dirty or stale.
   - **Deterministic Status & Ack Enforcement:** Calls `TranscriptProvider.fetch_transcript_bytes()`. If transcript is unavailable and `ack_no_transcript=False`, server MUST abort execution. If `ack_no_transcript=True`, server sets `Signoff-Status: VERIFIED_BY_HUMAN_NO_TRANSCRIPT_DIGEST`.

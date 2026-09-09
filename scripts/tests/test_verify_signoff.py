@@ -18,7 +18,7 @@ from git_signoff.tests.helpers import commit_file, git, init_repo  # noqa: E402
 
 _SPEC = importlib.util.spec_from_file_location(
     "verify_signoff",
-    os.path.join(os.path.dirname(__file__), "..", "..", "verify", "verify_signoff.py"),
+    os.path.join(os.path.dirname(__file__), "..", "..", "skills", "git-signoff", "verify_signoff.py"),
 )
 verify_signoff = importlib.util.module_from_spec(_SPEC)
 _SPEC.loader.exec_module(verify_signoff)
@@ -455,7 +455,7 @@ def test_check_audit_valid_match(repo, tmp_path, monkeypatch):
     t_file.write_bytes(raw_content)
     nbytes = 25
     expected_digest = f"sha256:{hashlib.sha256(raw_content[:nbytes]).hexdigest()}"
-    monkeypatch.setenv("SIGNOFF_TRANSCRIPT_FILE", str(t_file))
+    monkeypatch.setenv("GIT_SIGNOFF_TRANSCRIPT_FILE", str(t_file))
 
     reviewed = git(repo, "rev-parse", "HEAD").stdout.strip()
     tree = git(repo, "rev-parse", "HEAD^{tree}").stdout.strip()
@@ -478,7 +478,7 @@ def test_check_audit_export(repo, tmp_path, monkeypatch):
     t_file.write_bytes(raw_content)
     nbytes = 17
     expected_digest = f"sha256:{hashlib.sha256(raw_content[:nbytes]).hexdigest()}"
-    monkeypatch.setenv("SIGNOFF_TRANSCRIPT_FILE", str(t_file))
+    monkeypatch.setenv("GIT_SIGNOFF_TRANSCRIPT_FILE", str(t_file))
 
     reviewed = git(repo, "rev-parse", "HEAD").stdout.strip()
     tree = git(repo, "rev-parse", "HEAD^{tree}").stdout.strip()
@@ -498,7 +498,7 @@ def test_check_audit_export(repo, tmp_path, monkeypatch):
 def test_check_audit_mismatch(repo, tmp_path, monkeypatch):
     t_file = tmp_path / "transcript.jsonl"
     t_file.write_bytes(b'{"msg": "altered content"}\n')
-    monkeypatch.setenv("SIGNOFF_TRANSCRIPT_FILE", str(t_file))
+    monkeypatch.setenv("GIT_SIGNOFF_TRANSCRIPT_FILE", str(t_file))
 
     reviewed = git(repo, "rev-parse", "HEAD").stdout.strip()
     tree = git(repo, "rev-parse", "HEAD^{tree}").stdout.strip()
@@ -514,7 +514,7 @@ def test_check_audit_mismatch(repo, tmp_path, monkeypatch):
 
 
 def test_check_audit_missing_file(repo, tmp_path, monkeypatch):
-    monkeypatch.setenv("SIGNOFF_TRANSCRIPT_FILE", str(tmp_path / "nonexistent.jsonl"))
+    monkeypatch.setenv("GIT_SIGNOFF_TRANSCRIPT_FILE", str(tmp_path / "nonexistent.jsonl"))
 
     reviewed = git(repo, "rev-parse", "HEAD").stdout.strip()
     tree = git(repo, "rev-parse", "HEAD^{tree}").stdout.strip()
@@ -606,7 +606,7 @@ def test_check_audit_from_git_notes_on_commit(repo, tmp_path, monkeypatch):
     t_file.write_bytes(raw_content)
     nbytes = len(raw_content)
     expected_digest = f"sha256:{hashlib.sha256(raw_content).hexdigest()}"
-    monkeypatch.setenv("SIGNOFF_TRANSCRIPT_FILE", str(t_file))
+    monkeypatch.setenv("GIT_SIGNOFF_TRANSCRIPT_FILE", str(t_file))
 
     commit_file(repo, "feature.txt", "content\n", "regular feature commit")
     reviewed = git(repo, "rev-parse", "HEAD").stdout.strip()
@@ -629,7 +629,7 @@ def test_check_audit_from_git_notes_on_tree(repo, tmp_path, monkeypatch):
     t_file.write_bytes(raw_content)
     nbytes = len(raw_content)
     expected_digest = f"sha256:{hashlib.sha256(raw_content).hexdigest()}"
-    monkeypatch.setenv("SIGNOFF_TRANSCRIPT_FILE", str(t_file))
+    monkeypatch.setenv("GIT_SIGNOFF_TRANSCRIPT_FILE", str(t_file))
 
     commit_file(repo, "feature.txt", "content\n", "squash commit without commit note")
     reviewed = git(repo, "rev-parse", "HEAD").stdout.strip()
@@ -653,7 +653,7 @@ def test_check_audit_multi_note_block_selection(repo, tmp_path, monkeypatch):
     t_file.write_bytes(raw_content)
     nbytes = len(raw_content)
     expected_digest = f"sha256:{hashlib.sha256(raw_content).hexdigest()}"
-    monkeypatch.setenv("SIGNOFF_TRANSCRIPT_FILE", str(t_file))
+    monkeypatch.setenv("GIT_SIGNOFF_TRANSCRIPT_FILE", str(t_file))
 
     commit_file(repo, "feature.txt", "content\n", "multi-note target commit")
     reviewed = git(repo, "rev-parse", "HEAD").stdout.strip()
@@ -740,7 +740,7 @@ def test_check_audit_cli_flags(repo, tmp_path, monkeypatch):
     t_file.write_bytes(raw_content)
     nbytes = len(raw_content)
     expected_digest = f"sha256:{hashlib.sha256(raw_content).hexdigest()}"
-    monkeypatch.setenv("SIGNOFF_TRANSCRIPT_FILE", str(t_file))
+    monkeypatch.setenv("GIT_SIGNOFF_TRANSCRIPT_FILE", str(t_file))
 
     reviewed = git(repo, "rev-parse", "HEAD").stdout.strip()
     tree = git(repo, "rev-parse", "HEAD^{tree}").stdout.strip()
@@ -938,7 +938,7 @@ def test_check_audit_harness_codex_cli(repo, tmp_path, monkeypatch):
 
 
 def test_check_audit_generic_file_missing_env(repo, monkeypatch):
-    monkeypatch.delenv("SIGNOFF_TRANSCRIPT_FILE", raising=False)
+    monkeypatch.delenv("GIT_SIGNOFF_TRANSCRIPT_FILE", raising=False)
     conv_id = "session-not-a-file-id"
 
     commit_file(repo, "generic_feature.py", "y = 2\n", "add generic feature")
@@ -953,7 +953,7 @@ def test_check_audit_generic_file_missing_env(repo, monkeypatch):
 
     ok, lines = verify_signoff.check_audit(str(repo), "HEAD")
     assert ok is False
-    assert any("SIGNOFF_TRANSCRIPT_FILE" in line for line in lines)
+    assert any("GIT_SIGNOFF_TRANSCRIPT_FILE" in line for line in lines)
 
 
 def test_check_audit_rejects_malformed_trailers(repo):
@@ -1118,7 +1118,7 @@ def test_history_mode_counts_cat_sort_uniq_merged_note_once(repo):
 def test_verifier_exits_loudly_below_python_floor(tmp_path):
     """The verifier runs under whatever python3 a runner or laptop has; below the
     documented floor it must say so instead of dying on a syntax or type error."""
-    script = os.path.join(REPO_ROOT, "verify", "verify_signoff.py")
+    script = os.path.join(REPO_ROOT, "skills", "git-signoff", "verify_signoff.py")
     probe = tmp_path / "probe.py"
     probe.write_text(
         "import runpy, sys\n"

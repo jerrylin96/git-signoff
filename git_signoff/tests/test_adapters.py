@@ -25,7 +25,7 @@ def test_resolution_order_override_wins(tmp_path):
     f = tmp_path / "t.log"
     f.write_bytes(b"hello")
     env = {
-        "SIGNOFF_TRANSCRIPT_FILE": str(f),
+        "GIT_SIGNOFF_TRANSCRIPT_FILE": str(f),
         "ANTIGRAVITY_CONVERSATION_ID": "ag-1",
         "CLAUDE_CODE_SESSION_ID": "cc-1",
     }
@@ -48,7 +48,7 @@ def test_resolution_claude_then_none(tmp_path):
     assert isinstance(a, ClaudeCodeAdapter)
     assert a.harness_id == "claude-code"
     assert resolve_adapter({}) is None
-    assert resolve_adapter({"SIGNOFF_TRANSCRIPT_FILE": "  "}) is None  # whitespace stripped
+    assert resolve_adapter({"GIT_SIGNOFF_TRANSCRIPT_FILE": "  "}) is None  # whitespace stripped
 
 
 def test_generic_missing_file_degrades_to_none(tmp_path):

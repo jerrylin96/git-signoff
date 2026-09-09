@@ -54,7 +54,7 @@ whole dev conversations (secrets, proprietary code, non-consenting third
 parties) — that liability must be justified by demand, not assumed.
 
 **Status 2026-08-06: the gate-2 review is done** — the analysis below is
-now normative in `skills/signoff/specs/gsa-escrow.md` (privacy principles,
+now normative in `skills/git-signoff/specs/gsa-escrow.md` (privacy principles,
 user-owned baseline with age encryption, ciphertext-only operated registry,
 evidence gates, cost model). This section remains the strategy record; the
 spec governs implementations. Building escrow (Phase 5 gate 3) gates on the
@@ -159,7 +159,7 @@ donation vehicle. Milestones, in order:
    remains open and is now a seeding ask, not an engineering task.
    **First divergent implementation observed 2026-08-08:** dotgemini's
    independently authored `Signoff Verification Gate` (its
-   `.github/workflows/signoff.yml`, PR #62) re-implements §5.1 verification
+   `.github/workflows/git-signoff.yml`, PR #62) re-implements §5.1 verification
    in shell and diverged from the reference verifier in exactly the ways a
    conformance suite exists to catch. Two of its checks were *stricter* and
    correct — it required attestation commits to be empty (parent tree ==
@@ -208,7 +208,7 @@ Recorded so future sessions argue against this list instead of
 re-discovering it. Context: an outside-user review found the setup story
 convoluted, and distribution was consolidated to a single per-repo channel
 in v0.4.0 — the skill folder vendored into the target repo's
-`.claude/skills/signoff/`; the plugin-marketplace and release-zip channels
+`.claude/skills/git-signoff/`; the plugin-marketplace and release-zip channels
 were retired (decision log: docs/roadmap.md Phase 4 amendment 2026-08-30). The
 audit principle is dotgemini's ponytail skill: simplest working thing,
 deletion over addition, nothing speculative. Remaining candidates, each
@@ -274,7 +274,7 @@ with a verdict and the trigger that changes it:
   discoverability — the bare word "signoff" is shared with two AI products,
   the DCO `--signoff` trailer, and a chip-design discipline, while
   `git-signoff` names what the tool is attached to and echoes the protocol
-  name — not PyPI consistency, which is moot. `/signoff`, `skills/signoff/`,
+  name — not PyPI consistency, which is moot. `/git-signoff`, `skills/git-signoff/`,
   `refs/notes/signoff`, and the `Signoff-*` trailers keep the bare word
   deliberately: `git-signoff` is the project, `signoff` is the action and the
   protocol vocabulary.
@@ -291,7 +291,7 @@ with a verdict and the trigger that changes it:
 
 Resolution rule for future sessions: adoption-path surfaces (README,
 HARNESSES.md, SKILL.md, `init.py`) get ponytail applied hardest — an
-outside user should reach a working `/signoff` reading almost nothing.
+outside user should reach a working `/git-signoff` reading almost nothing.
 Standards and strategy surfaces (`specs/`, `conformance/`, this document)
 justify their weight by moat milestones, not by user convenience, and are
 allowed to be heavy as long as no install instruction depends on them.
@@ -332,7 +332,7 @@ Recorded so they never need re-derivation; each names its future fix.
 - **Offline initializer runs fail loudly but mid-scaffold — FIXED
   2026-08-31.** With no network, the vendor clone aborts (RuntimeError →
   exit 1) *after* branch creation and workflow/profile scaffolding; it used
-  to leave the repo stranded on `signoff/init` with half-written, unstaged
+  to leave the repo stranded on `git-signoff/init` with half-written, unstaged
   files. `run_init` now rolls back atomically: any failure after branch
   creation removes the paths it created, reverts tracked files it overwrote
   (the README badge) to HEAD, prunes only the directories it made, and
@@ -348,7 +348,7 @@ Recorded so they never need re-derivation; each names its future fix.
   git-ignored destinations, pre-existing ignored untracked descendants, and
   unrelated non-empty directories are refused with actionable diagnostic messages.
   Outside repos should commit real copies — dogfood symlinks at
-  `.claude/skills/signoff` and `.agents/skills/signoff` are this repository's
+  `.claude/skills/git-signoff` and `.agents/skills/git-signoff` are this repository's
   internal pattern only. `--allow-dirty` is intentionally narrow: it permits
   unrelated unstaged/untracked work, but refuses pre-staged changes and any
   uncommitted or ignored state under managed scaffold paths. The guard runs

@@ -1,7 +1,7 @@
 """Interview-profile resolution and science-signal detection (spec §4.1, Phase 3e).
 
-Deterministic server-side mirror of skills/signoff/SKILL.md Section 1 step 5
-(profile resolution: SIGNOFF_PROFILE_FILE env override → <repo>/.signoff/profile.md
+Deterministic server-side mirror of skills/git-signoff/SKILL.md Section 1 step 5
+(profile resolution: GIT_SIGNOFF_PROFILE_FILE env override → <repo>/.git-signoff/profile.md
 → embedded default) and the science-detection escalation guard. Informative
 only: the skill layer remains authoritative for interview conduct; these
 results let signoff_prepare report which question set will run, its
@@ -16,8 +16,8 @@ import re
 from dataclasses import dataclass
 from typing import Mapping
 
-PROFILE_ENV_VAR = "SIGNOFF_PROFILE_FILE"
-REPO_PROFILE_RELPATH = os.path.join(".signoff", "profile.md")
+PROFILE_ENV_VAR = "GIT_SIGNOFF_PROFILE_FILE"
+REPO_PROFILE_RELPATH = os.path.join(".git-signoff", "profile.md")
 EMBEDDED_PROFILE_ID = "software-general"
 
 SOURCE_ENV_OVERRIDE = "env-override"
@@ -30,7 +30,7 @@ _PROFILE_ID_RE = re.compile(rb"^Profile-ID:[ \t]*([a-z0-9-]+)[ \t]*$", re.MULTIL
 
 
 class ProfileOverrideError(Exception):
-    """SIGNOFF_PROFILE_FILE is set but unreadable — abort, never fall back (SKILL.md §1.5)."""
+    """GIT_SIGNOFF_PROFILE_FILE is set but unreadable — abort, never fall back (SKILL.md §1.5)."""
 
 
 @dataclass
@@ -118,9 +118,9 @@ def _resolve_file(path: str, source: str) -> ProfileResolution:
 def resolve_profile(repo_root: str, env: Mapping[str, str] | None = None) -> ProfileResolution:
     """Resolve the active interview profile for a target repository.
 
-    Resolution order mirrors SKILL.md Section 1 step 5: SIGNOFF_PROFILE_FILE
+    Resolution order mirrors SKILL.md Section 1 step 5: GIT_SIGNOFF_PROFILE_FILE
     env override (unreadable → ProfileOverrideError, never a fallback) →
-    <repo_root>/.signoff/profile.md → embedded default. A malformed
+    <repo_root>/.git-signoff/profile.md → embedded default. A malformed
     file-sourced profile falls back to the embedded default with
     ``fallback_reason`` set, so callers can announce it.
     """

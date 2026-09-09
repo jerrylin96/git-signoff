@@ -34,10 +34,10 @@ def test_site_is_self_contained():
 def test_site_covers_install_channel_and_links():
     html = _html()
     # Candidate distribution channels: skill folders vendored into target repo.
-    assert ".claude/skills/signoff/" in html
-    assert "raw.githubusercontent.com/jerrylin96/git-signoff/init-v6/init.py" in html
-    assert ".agents/skills/signoff" in html
-    assert "skills/signoff/specs/gsa-core.md" in html
+    assert ".claude/skills/git-signoff/" in html
+    assert "raw.githubusercontent.com/jerrylin96/git-signoff/init-v7/init.py" in html
+    assert ".agents/skills/git-signoff" in html
+    assert "skills/git-signoff/specs/gsa-core.md" in html
     assert "HARNESSES.md" in html
     # Retired account-scoped channels must not resurface as install paths.
     assert "signoff.zip" not in html
@@ -55,7 +55,7 @@ def test_site_covers_audit_walkthrough():
 def test_site_advertises_badge_and_verifier():
     html = _html()
     assert "attested by humans" in html
-    assert "jerrylin96/git-signoff/verify@verify-v1.3" in html
+    assert "jerrylin96/git-signoff/verify@verify-v1.4" in html
     assert "verify@main" not in html, "site must show the pinned verifier tag, like README and the scaffold"
 
 

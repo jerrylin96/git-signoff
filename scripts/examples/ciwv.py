@@ -1,7 +1,7 @@
 """Column-integrated water vapor (CIWV / precipitable water) from specific humidity.
 
 Phase 3e dogfood fixture: a small but genuinely scientific diff so the
-science-detection escalation guard (skills/signoff/SKILL.md, Interview
+science-detection escalation guard (skills/git-signoff/SKILL.md, Interview
 Intensity Levels → Guards) has real signals to fire on — scientific-stack
 imports, RNG seeding, unit-bearing constants, pressure-level coordinates.
 

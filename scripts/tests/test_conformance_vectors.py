@@ -15,7 +15,7 @@ import pytest
 ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
 
 _SPEC = importlib.util.spec_from_file_location(
-    "verify_signoff", os.path.join(ROOT, "verify", "verify_signoff.py")
+    "verify_signoff", os.path.join(ROOT, "skills", "git-signoff", "verify_signoff.py")
 )
 verify_signoff = importlib.util.module_from_spec(_SPEC)
 _SPEC.loader.exec_module(verify_signoff)

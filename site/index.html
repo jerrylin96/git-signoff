@@ -304,7 +304,7 @@
       tamper-evident, inside your git history.</p>
       <div class="cta">
         <a class="btn solid" href="#install">Install in one step</a>
-        <a class="btn ghost" href="https://github.com/jerrylin96/git-signoff/blob/main/skills/signoff/specs/gsa-core.md">Read the protocol</a>
+        <a class="btn ghost" href="https://github.com/jerrylin96/git-signoff/blob/main/skills/git-signoff/specs/gsa-core.md">Read the protocol</a>
       </div>
     </div>
     <div aria-label="Example attestation record">
@@ -334,7 +334,7 @@ and risk attestation</span>
       <h2>A reverse interview, not a rubber stamp</h2>
     </div>
     <div class="body">
-      <p>Run <code class="inline">/signoff</code> from the branch you want to merge.
+      <p>Run <code class="inline">/git-signoff</code> from the branch you want to merge.
       The agent reads the full diff, then asks you a short series of pointed
       questions across four fixed axes. Vague answers don’t pass: hand-waving
       pauses the signoff, the agent explains the mechanics, and re-probes with
@@ -425,7 +425,7 @@ and risk attestation</span>
         <div class="row">
           <h3>Step 3: Auditor verifies snapshot against git trailers</h3>
           <p class="note">The reviewer sends <code class="inline">transcript.jsonl</code> to the auditor. The auditor verifies the received transcript against the git trailers:</p>
-          <pre class="cmd"><code>SIGNOFF_TRANSCRIPT_FILE=transcript.jsonl python3 verify/verify_signoff.py --audit HEAD</code></pre>
+          <pre class="cmd"><code>GIT_SIGNOFF_TRANSCRIPT_FILE=transcript.jsonl python3 verify/verify_signoff.py --audit HEAD</code></pre>
           <p class="note">Output confirms the transcript digest matches byte-for-byte:</p>
           <pre class="cmd"><code>✅ VALID MATCH: Transcript SHA-256 matches sha256:1675b6...
   Harness: claude-code
@@ -448,37 +448,37 @@ and risk attestation</span>
     <div class="body">
       <p>The skill lives <em>in the repository under review</em> — no plugins,
       no downloads, nothing account-scoped. Then, from the branch you want to merge,
-      type <code class="inline">/signoff</code> (adaptive default auto-selects intensity;
+      type <code class="inline">/git-signoff</code> (adaptive default auto-selects intensity;
       <code class="inline">--deep</code> for skeptical rigor, <code class="inline">--quick</code> for
       low-risk diffs).</p>
       <div class="rows">
         <div class="row">
           <h3>Any repository — zero-touch</h3>
           <p class="note">The initializer vendors the skill into
-          <code class="inline">.claude/skills/signoff/</code> or
-          <code class="inline">.agents/skills/signoff</code> (use
+          <code class="inline">.claude/skills/git-signoff/</code> or
+          <code class="inline">.agents/skills/git-signoff</code> (use
           <code class="inline">--skill-target {auto,claude,agents,both}</code> to control destinations), scaffolds the CI
           gate and interview profile, and opens a ready-to-merge branch.</p>
           <pre class="cmd"><code><span class="c"># standard software engineering profile:</span>
-curl -fsSL https://raw.githubusercontent.com/jerrylin96/git-signoff/init-v6/init.py -o /tmp/signoff-init.py &amp;&amp; python3 /tmp/signoff-init.py
+curl -fsSL https://raw.githubusercontent.com/jerrylin96/git-signoff/init-v7/init.py -o /tmp/signoff-init.py &amp;&amp; python3 /tmp/signoff-init.py
 
 <span class="c"># scientific &amp; research computing profile (math, physics, bio, climate, ML):</span>
-curl -fsSL https://raw.githubusercontent.com/jerrylin96/git-signoff/init-v6/init.py -o /tmp/signoff-init.py &amp;&amp; python3 /tmp/signoff-init.py --profile domain-science</code></pre>
+curl -fsSL https://raw.githubusercontent.com/jerrylin96/git-signoff/init-v7/init.py -o /tmp/signoff-init.py &amp;&amp; python3 /tmp/signoff-init.py --profile domain-science</code></pre>
         </div>
 
         <div class="row">
           <h3>Any repository — manual</h3>
-          <p class="note">Copy <code class="inline">skills/signoff/</code> to
-          <code class="inline">&lt;your-repo&gt;/.claude/skills/signoff/</code>
+          <p class="note">Copy <code class="inline">skills/git-signoff/</code> to
+          <code class="inline">&lt;your-repo&gt;/.claude/skills/git-signoff/</code>
           and commit. That is the whole install for Claude Code — CLI, desktop,
           and claude.ai web/cloud sessions, for every collaborator.</p>
         </div>
         <div class="row">
           <h3>Other harnesses — Antigravity, Codex, Goose, …</h3>
           <p class="note">The skill is a self-contained folder of prompts: copy
-          <code class="inline">skills/signoff/</code> into your harness’s skill
+          <code class="inline">skills/git-signoff/</code> into your harness’s skill
           location and set the transcript adapter env vars. Full matrix in
-          <a href="https://github.com/jerrylin96/git-signoff/blob/main/skills/signoff/HARNESSES.md">HARNESSES.md</a>.</p>
+          <a href="https://github.com/jerrylin96/git-signoff/blob/main/skills/git-signoff/HARNESSES.md">HARNESSES.md</a>.</p>
         </div>
       </div>
     </div>
@@ -504,16 +504,16 @@ curl -fsSL https://raw.githubusercontent.com/jerrylin96/git-signoff/init-v6/init
         <p>Research code fails differently: it rarely crashes; it produces <em>plausible-but-invalid science</em>.
         Standard software engineering questions (<em>O(N log N)</em> complexity, API contracts, thread safety) will not catch
         energy drift, subtle dimensional slips, uncorrected multiple testing, or data leakage across spatial folds.</p>
-        <p>Use the shipped <a href="https://github.com/jerrylin96/git-signoff/blob/main/skills/signoff/profiles/domain-science.md"><code class="inline">domain-science</code></a> profile
-        or follow the <a href="https://github.com/jerrylin96/git-signoff/blob/main/skills/signoff/profiles/README.md"><strong>scientific profile authoring guide</strong></a>
+        <p>Use the shipped <a href="https://github.com/jerrylin96/git-signoff/blob/main/skills/git-signoff/profiles/domain-science.md"><code class="inline">domain-science</code></a> profile
+        or follow the <a href="https://github.com/jerrylin96/git-signoff/blob/main/skills/git-signoff/profiles/README.md"><strong>scientific profile authoring guide</strong></a>
         with ready-to-use templates for fluid dynamics, bioinformatics, neural surrogate models, and numerical analysis.</p>
-        <pre class="cmd"><code><span class="c"># scaffold a scientific profile in .signoff/profile.md:</span>
-curl -fsSL https://raw.githubusercontent.com/jerrylin96/git-signoff/init-v6/init.py -o /tmp/signoff-init.py &amp;&amp; python3 /tmp/signoff-init.py --profile domain-science</code></pre>
+        <pre class="cmd"><code><span class="c"># scaffold a scientific profile in .git-signoff/profile.md:</span>
+curl -fsSL https://raw.githubusercontent.com/jerrylin96/git-signoff/init-v7/init.py -o /tmp/signoff-init.py &amp;&amp; python3 /tmp/signoff-init.py --profile domain-science</code></pre>
       </div>
 
       <ol class="steps">
         <li>
-          <h3>Create <code class="inline">.signoff/profile.md</code> in your repo</h3>
+          <h3>Create <code class="inline">.git-signoff/profile.md</code> in your repo</h3>
           <p>The repository being reviewed carries its own question emphasis —
           for every collaborator, on every harness, surviving skill
           updates.</p>
@@ -521,11 +521,11 @@ curl -fsSL https://raw.githubusercontent.com/jerrylin96/git-signoff/init-v6/init
         <li>
           <h3>Start from a shipped profile or discipline template</h3>
           <p>Paste in
-          <a href="https://github.com/jerrylin96/git-signoff/blob/main/skills/signoff/profiles/domain-science.md"><code class="inline">domain-science</code></a>
+          <a href="https://github.com/jerrylin96/git-signoff/blob/main/skills/git-signoff/profiles/domain-science.md"><code class="inline">domain-science</code></a>
           (research code) or
-          <a href="https://github.com/jerrylin96/git-signoff/blob/main/skills/signoff/profiles/software-general.md"><code class="inline">software-general</code></a>
+          <a href="https://github.com/jerrylin96/git-signoff/blob/main/skills/git-signoff/profiles/software-general.md"><code class="inline">software-general</code></a>
           (classic engineering) — or adapt a discipline template from
-          <a href="https://github.com/jerrylin96/git-signoff/blob/main/skills/signoff/profiles/README.md">the authoring guide</a>
+          <a href="https://github.com/jerrylin96/git-signoff/blob/main/skills/git-signoff/profiles/README.md">the authoring guide</a>
           to name <em>your</em> failure modes: conservation properties of a new
           parameterization, grid-resolution sensitivity of a reported trend,
           leakage between reanalysis training and evaluation periods.</p>
@@ -561,7 +561,7 @@ Signoff-Agent: … interview=standard/your-lab-id/sha256:5fd075753d5b</code></pr
         <span class="badge-note">Green means: a named human understood this
         code and accepted accountability — no more, no less.</span>
       </div>
-      <pre class="cmd"><code><span class="c"># .github/workflows/signoff.yml</span>
+      <pre class="cmd"><code><span class="c"># .github/workflows/git-signoff.yml</span>
 name: attested by humans
 on:
   pull_request:
@@ -572,7 +572,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with: { fetch-depth: 0 }
-      - uses: jerrylin96/git-signoff/verify@verify-v1.3</code></pre>
+      - uses: jerrylin96/git-signoff/verify@verify-v1.4</code></pre>
       <p style="margin-top:1.1rem">The verifier is a single dependency-free
       Python file — copy it into any CI system. Details:
       <a href="https://github.com/jerrylin96/git-signoff/tree/main/verify">verify/</a>.</p>
@@ -594,8 +594,8 @@ jobs:
     <div>
       <h4>Protocol</h4>
       <ul>
-        <li><a href="https://github.com/jerrylin96/git-signoff/blob/main/skills/signoff/specs/gsa-core.md">GSA core spec</a></li>
-        <li><a href="https://github.com/jerrylin96/git-signoff/blob/main/skills/signoff/HARNESSES.md">Harness guide</a></li>
+        <li><a href="https://github.com/jerrylin96/git-signoff/blob/main/skills/git-signoff/specs/gsa-core.md">GSA core spec</a></li>
+        <li><a href="https://github.com/jerrylin96/git-signoff/blob/main/skills/git-signoff/HARNESSES.md">Harness guide</a></li>
         <li><a href="https://github.com/jerrylin96/git-signoff/tree/main/verify">CI verifier &amp; badge</a></li>
       </ul>
     </div>

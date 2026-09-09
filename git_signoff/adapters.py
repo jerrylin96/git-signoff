@@ -1,7 +1,7 @@
 """TranscriptProvider adapters (GSA spec §3.1–3.2).
 
 Ports the empirically validated digest-helper resolution logic from
-skills/signoff/SKILL.md. Adapters only locate and fetch raw transcript
+skills/git-signoff/SKILL.md. Adapters only locate and fetch raw transcript
 bytes; the core engine computes digests and byte counts (§3.1).
 
 All filesystem/env/cwd inputs are injectable for tests. Missing or
@@ -43,7 +43,7 @@ def _read_bytes(path: str | None) -> bytes | None:
 
 
 class GenericFileAdapter:
-    """Explicit transcript override via SIGNOFF_TRANSCRIPT_FILE (§3.2)."""
+    """Explicit transcript override via GIT_SIGNOFF_TRANSCRIPT_FILE (§3.2)."""
 
     harness_id = "generic-file"
 
@@ -132,7 +132,7 @@ class CodexAdapter:
     `$CODEX_HOME/sessions/` (default `~/.codex/sessions/`), named
     `rollout-<timestamp>-<session-id>.jsonl`. Codex does not inject a session-id
     env var itself, so this adapter triggers on a user/wrapper-exported
-    CODEX_SESSION_ID; without it, use the SIGNOFF_TRANSCRIPT_FILE override.
+    CODEX_SESSION_ID; without it, use the GIT_SIGNOFF_TRANSCRIPT_FILE override.
     """
 
     harness_id = "codex-cli"
@@ -165,12 +165,12 @@ def resolve_adapter(
 ) -> TranscriptProvider | None:
     """Resolve the active harness adapter, or None when no harness is detected.
 
-    Resolution order: SIGNOFF_TRANSCRIPT_FILE → ANTIGRAVITY_CONVERSATION_ID →
+    Resolution order: GIT_SIGNOFF_TRANSCRIPT_FILE → ANTIGRAVITY_CONVERSATION_ID →
     CLAUDE_CODE_SESSION_ID (the GSA §3.2 / SKILL.md order) → CODEX_SESSION_ID
     (appended; §3.2's adapter matrix is informative and adapter-owned).
     """
     env = os.environ if env is None else env
-    override = env.get("SIGNOFF_TRANSCRIPT_FILE", "").strip()
+    override = env.get("GIT_SIGNOFF_TRANSCRIPT_FILE", "").strip()
     ag_cid = env.get("ANTIGRAVITY_CONVERSATION_ID", "").strip()
     cc_cid = env.get("CLAUDE_CODE_SESSION_ID", "").strip()
     codex_sid = env.get("CODEX_SESSION_ID", "").strip()

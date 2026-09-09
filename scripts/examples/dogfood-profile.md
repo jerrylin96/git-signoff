@@ -1,14 +1,14 @@
-# Archived Phase 3e dogfood profile (formerly `.signoff/profile.md`)
+# Archived Phase 3e dogfood profile (formerly `.git-signoff/profile.md`)
 
 This file was this repository's repo-local interview profile for the Phase 3e
-live dogfood: placed at `.signoff/profile.md`, it was resolved ahead of the
+live dogfood: placed at `.git-signoff/profile.md`, it was resolved ahead of the
 embedded `software-general` default and produced attestation `0c54122` with
 `interview=standard/atmos-science-dogfood/sha256:5fd075753d5b`. It was then
 deliberately retired from the live resolution path — an atmospheric-science
 emphasis set should not silently govern a software repo's future signoffs —
 and is preserved here, alongside `ciwv.py`, as the reproducible fixture and a
 worked example of a custom profile. To reuse it, copy it to
-`<your-repo>/.signoff/profile.md`. Per repo convention the emphases use
+`<your-repo>/.git-signoff/profile.md`. Per repo convention the emphases use
 earth/atmospheric science; the mechanics stay domain-neutral.
 
 <!-- INTERVIEW-PROFILE:BEGIN (sole customization point — replace only this block) -->

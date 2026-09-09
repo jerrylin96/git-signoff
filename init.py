@@ -1,6 +1,6 @@
-"""Zero-touch repository initializer for /signoff (Git Signoff Attestation).
+"""Zero-touch repository initializer for /git-signoff (Git Signoff Attestation).
 
-Scaffolds CI workflows, domain interview profiles, the vendored /signoff
+Scaffolds CI workflows, domain interview profiles, the vendored /git-signoff
 skill, README badges, and GitHub ruleset enforcement.
 """
 
@@ -28,8 +28,8 @@ from pathlib import Path  # noqa: E402
 from typing import Optional  # noqa: E402
 
 SKILL_DEST_CANDIDATES: tuple[str, ...] = (
-    ".claude/skills/signoff",
-    ".agents/skills/signoff",
+    ".claude/skills/git-signoff",
+    ".agents/skills/git-signoff",
 )
 
 PROFILES: dict[str, str] = {
@@ -92,7 +92,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0   # full history — attestations live in it
-      - uses: jerrylin96/git-signoff/verify@verify-v1.3
+      - uses: jerrylin96/git-signoff/verify@verify-v1.4
 """
 
 RULESET_PAYLOAD = {
@@ -288,7 +288,7 @@ def ensure_no_symlink_in_path(repo_root: Path, target: Path) -> None:
     """Refuse to write through a symlink anywhere between repo_root and target.
 
     Scaffold writers create real files inside the repository. A symlinked
-    README.md, ``.github/workflows``, or ``.signoff`` would otherwise redirect
+    README.md, ``.github/workflows``, or ``.git-signoff`` would otherwise redirect
     the write outside the repository while init reports success. The path is
     never resolved: every component from the target up to (but excluding)
     repo_root is inspected lexically with ``is_symlink``, so a dangling link is
@@ -314,7 +314,7 @@ def ensure_no_symlink_in_path(repo_root: Path, target: Path) -> None:
 
 def scaffold_workflow(repo_root: Path, default_branch: str = "main") -> Path:
     wf_dir = repo_root / ".github" / "workflows"
-    wf_file = wf_dir / "signoff.yml"
+    wf_file = wf_dir / "git-signoff.yml"
     ensure_no_symlink_in_path(repo_root, wf_file)
     wf_dir.mkdir(parents=True, exist_ok=True)
     wf_file.write_text(WORKFLOW_TEMPLATE.format(default_branch=default_branch), encoding="utf-8")
@@ -322,7 +322,7 @@ def scaffold_workflow(repo_root: Path, default_branch: str = "main") -> Path:
 
 
 def scaffold_profile(repo_root: Path, profile_id: str = "domain-science") -> Path:
-    profile_dir = repo_root / ".signoff"
+    profile_dir = repo_root / ".git-signoff"
     profile_file = profile_dir / "profile.md"
     ensure_no_symlink_in_path(repo_root, profile_file)
     profile_dir.mkdir(parents=True, exist_ok=True)
@@ -337,7 +337,7 @@ SKILL_SOURCE_REPO = "https://github.com/jerrylin96/git-signoff"
 # script version instead of silently tracking the default branch. Pin tags
 # never move; bump this together with the install snippets (README,
 # verify/README.md, site/index.html) and tag.yml's PINS list.
-SKILL_SOURCE_REF = "init-v6"
+SKILL_SOURCE_REF = "init-v7"
 VENDOR_STAMP_FILENAME = "VENDORED-FROM"
 BENIGN_METADATA_FILES: set[str] = {".DS_Store", "Thumbs.db", "desktop.ini"}
 
@@ -364,8 +364,8 @@ def detect_skill_destinations(repo_root: Path) -> list[Path] | None:
     """Detect destination paths based on existing installations or repository signals.
     Returns None if the repository has no unambiguous signals (Tier 3).
     """
-    claude_dest = repo_root / ".claude" / "skills" / "signoff"
-    agents_dest = repo_root / ".agents" / "skills" / "signoff"
+    claude_dest = repo_root / ".claude" / "skills" / "git-signoff"
+    agents_dest = repo_root / ".agents" / "skills" / "git-signoff"
 
     # Tier 1: Existing Installation Detection
     existing = _existing_skill_installs(repo_root)
@@ -404,8 +404,8 @@ def resolve_skill_destinations(
     if skill_target not in allowed_targets:
         raise ValueError(f"Invalid skill_target '{skill_target}'; must be one of {allowed_targets}")
 
-    claude_dest = repo_root / ".claude" / "skills" / "signoff"
-    agents_dest = repo_root / ".agents" / "skills" / "signoff"
+    claude_dest = repo_root / ".claude" / "skills" / "git-signoff"
+    agents_dest = repo_root / ".agents" / "skills" / "git-signoff"
 
     explicit_dests: list[Path] | None = None
     if skill_target == "claude":
@@ -434,10 +434,10 @@ def resolve_skill_destinations(
         return [claude_dest, agents_dest]
 
     print("\nNo existing agent configuration detected.")
-    print("Which harness(es) should /signoff be installed for?")
+    print("Which harness(es) should /git-signoff be installed for?")
     print("  1) Both Claude Code and open-standard agents (Antigravity, Codex, Cursor) [recommended]")
-    print("  2) Claude Code only (.claude/skills/signoff)")
-    print("  3) Open-standard agents only (.agents/skills/signoff)")
+    print("  2) Claude Code only (.claude/skills/git-signoff)")
+    print("  3) Open-standard agents only (.agents/skills/git-signoff)")
     choice = prompt_user("Select [1-3]", default="1", non_interactive=non_interactive)
     if choice == "2":
         return [claude_dest]
@@ -456,7 +456,7 @@ def _normalize_skill_destinations(
     Never resolves symlinks (lexical comparison only) so symlink targets are not followed.
     """
     if destinations is None:
-        return [repo_root / ".claude" / "skills" / "signoff"]
+        return [repo_root / ".claude" / "skills" / "git-signoff"]
     if not destinations:
         raise ValueError("destinations list cannot be empty")
 
@@ -557,7 +557,7 @@ def validate_policy_a(dest: Path, repo_root: Path, *, allow_dirty: bool = False)
         non_benign = [p for p in dest.iterdir() if p.name not in BENIGN_METADATA_FILES]
         if non_benign:
             raise RuntimeError(
-                f"Destination {rel} is a non-empty directory not recognized as a /signoff skill. "
+                f"Destination {rel} is a non-empty directory not recognized as a /git-signoff skill. "
                 "Aborting to prevent data loss."
             )
 
@@ -570,7 +570,7 @@ def vendor_skill(
     destinations: Optional[list[Path]] = None,
     allow_dirty: bool = False,
 ) -> Path:
-    """Copy the self-contained skills/signoff folder into destination(s).
+    """Copy the self-contained skills/git-signoff folder into destination(s).
 
     Returns the first canonical destination as Path for backward compatibility.
     """
@@ -582,7 +582,7 @@ def vendor_skill(
         if not (src / "SKILL.md").is_file():
             raise RuntimeError(f"Skill source {src} does not contain SKILL.md")
         stamp = (
-            "Vendored /signoff skill — provenance stamp written by init.py; do not edit.\n"
+            "Vendored /git-signoff skill — provenance stamp written by init.py; do not edit.\n"
             f"source: {source_desc}\n"
             f"ref: {ref}\n"
             f"commit: {commit}\n"
@@ -591,7 +591,7 @@ def vendor_skill(
             if dest.exists():
                 shutil.rmtree(dest)
             dest.parent.mkdir(parents=True, exist_ok=True)
-            shutil.copytree(src, dest)
+            shutil.copytree(src, dest, ignore=shutil.ignore_patterns("__pycache__", "*.py[co]"))
             (dest / VENDOR_STAMP_FILENAME).write_text(stamp, encoding="utf-8")
         return dests[0]
 
@@ -604,8 +604,8 @@ def vendor_skill(
             commit=_git_head_commit(src),
         )
 
-    with tempfile.TemporaryDirectory(prefix="signoff-skill-") as tmp:
-        clone_dir = Path(tmp) / "signoff"
+    with tempfile.TemporaryDirectory(prefix="git-signoff-skill-") as tmp:
+        clone_dir = Path(tmp) / "git-signoff"
         proc = subprocess.run(
             ["git", "clone", "--depth", "1", "--branch", SKILL_SOURCE_REF, SKILL_SOURCE_REPO, str(clone_dir)],
             capture_output=True,
@@ -617,7 +617,7 @@ def vendor_skill(
                 f" (offline installs: --skill-source <path>): {proc.stderr.strip()}"
             )
         return _copy(
-            clone_dir / "skills" / "signoff",
+            clone_dir / "skills" / "git-signoff",
             source_desc=SKILL_SOURCE_REPO,
             ref=SKILL_SOURCE_REF,
             commit=_git_head_commit(clone_dir),
@@ -637,7 +637,7 @@ def single_destination_hint(
     install that Codex, Cursor, or Antigravity never load. The summary already
     prints where the skill landed; this names the destination that was *not*
     chosen and the flag that adds it, so the outcome is visible rather than
-    discovered when `/signoff` fails to appear in another harness. Returns None
+    discovered when `/git-signoff` fails to appear in another harness. Returns None
     when the user chose explicitly or when every candidate was installed.
     """
     if skill_target != "auto" or len(destinations) != 1:
@@ -651,7 +651,7 @@ def single_destination_hint(
     other_flag = "agents" if other_rel.startswith(".agents/") else "claude"
     return (
         f"Auto-detected a single harness destination ({chosen_rel}); agents that read "
-        f"{other_rel} will not see /signoff. Re-run with --skill-target {other_flag} "
+        f"{other_rel} will not see /git-signoff. Re-run with --skill-target {other_flag} "
         f"(or both) to add it."
     )
 
@@ -659,7 +659,7 @@ def single_destination_hint(
 def inject_readme_badge(repo_root: Path, slug: str) -> Path:
     readme = repo_root / "README.md"
     ensure_no_symlink_in_path(repo_root, readme)
-    badge_md = f"[![attested by humans](https://github.com/{slug}/actions/workflows/signoff.yml/badge.svg)](https://github.com/{slug}/actions/workflows/signoff.yml)"
+    badge_md = f"[![attested by humans](https://github.com/{slug}/actions/workflows/git-signoff.yml/badge.svg)](https://github.com/{slug}/actions/workflows/git-signoff.yml)"
     
     if not readme.is_file():
         readme.write_text(f"# {slug.split('/')[-1]}\n\n{badge_md}\n", encoding="utf-8")
@@ -671,7 +671,7 @@ def inject_readme_badge(repo_root: Path, slug: str) -> Path:
     except UnicodeDecodeError as e:
         raise RuntimeError(f"README.md is not valid UTF-8: {e}")
         
-    if "actions/workflows/signoff.yml/badge.svg" in text or "attested by humans" in text:
+    if "actions/workflows/git-signoff.yml/badge.svg" in text or "attested by humans" in text:
         return readme  # already present
         
     is_crlf = b"\r\n" in raw_bytes
@@ -806,9 +806,9 @@ def stage_signoff_files(
 ) -> None:
     dests = _normalize_skill_destinations(repo_root, destinations)
     files = [
-        ".github/workflows/signoff.yml",
-        ".signoff/profile.md",
-        ".signoff/ruleset.json",
+        ".github/workflows/git-signoff.yml",
+        ".git-signoff/profile.md",
+        ".git-signoff/ruleset.json",
         "README.md",
     ]
     for f in files:
@@ -844,7 +844,7 @@ def setup_ruleset(
     if skip_ruleset:
         return RulesetResult(status="skipped")
 
-    ruleset_path = repo_root / ".signoff" / "ruleset.json"
+    ruleset_path = repo_root / ".git-signoff" / "ruleset.json"
     ensure_no_symlink_in_path(repo_root, ruleset_path)
     ruleset_path.parent.mkdir(parents=True, exist_ok=True)
     ruleset_path.write_text(json.dumps(RULESET_PAYLOAD, indent=2) + "\n", encoding="utf-8")
@@ -1087,11 +1087,11 @@ def _rollback_scaffold(
         for directory in (
             root / ".github" / "workflows",
             root / ".github",
-            root / ".signoff",
-            root / ".agents" / "skills" / "signoff",
+            root / ".git-signoff",
+            root / ".agents" / "skills" / "git-signoff",
             root / ".agents" / "skills",
             root / ".agents",
-            root / ".claude" / "skills" / "signoff",
+            root / ".claude" / "skills" / "git-signoff",
             root / ".claude" / "skills",
             root / ".claude",
         ):
@@ -1141,7 +1141,7 @@ def _rollback_scaffold(
 def run_init(
     repo_root: Optional[Path] = None,
     profile_id: Optional[str] = None,
-    branch: str = "signoff/init",
+    branch: str = "git-signoff/init",
     slug: Optional[str] = None,
     skip_ruleset: bool = False,
     skip_badge: bool = False,
@@ -1178,9 +1178,9 @@ def run_init(
     )
 
     scaffold_paths = [
-        root / ".github" / "workflows" / "signoff.yml",
-        root / ".signoff" / "profile.md",
-        root / ".signoff" / "ruleset.json",
+        root / ".github" / "workflows" / "git-signoff.yml",
+        root / ".git-signoff" / "profile.md",
+        root / ".git-signoff" / "ruleset.json",
         *resolved_dests,
         root / "README.md",
     ]
@@ -1191,11 +1191,11 @@ def run_init(
     # Scaffold writers must not write through a symlink out of the repository;
     # refuse here so nothing (no branch, no bootstrap commit) is created first.
     symlink_checked = [
-        root / ".github" / "workflows" / "signoff.yml",
-        root / ".signoff" / "profile.md",
+        root / ".github" / "workflows" / "git-signoff.yml",
+        root / ".git-signoff" / "profile.md",
     ]
     if not skip_ruleset:
-        symlink_checked.append(root / ".signoff" / "ruleset.json")
+        symlink_checked.append(root / ".git-signoff" / "ruleset.json")
     if effective_slug and not skip_badge:
         symlink_checked.append(root / "README.md")
     for target in symlink_checked:
@@ -1256,13 +1256,13 @@ def run_init(
     ancestor_candidates = [
         root / ".github",
         root / ".github" / "workflows",
-        root / ".signoff",
+        root / ".git-signoff",
         root / ".claude",
         root / ".claude" / "skills",
-        root / ".claude" / "skills" / "signoff",
+        root / ".claude" / "skills" / "git-signoff",
         root / ".agents",
         root / ".agents" / "skills",
-        root / ".agents" / "skills" / "signoff",
+        root / ".agents" / "skills" / "git-signoff",
     ]
     preexisting_dirs = {d for d in ancestor_candidates if d.is_dir()}
     preexisting_skill_dirs: dict[Path, list[Path]] = {}
@@ -1357,15 +1357,15 @@ def run_init(
 
 
 def parse_args(args: Optional[list[str]] = None) -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Zero-touch repository initializer for /signoff.")
+    parser = argparse.ArgumentParser(description="Zero-touch repository initializer for /git-signoff.")
     parser.add_argument("--profile", choices=["domain-science", "software-general"], help="Interview profile ID")
-    parser.add_argument("--branch", default="signoff/init", help="Feature branch name (default: signoff/init)")
+    parser.add_argument("--branch", default="git-signoff/init", help="Feature branch name (default: git-signoff/init)")
     parser.add_argument("--skip-ruleset", action="store_true", help="Skip GitHub Ruleset creation")
     parser.add_argument("--skip-badge", action="store_true", help="Skip README badge injection")
     parser.add_argument("--allow-dirty", action="store_true", help="Allow running on dirty working tree")
     parser.add_argument("--non-interactive", action="store_true", help="Run without interactive prompts")
     parser.add_argument("--open-browser", action="store_true", help="Open GitHub settings in browser if manual fallback is needed")
-    parser.add_argument("--skill-source", type=Path, help="Local skills/signoff folder to vendor (offline installs; default: shallow clone)")
+    parser.add_argument("--skill-source", type=Path, help="Local skills/git-signoff folder to vendor (offline installs; default: shallow clone)")
     parser.add_argument("--skill-target", choices=["auto", "claude", "agents", "both"], default="auto", help="Harness destination target (default: auto)")
     return parser.parse_args(args)
 
@@ -1395,8 +1395,8 @@ def main() -> int:
             root_dir = detect_git_context().root
         except Exception:
             pass
-        dests_str = ", ".join(str(d.relative_to(root_dir)) for d in res.destinations) or ".claude/skills/signoff"
-        print(f"[4/5] 📝 Scaffolded workflow, profile, and vendored the /signoff skill into {dests_str}.")
+        dests_str = ", ".join(str(d.relative_to(root_dir)) for d in res.destinations) or ".claude/skills/git-signoff"
+        print(f"[4/5] 📝 Scaffolded workflow, profile, and vendored the /git-signoff skill into {dests_str}.")
         hint = single_destination_hint(root_dir, res.destinations, args.skill_target)
         if hint:
             print(f"  ℹ️  {hint}")
@@ -1409,7 +1409,7 @@ def main() -> int:
         elif res.ruleset.status == "skipped":
             print("[5/5] 🛡️  GitHub ruleset setup skipped.")
         elif res.ruleset.status == "fallback_manual":
-            print(f"[5/5] 🛡️  Manual Ruleset Setup Required: Open {res.ruleset.rules_url} to import .signoff/ruleset.json")
+            print(f"[5/5] 🛡️  Manual Ruleset Setup Required: Open {res.ruleset.rules_url} to import .git-signoff/ruleset.json")
 
         print("\n" + "=" * 60)
         print("✅ Signoff initialization complete!")
@@ -1424,7 +1424,7 @@ def main() -> int:
             print("  1. Configure remote and push:")
             print("     git remote add origin <url>")
             print(f"     git push -u origin {res.branch}")
-        print("  2. Run /signoff on this branch to review and attest your setup before merging")
+        print("  2. Run /git-signoff on this branch to review and attest your setup before merging")
         if res.pr_url:
             print(f"  3. Open PR:     {res.pr_url}")
         return 0

@@ -12,7 +12,7 @@ import pytest
 sys.path.insert(0, str(Path(__file__).parent.parent))
 import init
 
-SKILL_SRC = Path(__file__).parent.parent / "skills" / "signoff"
+SKILL_SRC = Path(__file__).parent.parent / "skills" / "git-signoff"
 
 
 @pytest.fixture
@@ -142,17 +142,17 @@ def test_detect_stack_software_general(tmp_path):
 
 def test_scaffold_workflow_file(temp_git_repo):
     init.scaffold_workflow(temp_git_repo, default_branch="master")
-    workflow = temp_git_repo / ".github" / "workflows" / "signoff.yml"
+    workflow = temp_git_repo / ".github" / "workflows" / "git-signoff.yml"
     assert workflow.is_file()
     content = workflow.read_text(encoding="utf-8")
     assert "branches: [ master ]" in content
     assert "fetch-depth: 0" in content
-    assert "jerrylin96/git-signoff/verify@verify-v1.3" in content
+    assert "jerrylin96/git-signoff/verify@verify-v1.4" in content
 
 
 def test_scaffold_profile_file(temp_git_repo):
     init.scaffold_profile(temp_git_repo, profile_id="domain-science")
-    profile = temp_git_repo / ".signoff" / "profile.md"
+    profile = temp_git_repo / ".git-signoff" / "profile.md"
     assert profile.is_file()
     content = profile.read_text(encoding="utf-8")
     assert "Profile-ID: domain-science" in content
@@ -162,10 +162,10 @@ def test_scaffold_profile_file(temp_git_repo):
 
 def test_vendor_skill_from_local_source(temp_git_repo):
     init.vendor_skill(temp_git_repo, source=SKILL_SRC)
-    dest = temp_git_repo / ".claude" / "skills" / "signoff"
+    dest = temp_git_repo / ".claude" / "skills" / "git-signoff"
     assert (dest / "SKILL.md").is_file()
     head = (dest / "SKILL.md").read_text(encoding="utf-8")[:2048]
-    assert "name: signoff" in head
+    assert "name: git-signoff" in head
     # Self-contained copy: relative links into specs/ and profiles/ must resolve
     assert (dest / "specs" / "gsa-core.md").is_file()
     assert (dest / "profiles" / "domain-science.md").is_file()
@@ -189,7 +189,7 @@ def test_vendor_skill_clones_pinned_ref(temp_git_repo):
     def fake_run(cmd, **kwargs):
         if cmd[:2] == ["git", "clone"]:
             clone_cmds.append(cmd)
-            _shutil.copytree(SKILL_SRC, Path(cmd[-1]) / "skills" / "signoff")
+            _shutil.copytree(SKILL_SRC, Path(cmd[-1]) / "skills" / "git-signoff")
             return subprocess.CompletedProcess(cmd, 0, stdout="", stderr="")
         if cmd[:2] == ["git", "-C"] and "rev-parse" in cmd:
             return subprocess.CompletedProcess(cmd, 0, stdout=fake_sha + "\n", stderr="")
@@ -206,7 +206,7 @@ def test_vendor_skill_clones_pinned_ref(temp_git_repo):
     ref_idx = clone_cmd.index("--branch") + 1
     assert clone_cmd[ref_idx] == init.SKILL_SOURCE_REF
     stamp = (
-        temp_git_repo / ".claude" / "skills" / "signoff" / init.VENDOR_STAMP_FILENAME
+        temp_git_repo / ".claude" / "skills" / "git-signoff" / init.VENDOR_STAMP_FILENAME
     ).read_text(encoding="utf-8")
     assert f"ref: {init.SKILL_SOURCE_REF}" in stamp
     assert f"commit: {fake_sha}" in stamp
@@ -221,7 +221,7 @@ def test_skill_source_ref_pin_consistency():
     import re
 
     repo_root = Path(__file__).parent.parent
-    assert init.SKILL_SOURCE_REF == "init-v6", f"Expected init-v6, got {init.SKILL_SOURCE_REF}"
+    assert init.SKILL_SOURCE_REF == "init-v7", f"Expected init-v7, got {init.SKILL_SOURCE_REF}"
     ref = init.SKILL_SOURCE_REF
 
 
@@ -253,7 +253,7 @@ def test_skill_source_ref_pin_consistency():
 
 
 def test_vendor_skill_replaces_existing(temp_git_repo):
-    dest = temp_git_repo / ".claude" / "skills" / "signoff"
+    dest = temp_git_repo / ".claude" / "skills" / "git-signoff"
     dest.mkdir(parents=True)
     (dest / "SKILL.md").write_text("# existing skill", encoding="utf-8")
     (dest / "stale.md").write_text("old copy", encoding="utf-8")
@@ -272,14 +272,14 @@ def test_vendor_skill_invalid_source_fails(temp_git_repo, tmp_path):
 def test_inject_readme_badge_under_h1(temp_git_repo):
     init.inject_readme_badge(temp_git_repo, slug="org/my-project")
     content = (temp_git_repo / "README.md").read_text(encoding="utf-8")
-    assert content.startswith("# Test Project\n\n[![attested by humans](https://github.com/org/my-project/actions/workflows/signoff.yml/badge.svg)](https://github.com/org/my-project/actions/workflows/signoff.yml)\n")
+    assert content.startswith("# Test Project\n\n[![attested by humans](https://github.com/org/my-project/actions/workflows/git-signoff.yml/badge.svg)](https://github.com/org/my-project/actions/workflows/git-signoff.yml)\n")
 
 
 def test_inject_readme_badge_idempotent(temp_git_repo):
     init.inject_readme_badge(temp_git_repo, slug="org/my-project")
     init.inject_readme_badge(temp_git_repo, slug="org/my-project")
     content = (temp_git_repo / "README.md").read_text(encoding="utf-8")
-    assert content.count("actions/workflows/signoff.yml/badge.svg") == 1
+    assert content.count("actions/workflows/git-signoff.yml/badge.svg") == 1
 
 
 def test_inject_readme_badge_crlf(tmp_path):
@@ -290,7 +290,7 @@ def test_inject_readme_badge_crlf(tmp_path):
     init.inject_readme_badge(repo, slug="org/win-project")
     content = readme.read_bytes()
     assert b"\r\n" in content
-    assert b"actions/workflows/signoff.yml/badge.svg" in content
+    assert b"actions/workflows/git-signoff.yml/badge.svg" in content
 
 
 def test_inject_readme_badge_code_fence(tmp_path):
@@ -325,7 +325,7 @@ def test_dirty_working_tree_unstaged_readme(temp_git_repo):
 def test_mutation_boundary_rejects_dirty_readme_with_allow_dirty(temp_git_repo):
     readme = temp_git_repo / "README.md"
     readme.write_text("# User work that must not be overwritten\n", encoding="utf-8")
-    paths = [readme, temp_git_repo / ".claude" / "skills" / "signoff"]
+    paths = [readme, temp_git_repo / ".claude" / "skills" / "git-signoff"]
 
     with pytest.raises(RuntimeError, match="Managed scaffold paths contain uncommitted"):
         init.ensure_mutation_boundary_clean(temp_git_repo, paths)
@@ -362,17 +362,17 @@ def test_selective_staging(temp_git_repo):
 
     status = subprocess.check_output(["git", "status", "--porcelain"], cwd=temp_git_repo, text=True)
     assert "?? unrelated.txt" in status
-    assert "A  .github/workflows/signoff.yml" in status or "M  .github/workflows/signoff.yml" in status
-    assert "A  .signoff/profile.md" in status
-    assert "A  .claude/skills/signoff/SKILL.md" in status
+    assert "A  .github/workflows/git-signoff.yml" in status or "M  .github/workflows/git-signoff.yml" in status
+    assert "A  .git-signoff/profile.md" in status
+    assert "A  .claude/skills/git-signoff/SKILL.md" in status
     assert "M  README.md" in status
 
 
 def test_branch_collision_handling(temp_git_repo):
-    subprocess.run(["git", "branch", "signoff/init"], cwd=temp_git_repo, check=True)
-    resolved = init.resolve_branch_name(temp_git_repo, "signoff/init")
-    assert resolved != "signoff/init"
-    assert resolved.startswith("signoff/init-")
+    subprocess.run(["git", "branch", "git-signoff/init"], cwd=temp_git_repo, check=True)
+    resolved = init.resolve_branch_name(temp_git_repo, "git-signoff/init")
+    assert resolved != "git-signoff/init"
+    assert resolved.startswith("git-signoff/init-")
 
 
 # --- T1.5: GitHub Ruleset Automation & Degradation ---
@@ -414,7 +414,7 @@ def test_setup_ruleset_gh_missing_fallback(temp_git_repo):
         result = init.setup_ruleset(temp_git_repo, slug="org/repo", open_browser=True)
         assert result.status == "fallback_manual"
         assert result.rules_url == "https://github.com/org/repo/settings/rules"
-        assert (temp_git_repo / ".signoff" / "ruleset.json").is_file()
+        assert (temp_git_repo / ".git-signoff" / "ruleset.json").is_file()
         mock_browser.assert_called_once_with("https://github.com/org/repo/settings/rules")
 
 
@@ -426,7 +426,7 @@ def test_setup_ruleset_gh_unauthenticated(temp_git_repo):
         
         result = init.setup_ruleset(temp_git_repo, slug="org/repo")
         assert result.status == "fallback_manual"
-        assert (temp_git_repo / ".signoff" / "ruleset.json").is_file()
+        assert (temp_git_repo / ".git-signoff" / "ruleset.json").is_file()
 
 
 def test_setup_ruleset_gh_permission_denied(temp_git_repo):
@@ -472,19 +472,19 @@ def test_end_to_end_init(temp_git_repo):
     result = init.run_init(
         repo_root=temp_git_repo,
         profile_id="domain-science",
-        branch="signoff/init",
+        branch="git-signoff/init",
         slug="example-org/test-project",
         skip_ruleset=True,
         non_interactive=True,
         skill_source=SKILL_SRC,
     )
     assert result.success is True
-    assert result.branch == "signoff/init"
-    assert result.pr_url == "https://github.com/example-org/test-project/compare/main...signoff/init?expand=1"
+    assert result.branch == "git-signoff/init"
+    assert result.pr_url == "https://github.com/example-org/test-project/compare/main...git-signoff/init?expand=1"
     
-    # Verify current branch is signoff/init
+    # Verify current branch is git-signoff/init
     current_branch = subprocess.check_output(["git", "branch", "--show-current"], cwd=temp_git_repo, text=True).strip()
-    assert current_branch == "signoff/init"
+    assert current_branch == "git-signoff/init"
     
     # Verify scaffold commit exists at HEAD and NO fake attestation was created
     head_msg = subprocess.check_output(["git", "log", "-1", "--format=%B"], cwd=temp_git_repo, text=True)
@@ -492,7 +492,7 @@ def test_end_to_end_init(temp_git_repo):
     assert "[SIGNOFF " not in head_msg
 
     # Verify setup branch has no upstream tracking set
-    up = subprocess.run(["git", "rev-parse", "--abbrev-ref", "signoff/init@{upstream}"], cwd=temp_git_repo, capture_output=True, text=True)
+    up = subprocess.run(["git", "rev-parse", "--abbrev-ref", "git-signoff/init@{upstream}"], cwd=temp_git_repo, capture_output=True, text=True)
     assert up.returncode != 0
 
 
@@ -508,15 +508,15 @@ def test_base_branch_safety(temp_git_repo):
     result = init.run_init(
         repo_root=temp_git_repo,
         profile_id="domain-science",
-        branch="signoff/init",
+        branch="git-signoff/init",
         slug="example-org/test-project",
         skip_ruleset=True,
         non_interactive=True,
         skill_source=SKILL_SRC,
     )
-    assert result.branch == "signoff/init"
+    assert result.branch == "git-signoff/init"
     
-    # Verify signoff/init was branched from main, so wip.txt is NOT in signoff/init
+    # Verify git-signoff/init was branched from main, so wip.txt is NOT in git-signoff/init
     assert not (temp_git_repo / "wip.txt").exists()
     log = subprocess.check_output(["git", "log", "--oneline"], cwd=temp_git_repo, text=True)
     assert "WIP commit" not in log
@@ -535,15 +535,15 @@ def test_base_branch_develop_only(tmp_path):
     result = init.run_init(
         repo_root=repo,
         profile_id="software-general",
-        branch="signoff/init",
+        branch="git-signoff/init",
         skip_ruleset=True,
         non_interactive=True,
         skill_source=SKILL_SRC,
     )
     assert result.success is True
-    assert result.branch == "signoff/init"
+    assert result.branch == "git-signoff/init"
     current_branch = subprocess.check_output(["git", "branch", "--show-current"], cwd=repo, text=True).strip()
-    assert current_branch == "signoff/init"
+    assert current_branch == "git-signoff/init"
 
 
 def test_base_branch_custom_unlisted_name(tmp_path):
@@ -559,13 +559,13 @@ def test_base_branch_custom_unlisted_name(tmp_path):
     result = init.run_init(
         repo_root=repo,
         profile_id="software-general",
-        branch="signoff/init",
+        branch="git-signoff/init",
         skip_ruleset=True,
         non_interactive=True,
         skill_source=SKILL_SRC,
     )
     assert result.success is True
-    assert result.branch == "signoff/init"
+    assert result.branch == "git-signoff/init"
 
 
 def test_checkout_failure_leaves_tree_clean(temp_git_repo):
@@ -582,7 +582,7 @@ def test_checkout_failure_leaves_tree_clean(temp_git_repo):
     # Verify no scaffold files were created / left stranded
     assert not (temp_git_repo / ".claude").exists()
     assert not (temp_git_repo / ".github").exists()
-    assert not (temp_git_repo / ".signoff").exists()
+    assert not (temp_git_repo / ".git-signoff").exists()
     status = subprocess.check_output(["git", "status", "--porcelain"], cwd=temp_git_repo, text=True)
     assert status.strip() == ""
 
@@ -597,7 +597,7 @@ def test_vendor_failure_rolls_back_scaffold(temp_git_repo):
     with pytest.raises(RuntimeError, match="does not contain SKILL.md"):
         init.run_init(
             repo_root=temp_git_repo,
-            branch="signoff/init",
+            branch="git-signoff/init",
             skip_ruleset=True,
             non_interactive=True,
             skill_source=empty_src,
@@ -607,11 +607,11 @@ def test_vendor_failure_rolls_back_scaffold(temp_git_repo):
     current = subprocess.check_output(["git", "branch", "--show-current"], cwd=temp_git_repo, text=True).strip()
     assert current == "main"
     branches = subprocess.check_output(["git", "branch"], cwd=temp_git_repo, text=True)
-    assert "signoff/init" not in branches
+    assert "git-signoff/init" not in branches
 
     # No scaffold artifacts left behind, working tree clean.
     assert not (temp_git_repo / ".github").exists()
-    assert not (temp_git_repo / ".signoff").exists()
+    assert not (temp_git_repo / ".git-signoff").exists()
     assert not (temp_git_repo / ".claude").exists()
     status = subprocess.check_output(["git", "status", "--porcelain"], cwd=temp_git_repo, text=True)
     assert status.strip() == ""
@@ -631,14 +631,14 @@ def test_rollback_preserves_unrelated_dir_content(temp_git_repo):
     with pytest.raises(RuntimeError, match="does not contain SKILL.md"):
         init.run_init(
             repo_root=temp_git_repo,
-            branch="signoff/init",
+            branch="git-signoff/init",
             skip_ruleset=True,
             non_interactive=True,
             skill_source=empty_src,
         )
 
     # init's workflow is gone; the unrelated one and its dir remain.
-    assert not (temp_git_repo / ".github" / "workflows" / "signoff.yml").exists()
+    assert not (temp_git_repo / ".github" / "workflows" / "git-signoff.yml").exists()
     assert other_wf.exists()
     assert other_wf.read_text(encoding="utf-8") == "name: ci\n"
     status = subprocess.check_output(["git", "status", "--porcelain"], cwd=temp_git_repo, text=True)
@@ -654,7 +654,7 @@ def test_rollback_reverts_readme_badge(temp_git_repo):
             init.run_init(
                 repo_root=temp_git_repo,
                 slug="org/proj",
-                branch="signoff/init",
+                branch="git-signoff/init",
                 skip_ruleset=True,
                 non_interactive=True,
                 skill_source=SKILL_SRC,
@@ -672,7 +672,7 @@ def test_rollback_warns_when_remote_ruleset_remains(temp_git_repo, capsys):
         with pytest.raises(RuntimeError, match="fail after ruleset creation"):
             init.run_init(
                 repo_root=temp_git_repo,
-                branch="signoff/init",
+                branch="git-signoff/init",
                 non_interactive=True,
                 skill_source=SKILL_SRC,
             )
@@ -696,7 +696,7 @@ def test_rollback_unborn_head(tmp_path):
     with pytest.raises(RuntimeError, match="does not contain SKILL.md"):
         init.run_init(
             repo_root=repo,
-            branch="signoff/init",
+            branch="git-signoff/init",
             skip_ruleset=True,
             non_interactive=True,
             skill_source=empty_src,
@@ -705,7 +705,7 @@ def test_rollback_unborn_head(tmp_path):
     current = subprocess.check_output(["git", "branch", "--show-current"], cwd=repo, text=True).strip()
     assert current == "main"
     assert not (repo / ".github").exists()
-    assert not (repo / ".signoff").exists()
+    assert not (repo / ".git-signoff").exists()
 
 
 def test_base_branch_origin_fallback(tmp_path):
@@ -737,21 +737,21 @@ def test_base_branch_origin_fallback(tmp_path):
     result = init.run_init(
         repo_root=local_dir,
         profile_id="software-general",
-        branch="signoff/init",
+        branch="git-signoff/init",
         skip_ruleset=True,
         non_interactive=True,
         skill_source=SKILL_SRC,
     )
     assert result.success is True
-    assert result.branch == "signoff/init"
+    assert result.branch == "git-signoff/init"
 
-    # Verify signoff/init branched from origin/main, so feature.txt is NOT in signoff/init
+    # Verify git-signoff/init branched from origin/main, so feature.txt is NOT in git-signoff/init
     assert not (local_dir / "feature.txt").exists()
     log = subprocess.check_output(["git", "log", "--oneline"], cwd=local_dir, text=True)
     assert "Unmerged feature work" not in log
 
     # Verify setup branch does NOT track origin/main
-    up = subprocess.run(["git", "rev-parse", "--abbrev-ref", "signoff/init@{upstream}"], cwd=local_dir, capture_output=True, text=True)
+    up = subprocess.run(["git", "rev-parse", "--abbrev-ref", "git-signoff/init@{upstream}"], cwd=local_dir, capture_output=True, text=True)
     assert up.returncode != 0, "setup branch must not track origin/main or any default branch"
 
 
@@ -761,7 +761,7 @@ def test_profile_text_byte_parity():
 
     repo_root = Path(__file__).parent.parent
     for pid in ("domain-science", "software-general"):
-        profile_file = repo_root / "skills" / "signoff" / "profiles" / f"{pid}.md"
+        profile_file = repo_root / "skills" / "git-signoff" / "profiles" / f"{pid}.md"
         assert profile_file.is_file()
         file_lines = profile_file.read_text(encoding="utf-8").splitlines(keepends=True)
         block_lines = []
@@ -819,10 +819,10 @@ def test_versions_are_synchronized():
 def test_policy_a_refuses_destination_symlink(temp_git_repo, tmp_path):
     target = tmp_path / "external_target"
     target.mkdir()
-    dest = temp_git_repo / ".claude" / "skills" / "signoff"
+    dest = temp_git_repo / ".claude" / "skills" / "git-signoff"
     dest.parent.mkdir(parents=True, exist_ok=True)
     dest.symlink_to(target)
-    with pytest.raises(RuntimeError, match=r"Destination .claude/skills/signoff is a symbolic link"):
+    with pytest.raises(RuntimeError, match=r"Destination .claude/skills/git-signoff is a symbolic link"):
         init.validate_policy_a(dest, temp_git_repo)
     assert target.exists()
 
@@ -832,7 +832,7 @@ def test_policy_a_refuses_parent_symlink(temp_git_repo, tmp_path):
     target.mkdir()
     parent = temp_git_repo / ".agents"
     parent.symlink_to(target)
-    dest = temp_git_repo / ".agents" / "skills" / "signoff"
+    dest = temp_git_repo / ".agents" / "skills" / "git-signoff"
     with pytest.raises(RuntimeError, match=r"Destination .agents is a symbolic link"):
         init.validate_policy_a(dest, temp_git_repo)
     assert target.exists()
@@ -841,29 +841,29 @@ def test_policy_a_refuses_parent_symlink(temp_git_repo, tmp_path):
 def test_policy_a_refuses_ordinary_file_parent(temp_git_repo):
     parent = temp_git_repo / ".agents"
     parent.write_text("not a directory", encoding="utf-8")
-    dest = temp_git_repo / ".agents" / "skills" / "signoff"
+    dest = temp_git_repo / ".agents" / "skills" / "git-signoff"
     with pytest.raises(RuntimeError, match=r"Parent path .agents exists as an ordinary file"):
         init.validate_policy_a(dest, temp_git_repo)
 
 
 def test_policy_a_refuses_gitignore_match(temp_git_repo):
     gitignore = temp_git_repo / ".gitignore"
-    gitignore.write_text(".claude/skills/signoff\n", encoding="utf-8")
-    dest = temp_git_repo / ".claude" / "skills" / "signoff"
-    with pytest.raises(RuntimeError, match=r"Destination .claude/skills/signoff is ignored by git"):
+    gitignore.write_text(".claude/skills/git-signoff\n", encoding="utf-8")
+    dest = temp_git_repo / ".claude" / "skills" / "git-signoff"
+    with pytest.raises(RuntimeError, match=r"Destination .claude/skills/git-signoff is ignored by git"):
         init.validate_policy_a(dest, temp_git_repo)
 
 
 def test_policy_a_accepts_negated_gitignore(temp_git_repo):
     gitignore = temp_git_repo / ".gitignore"
     gitignore.write_text(".claude/*\n!.claude/skills/\n", encoding="utf-8")
-    dest = temp_git_repo / ".claude" / "skills" / "signoff"
+    dest = temp_git_repo / ".claude" / "skills" / "git-signoff"
     # Should not raise
     init.validate_policy_a(dest, temp_git_repo)
 
 
 def test_policy_a_refuses_preexisting_ignored_untracked_files(temp_git_repo):
-    dest = temp_git_repo / ".claude" / "skills" / "signoff"
+    dest = temp_git_repo / ".claude" / "skills" / "git-signoff"
     dest.mkdir(parents=True, exist_ok=True)
     (dest / "SKILL.md").write_text("# existing skill", encoding="utf-8")
     gitignore = temp_git_repo / ".gitignore"
@@ -875,7 +875,7 @@ def test_policy_a_refuses_preexisting_ignored_untracked_files(temp_git_repo):
 
 
 def test_policy_a_refuses_preexisting_ignored_untracked_files_with_allow_dirty(temp_git_repo):
-    dest = temp_git_repo / ".claude" / "skills" / "signoff"
+    dest = temp_git_repo / ".claude" / "skills" / "git-signoff"
     dest.mkdir(parents=True, exist_ok=True)
     (dest / "SKILL.md").write_text("# existing skill", encoding="utf-8")
     gitignore = temp_git_repo / ".gitignore"
@@ -887,18 +887,18 @@ def test_policy_a_refuses_preexisting_ignored_untracked_files_with_allow_dirty(t
 
 
 def test_policy_a_refuses_destination_ordinary_file(temp_git_repo):
-    dest = temp_git_repo / ".claude" / "skills" / "signoff"
+    dest = temp_git_repo / ".claude" / "skills" / "git-signoff"
     dest.parent.mkdir(parents=True, exist_ok=True)
     dest.write_text("regular file collision", encoding="utf-8")
-    with pytest.raises(RuntimeError, match=r"Destination .claude/skills/signoff exists as an ordinary file"):
+    with pytest.raises(RuntimeError, match=r"Destination .claude/skills/git-signoff exists as an ordinary file"):
         init.validate_policy_a(dest, temp_git_repo)
 
 
 def test_policy_a_refuses_unrelated_nonempty_directory(temp_git_repo):
-    dest = temp_git_repo / ".claude" / "skills" / "signoff"
+    dest = temp_git_repo / ".claude" / "skills" / "git-signoff"
     dest.mkdir(parents=True, exist_ok=True)
     (dest / "other.txt").write_text("unrelated data", encoding="utf-8")
-    with pytest.raises(RuntimeError, match=r"is a non-empty directory not recognized as a /signoff skill"):
+    with pytest.raises(RuntimeError, match=r"is a non-empty directory not recognized as a /git-signoff skill"):
         init.validate_policy_a(dest, temp_git_repo)
 
 
@@ -906,8 +906,8 @@ def test_policy_a_refuses_unrelated_nonempty_directory(temp_git_repo):
 def test_detect_skill_destinations_scenarios(tmp_path):
     repo = tmp_path / "repo"
     repo.mkdir()
-    claude = repo / ".claude" / "skills" / "signoff"
-    agents = repo / ".agents" / "skills" / "signoff"
+    claude = repo / ".claude" / "skills" / "git-signoff"
+    agents = repo / ".agents" / "skills" / "git-signoff"
 
     # Tier 3: Greenfield -> None
     assert init.detect_skill_destinations(repo) is None
@@ -942,8 +942,8 @@ def test_detect_skill_destinations_scenarios(tmp_path):
 def test_resolve_skill_destinations_expansion_union(tmp_path):
     repo = tmp_path / "repo"
     repo.mkdir()
-    claude = repo / ".claude" / "skills" / "signoff"
-    agents = repo / ".agents" / "skills" / "signoff"
+    claude = repo / ".claude" / "skills" / "git-signoff"
+    agents = repo / ".agents" / "skills" / "git-signoff"
 
     # Greenfield with explicit targets
     assert init.resolve_skill_destinations(repo, skill_target="claude") == [claude]
@@ -966,8 +966,8 @@ def test_resolve_skill_destinations_invalid_target(tmp_path):
 def test_resolve_skill_destinations_interactive_prompt(tmp_path, monkeypatch):
     repo = tmp_path / "repo"
     repo.mkdir()
-    claude = repo / ".claude" / "skills" / "signoff"
-    agents = repo / ".agents" / "skills" / "signoff"
+    claude = repo / ".claude" / "skills" / "git-signoff"
+    agents = repo / ".agents" / "skills" / "git-signoff"
 
     # Greenfield non-interactive -> [claude, agents]
     assert init.resolve_skill_destinations(repo, skill_target="auto", non_interactive=True) == [claude, agents]
@@ -988,10 +988,10 @@ def test_resolve_skill_destinations_interactive_prompt(tmp_path, monkeypatch):
 # 3. Clean-Tree Boundary & Working Tree Isolation
 def test_clean_tree_dirty_skill_destination_aborts(temp_git_repo):
     # Tracked skill destination modified in working tree must abort when allow_dirty=False
-    claude_skill = temp_git_repo / ".claude" / "skills" / "signoff"
+    claude_skill = temp_git_repo / ".claude" / "skills" / "git-signoff"
     claude_skill.mkdir(parents=True)
     (claude_skill / "SKILL.md").write_text("# initial skill", encoding="utf-8")
-    subprocess.run(["git", "add", ".claude/skills/signoff"], cwd=temp_git_repo, check=True)
+    subprocess.run(["git", "add", ".claude/skills/git-signoff"], cwd=temp_git_repo, check=True)
     subprocess.run(["git", "commit", "-m", "Commit skill"], cwd=temp_git_repo, check=True)
 
     # Now make it dirty by modifying the tracked skill file
@@ -1002,10 +1002,10 @@ def test_clean_tree_dirty_skill_destination_aborts(temp_git_repo):
 
 
 def test_clean_tree_tracked_skill_destination_accepted(temp_git_repo):
-    claude_skill = temp_git_repo / ".claude" / "skills" / "signoff"
+    claude_skill = temp_git_repo / ".claude" / "skills" / "git-signoff"
     claude_skill.mkdir(parents=True)
     (claude_skill / "SKILL.md").write_text("# tracked skill", encoding="utf-8")
-    subprocess.run(["git", "add", ".claude/skills/signoff"], cwd=temp_git_repo, check=True)
+    subprocess.run(["git", "add", ".claude/skills/git-signoff"], cwd=temp_git_repo, check=True)
     subprocess.run(["git", "commit", "-m", "Commit skill"], cwd=temp_git_repo, check=True)
 
     # Clean working tree with tracked skill should not raise
@@ -1013,7 +1013,7 @@ def test_clean_tree_tracked_skill_destination_accepted(temp_git_repo):
 
 
 def test_clean_tree_boundary_prefix_check(temp_git_repo):
-    # .signoff-old must never match .signoff, and .agents/skills/signoff-old must never match .agents/skills/signoff
+    # .signoff-old must never match .git-signoff, and .agents/skills/git-signoff-old must never match .agents/skills/git-signoff
     diff_dir = temp_git_repo / ".signoff-old"
     diff_dir.mkdir(parents=True)
     (diff_dir / "file.txt").write_text("unrelated change", encoding="utf-8")
@@ -1024,10 +1024,10 @@ def test_clean_tree_boundary_prefix_check(temp_git_repo):
 
 
 def test_clean_tree_allow_dirty_bypasses(temp_git_repo):
-    claude_skill = temp_git_repo / ".claude" / "skills" / "signoff"
+    claude_skill = temp_git_repo / ".claude" / "skills" / "git-signoff"
     claude_skill.mkdir(parents=True)
     (claude_skill / "SKILL.md").write_text("# initial skill", encoding="utf-8")
-    subprocess.run(["git", "add", ".claude/skills/signoff"], cwd=temp_git_repo, check=True)
+    subprocess.run(["git", "add", ".claude/skills/git-signoff"], cwd=temp_git_repo, check=True)
     subprocess.run(["git", "commit", "-m", "Commit skill"], cwd=temp_git_repo, check=True)
     (claude_skill / "SKILL.md").write_text("# dirty modified skill", encoding="utf-8")
 
@@ -1038,8 +1038,8 @@ def test_clean_tree_allow_dirty_bypasses(temp_git_repo):
 # 4. Normalization, Signatures & Return Types
 def test_normalize_skill_destinations(tmp_path):
     repo = tmp_path / "repo"
-    claude = repo / ".claude" / "skills" / "signoff"
-    agents = repo / ".agents" / "skills" / "signoff"
+    claude = repo / ".claude" / "skills" / "git-signoff"
+    agents = repo / ".agents" / "skills" / "git-signoff"
 
     # Default None -> [claude]
     assert init._normalize_skill_destinations(repo) == [claude]
@@ -1061,11 +1061,11 @@ def test_vendor_skill_callable_compatibility_and_return(temp_git_repo):
     # Calling vendor_skill without keywords succeeds and returns Path
     ret = init.vendor_skill(temp_git_repo, source=SKILL_SRC)
     assert isinstance(ret, Path)
-    assert ret == temp_git_repo / ".claude" / "skills" / "signoff"
+    assert ret == temp_git_repo / ".claude" / "skills" / "git-signoff"
     assert (ret / "SKILL.md").is_file()
 
     # Multi-target returns dests[0] as Path
-    agents = temp_git_repo / ".agents" / "skills" / "signoff"
+    agents = temp_git_repo / ".agents" / "skills" / "git-signoff"
     ret_multi = init.vendor_skill(temp_git_repo, source=SKILL_SRC, destinations=[agents, ret])
     assert isinstance(ret_multi, Path)
     assert ret_multi == ret
@@ -1088,8 +1088,8 @@ def test_parse_args_skill_target_flag():
 
 # 5. Multi-Destination Vendoring, Staging Force-Add & Rollback
 def test_multi_target_vendoring_single_clone(temp_git_repo):
-    claude = temp_git_repo / ".claude" / "skills" / "signoff"
-    agents = temp_git_repo / ".agents" / "skills" / "signoff"
+    claude = temp_git_repo / ".claude" / "skills" / "git-signoff"
+    agents = temp_git_repo / ".agents" / "skills" / "git-signoff"
     init.vendor_skill(temp_git_repo, source=SKILL_SRC, destinations=[claude, agents])
 
     assert (claude / "SKILL.md").is_file()
@@ -1105,19 +1105,19 @@ def test_stage_signoff_files_force_adds_ignored_payload(temp_git_repo):
     subprocess.run(["git", "add", ".gitignore"], cwd=temp_git_repo, check=True)
     subprocess.run(["git", "commit", "-m", "ignore jsonl"], cwd=temp_git_repo, check=True)
 
-    claude = temp_git_repo / ".claude" / "skills" / "signoff"
+    claude = temp_git_repo / ".claude" / "skills" / "git-signoff"
     init.vendor_skill(temp_git_repo, source=SKILL_SRC, destinations=[claude])
     (claude / "payload.jsonl").write_bytes(b'{"test":1}\n')
 
     init.stage_signoff_files(temp_git_repo, destinations=[claude])
 
     status = subprocess.check_output(["git", "status", "--porcelain"], cwd=temp_git_repo, text=True)
-    assert "A  .claude/skills/signoff/payload.jsonl" in status
+    assert "A  .claude/skills/git-signoff/payload.jsonl" in status
 
 
 def test_rollback_prunes_empty_parents(temp_git_repo):
-    claude = temp_git_repo / ".claude" / "skills" / "signoff"
-    agents = temp_git_repo / ".agents" / "skills" / "signoff"
+    claude = temp_git_repo / ".claude" / "skills" / "git-signoff"
+    agents = temp_git_repo / ".agents" / "skills" / "git-signoff"
     scaffold_paths = [claude, agents]
     preexisting = set()
 
@@ -1129,7 +1129,7 @@ def test_rollback_prunes_empty_parents(temp_git_repo):
     init._rollback_scaffold(
         temp_git_repo,
         original_branch="main",
-        target_branch="signoff/init",
+        target_branch="git-signoff/init",
         scaffold_paths=scaffold_paths,
         preexisting=preexisting,
     )
@@ -1139,8 +1139,8 @@ def test_rollback_prunes_empty_parents(temp_git_repo):
 
 
 def test_rollback_preserves_nonempty_parents(temp_git_repo):
-    claude = temp_git_repo / ".claude" / "skills" / "signoff"
-    agents = temp_git_repo / ".agents" / "skills" / "signoff"
+    claude = temp_git_repo / ".claude" / "skills" / "git-signoff"
+    agents = temp_git_repo / ".agents" / "skills" / "git-signoff"
     scaffold_paths = [claude, agents]
     preexisting = set()
 
@@ -1154,7 +1154,7 @@ def test_rollback_preserves_nonempty_parents(temp_git_repo):
     init._rollback_scaffold(
         temp_git_repo,
         original_branch="main",
-        target_branch="signoff/init",
+        target_branch="git-signoff/init",
         scaffold_paths=scaffold_paths,
         preexisting=preexisting,
     )
@@ -1174,8 +1174,8 @@ def test_end_to_end_multi_target_greenfield(temp_git_repo):
         skill_target="auto",
     )
     assert result.success is True
-    claude = temp_git_repo / ".claude" / "skills" / "signoff"
-    agents = temp_git_repo / ".agents" / "skills" / "signoff"
+    claude = temp_git_repo / ".claude" / "skills" / "git-signoff"
+    agents = temp_git_repo / ".agents" / "skills" / "git-signoff"
     assert (claude / "SKILL.md").is_file()
     assert (agents / "SKILL.md").is_file()
     assert result.destinations == [claude, agents]
@@ -1190,8 +1190,8 @@ def test_end_to_end_explicit_target(temp_git_repo):
         skill_target="agents",
     )
     assert result.success is True
-    claude = temp_git_repo / ".claude" / "skills" / "signoff"
-    agents = temp_git_repo / ".agents" / "skills" / "signoff"
+    claude = temp_git_repo / ".claude" / "skills" / "git-signoff"
+    agents = temp_git_repo / ".agents" / "skills" / "git-signoff"
     assert not claude.exists()
     assert (agents / "SKILL.md").is_file()
     assert result.destinations == [agents]
@@ -1274,10 +1274,10 @@ def test_rollback_preserves_preexisting_empty_ancestor_dirs_agents_to_claude(tem
 
 def test_rollback_preexisting_skill_destination_unstamped_install(temp_git_repo):
     """Commit an unstamped install, force failure after vendor_skill(), verify pristine restore including empty dirs."""
-    dest = temp_git_repo / ".claude" / "skills" / "signoff"
+    dest = temp_git_repo / ".claude" / "skills" / "git-signoff"
     shutil.copytree(SKILL_SRC, dest)
     (dest / init.VENDOR_STAMP_FILENAME).unlink(missing_ok=True)
-    subprocess.run(["git", "add", ".claude/skills/signoff"], cwd=temp_git_repo, check=True)
+    subprocess.run(["git", "add", ".claude/skills/git-signoff"], cwd=temp_git_repo, check=True)
     subprocess.run(["git", "commit", "-m", "Commit unstamped skill"], cwd=temp_git_repo, check=True)
 
     # Add empty nested directory inside dest (invisible to git, but pre-existing on disk)
@@ -1301,7 +1301,7 @@ def test_rollback_preexisting_skill_destination_unstamped_install(temp_git_repo)
     assert after_snapshot == before_snapshot
     assert nested_empty.is_dir()
     status = subprocess.check_output(
-        ["git", "status", "--porcelain", "--ignored", "--untracked-files=all", "--", ".claude/skills/signoff"],
+        ["git", "status", "--porcelain", "--ignored", "--untracked-files=all", "--", ".claude/skills/git-signoff"],
         cwd=temp_git_repo,
         text=True,
     )
@@ -1314,12 +1314,12 @@ def test_rollback_preexisting_skill_destination_ignored_files(temp_git_repo, tmp
     shutil.copytree(SKILL_SRC, custom_src)
     (custom_src / "payload.jsonl").write_bytes(b'{"key": "value"}\n')
 
-    dest = temp_git_repo / ".claude" / "skills" / "signoff"
+    dest = temp_git_repo / ".claude" / "skills" / "git-signoff"
     dest.mkdir(parents=True)
     (dest / "SKILL.md").write_text("# prior install\n", encoding="utf-8")
     gitignore = temp_git_repo / ".gitignore"
     gitignore.write_text("*.jsonl\n", encoding="utf-8")
-    subprocess.run(["git", "add", ".claude/skills/signoff", ".gitignore"], cwd=temp_git_repo, check=True)
+    subprocess.run(["git", "add", ".claude/skills/git-signoff", ".gitignore"], cwd=temp_git_repo, check=True)
     subprocess.run(["git", "commit", "-m", "Commit prior install and gitignore"], cwd=temp_git_repo, check=True)
 
     empty_sub = dest / "empty_dir"
@@ -1342,7 +1342,7 @@ def test_rollback_preexisting_skill_destination_ignored_files(temp_git_repo, tmp
     assert after_snapshot == before_snapshot
     assert empty_sub.is_dir()
     status = subprocess.check_output(
-        ["git", "status", "--porcelain", "--ignored", "--untracked-files=all", "--", ".claude/skills/signoff"],
+        ["git", "status", "--porcelain", "--ignored", "--untracked-files=all", "--", ".claude/skills/git-signoff"],
         cwd=temp_git_repo,
         text=True,
     )
@@ -1350,20 +1350,20 @@ def test_rollback_preexisting_skill_destination_ignored_files(temp_git_repo, tmp
 
 
 def test_normalize_skill_destinations_symlink_cross_candidate(temp_git_repo):
-    """With .agents/skills/signoff symlinked to .claude/skills/signoff,
+    """With .agents/skills/git-signoff symlinked to .claude/skills/git-signoff,
     vendor_skill(destinations=[agents]) must raise the Policy A symlink refusal
-    and .claude/skills/signoff must be byte-for-byte untouched."""
-    claude = temp_git_repo / ".claude" / "skills" / "signoff"
+    and .claude/skills/git-signoff must be byte-for-byte untouched."""
+    claude = temp_git_repo / ".claude" / "skills" / "git-signoff"
     claude.mkdir(parents=True)
     (claude / "SKILL.md").write_text("# original claude skill", encoding="utf-8")
     (claude / "extra.txt").write_text("original content", encoding="utf-8")
     claude_snapshot = _dir_snapshot(claude)
 
-    agents = temp_git_repo / ".agents" / "skills" / "signoff"
+    agents = temp_git_repo / ".agents" / "skills" / "git-signoff"
     agents.parent.mkdir(parents=True, exist_ok=True)
     agents.symlink_to(claude)
 
-    with pytest.raises(RuntimeError, match=r"Destination .agents/skills/signoff is a symbolic link"):
+    with pytest.raises(RuntimeError, match=r"Destination .agents/skills/git-signoff is a symbolic link"):
         init.vendor_skill(temp_git_repo, source=SKILL_SRC, destinations=[agents])
 
     assert _dir_snapshot(claude) == claude_snapshot
@@ -1379,7 +1379,7 @@ def test_vendor_skill_clones_pinned_ref_multi_destination_single_clone(temp_git_
     def fake_run(cmd, **kwargs):
         if cmd[:2] == ["git", "clone"]:
             clone_cmds.append(cmd)
-            _shutil.copytree(SKILL_SRC, Path(cmd[-1]) / "skills" / "signoff")
+            _shutil.copytree(SKILL_SRC, Path(cmd[-1]) / "skills" / "git-signoff")
             return subprocess.CompletedProcess(cmd, 0, stdout="", stderr="")
         if cmd[:2] == ["git", "-C"] and "rev-parse" in cmd:
             return subprocess.CompletedProcess(cmd, 0, stdout=fake_sha + "\n", stderr="")
@@ -1389,8 +1389,8 @@ def test_vendor_skill_clones_pinned_ref_multi_destination_single_clone(temp_git_
             return subprocess.CompletedProcess(cmd, 0, stdout="", stderr="")
         raise AssertionError(f"unexpected subprocess call: {cmd}")
 
-    claude = temp_git_repo / ".claude" / "skills" / "signoff"
-    agents = temp_git_repo / ".agents" / "skills" / "signoff"
+    claude = temp_git_repo / ".claude" / "skills" / "git-signoff"
+    agents = temp_git_repo / ".agents" / "skills" / "git-signoff"
 
     with patch.object(init.subprocess, "run", side_effect=fake_run):
         ret = init.vendor_skill(temp_git_repo, destinations=[claude, agents])
@@ -1406,9 +1406,9 @@ def test_vendor_skill_clones_pinned_ref_multi_destination_single_clone(temp_git_
 
 def test_rollback_when_snapshotting_raises_permission_error(temp_git_repo):
     """If preexisting_skill_dirs snapshot raises PermissionError, rollback cleans up setup branch."""
-    dest = temp_git_repo / ".claude" / "skills" / "signoff"
+    dest = temp_git_repo / ".claude" / "skills" / "git-signoff"
     shutil.copytree(SKILL_SRC, dest)
-    subprocess.run(["git", "add", ".claude/skills/signoff"], cwd=temp_git_repo, check=True)
+    subprocess.run(["git", "add", ".claude/skills/git-signoff"], cwd=temp_git_repo, check=True)
     subprocess.run(["git", "commit", "-m", "Commit tracked skill"], cwd=temp_git_repo, check=True)
 
     # Untracked empty directory inside pre-existing destination
@@ -1421,7 +1421,7 @@ def test_rollback_when_snapshotting_raises_permission_error(temp_git_repo):
     orig_rglob = Path.rglob
 
     def guarded_rglob(self, pattern, *args, **kwargs):
-        if ".claude" in self.parts and "signoff" in self.parts:
+        if ".claude" in self.parts and "git-signoff" in self.parts:
             raise PermissionError("Simulated permission error scanning directory")
         return orig_rglob(self, pattern, *args, **kwargs)
 
@@ -1439,7 +1439,7 @@ def test_rollback_when_snapshotting_raises_permission_error(temp_git_repo):
     assert curr_branch == orig_branch
 
     branches = subprocess.check_output(["git", "branch"], cwd=temp_git_repo, text=True)
-    assert "signoff/init" not in branches
+    assert "git-signoff/init" not in branches
 
     status = subprocess.check_output(["git", "status", "--porcelain"], cwd=temp_git_repo, text=True)
     assert status.strip() == ""
@@ -1467,7 +1467,7 @@ def test_rollback_returns_and_reports_incomplete_recovery(temp_git_repo, capsys)
 
 
 def test_rollback_collects_git_invocation_errors(temp_git_repo):
-    subprocess.run(["git", "checkout", "-b", "signoff/init"], cwd=temp_git_repo, check=True)
+    subprocess.run(["git", "checkout", "-b", "git-signoff/init"], cwd=temp_git_repo, check=True)
     original_run = init.subprocess.run
 
     def fail_restore(cmd, *args, **kwargs):
@@ -1479,22 +1479,22 @@ def test_rollback_collects_git_invocation_errors(temp_git_repo):
         failures = init._rollback_scaffold(
             temp_git_repo,
             original_branch="main",
-            target_branch="signoff/init",
+            target_branch="git-signoff/init",
             scaffold_paths=[temp_git_repo / "README.md"],
             preexisting={temp_git_repo / "README.md"},
             scaffold_started=False,
         )
 
     assert any("restore branch main: simulated git execution failure" in failure for failure in failures)
-    assert any("delete abandoned branch signoff/init" in failure for failure in failures)
+    assert any("delete abandoned branch git-signoff/init" in failure for failure in failures)
 
     subprocess.run(["git", "checkout", "main"], cwd=temp_git_repo, check=True)
-    subprocess.run(["git", "branch", "-D", "signoff/init"], cwd=temp_git_repo, check=True)
+    subprocess.run(["git", "branch", "-D", "git-signoff/init"], cwd=temp_git_repo, check=True)
 
 
 def test_allow_dirty_untracked_destination_is_rejected_before_mutation(temp_git_repo):
     """--allow-dirty never admits untracked state under a managed destination."""
-    dest = temp_git_repo / ".claude" / "skills" / "signoff"
+    dest = temp_git_repo / ".claude" / "skills" / "git-signoff"
     dest.mkdir(parents=True)
     (dest / "SKILL.md").write_text("# untracked skill\n", encoding="utf-8")
     (dest / "specs").mkdir()
@@ -1519,23 +1519,23 @@ def test_allow_dirty_untracked_destination_is_rejected_before_mutation(temp_git_
     assert curr_branch == orig_branch
 
     branches = subprocess.check_output(["git", "branch"], cwd=temp_git_repo, text=True)
-    assert "signoff/init" not in branches
+    assert "git-signoff/init" not in branches
 
     assert _dir_snapshot(dest) == before_snapshot
 
 
 def test_normalize_skill_destinations_rejects_relative_path(temp_git_repo):
     """_normalize_skill_destinations enforces that destinations are absolute candidate paths rooted at repo_root."""
-    rel_path = Path(".claude/skills/signoff")
+    rel_path = Path(".claude/skills/git-signoff")
     with pytest.raises(ValueError, match="is not a valid candidate within"):
         init._normalize_skill_destinations(temp_git_repo, [rel_path])
 
 
 def test_rollback_pre_scaffold_failure_preserves_destination_and_restores_branch(temp_git_repo):
     """Failure before scaffolding begins (e.g. profile detection) skips scaffold rollback and restores branch."""
-    dest = temp_git_repo / ".claude" / "skills" / "signoff"
+    dest = temp_git_repo / ".claude" / "skills" / "git-signoff"
     shutil.copytree(SKILL_SRC, dest)
-    subprocess.run(["git", "add", ".claude/skills/signoff"], cwd=temp_git_repo, check=True)
+    subprocess.run(["git", "add", ".claude/skills/git-signoff"], cwd=temp_git_repo, check=True)
     subprocess.run(["git", "commit", "-m", "Commit tracked skill"], cwd=temp_git_repo, check=True)
 
     # Add untracked empty subdirectory
@@ -1559,18 +1559,18 @@ def test_rollback_pre_scaffold_failure_preserves_destination_and_restores_branch
     assert curr_branch == orig_branch
 
     branches = subprocess.check_output(["git", "branch"], cwd=temp_git_repo, text=True)
-    assert "signoff/init" not in branches
+    assert "git-signoff/init" not in branches
 
     # Destination snapshot, including untracked empty directory, is completely unchanged
     assert _dir_snapshot(dest) == before_snapshot
 
     # No scaffold files or directories created
-    assert not (temp_git_repo / ".github" / "workflows" / "signoff.yml").exists()
-    assert not (temp_git_repo / ".signoff" / "profile.md").exists()
+    assert not (temp_git_repo / ".github" / "workflows" / "git-signoff.yml").exists()
+    assert not (temp_git_repo / ".git-signoff" / "profile.md").exists()
 
     # Scoped and repository-wide git status are clean
     status_scoped = subprocess.check_output(
-        ["git", "status", "--porcelain", "--ignored", "--untracked-files=all", "--", ".claude/skills/signoff"],
+        ["git", "status", "--porcelain", "--ignored", "--untracked-files=all", "--", ".claude/skills/git-signoff"],
         cwd=temp_git_repo,
         text=True,
     )
@@ -1581,24 +1581,24 @@ def test_rollback_pre_scaffold_failure_preserves_destination_and_restores_branch
 
 # 6. Single-destination auto-detection hint
 def test_single_destination_hint_auto_claude_only(tmp_path):
-    claude = tmp_path / ".claude" / "skills" / "signoff"
+    claude = tmp_path / ".claude" / "skills" / "git-signoff"
     hint = init.single_destination_hint(tmp_path, [claude], "auto")
     assert hint is not None
-    assert ".claude/skills/signoff" in hint
-    assert ".agents/skills/signoff" in hint
+    assert ".claude/skills/git-signoff" in hint
+    assert ".agents/skills/git-signoff" in hint
     assert "--skill-target agents" in hint
 
 
 def test_single_destination_hint_auto_agents_only(tmp_path):
-    agents = tmp_path / ".agents" / "skills" / "signoff"
+    agents = tmp_path / ".agents" / "skills" / "git-signoff"
     hint = init.single_destination_hint(tmp_path, [agents], "auto")
     assert hint is not None
     assert "--skill-target claude" in hint
 
 
 def test_single_destination_hint_silent_when_both_or_explicit(tmp_path):
-    claude = tmp_path / ".claude" / "skills" / "signoff"
-    agents = tmp_path / ".agents" / "skills" / "signoff"
+    claude = tmp_path / ".claude" / "skills" / "git-signoff"
+    agents = tmp_path / ".agents" / "skills" / "git-signoff"
     assert init.single_destination_hint(tmp_path, [claude, agents], "auto") is None
     # An explicit choice is the user's decision; no hint second-guesses it.
     assert init.single_destination_hint(tmp_path, [claude], "claude") is None
@@ -1622,7 +1622,7 @@ def test_unborn_repo_auto_commit(tmp_path):
         skip_ruleset=True,
     )
     assert res.success is True
-    assert res.branch == "signoff/init"
+    assert res.branch == "git-signoff/init"
 
     # Main branch should now have the initial empty commit with configured author preserved
     main_commits = subprocess.check_output(["git", "log", "main", "--oneline"], cwd=repo_dir, text=True).splitlines()
@@ -1631,11 +1631,11 @@ def test_unborn_repo_auto_commit(tmp_path):
     main_author = subprocess.check_output(["git", "log", "main", "-1", "--format=%an <%ae>"], cwd=repo_dir, text=True).strip()
     assert main_author == "Configured Author <author@example.com>"
 
-    # signoff/init should have 2 commits: initial commit + scaffold commit with configured author
-    branch_commits = subprocess.check_output(["git", "log", "signoff/init", "--oneline"], cwd=repo_dir, text=True).splitlines()
+    # git-signoff/init should have 2 commits: initial commit + scaffold commit with configured author
+    branch_commits = subprocess.check_output(["git", "log", "git-signoff/init", "--oneline"], cwd=repo_dir, text=True).splitlines()
     assert len(branch_commits) == 2
     assert "chore: scaffold git signoff attestation" in branch_commits[0]
-    branch_author = subprocess.check_output(["git", "log", "signoff/init", "-1", "--format=%an <%ae>"], cwd=repo_dir, text=True).strip()
+    branch_author = subprocess.check_output(["git", "log", "git-signoff/init", "-1", "--format=%an <%ae>"], cwd=repo_dir, text=True).strip()
     assert branch_author == "Configured Author <author@example.com>"
 
 
@@ -1665,7 +1665,7 @@ def test_unborn_repo_fallback_to_signoff_bot_when_identity_unset(tmp_path, monke
     main_author = subprocess.check_output(["git", "log", "main", "-1", "--format=%an <%ae>"], cwd=repo_dir, text=True).strip()
     assert main_author == "Signoff Bot <signoff@example.com>"
 
-    branch_author = subprocess.check_output(["git", "log", "signoff/init", "-1", "--format=%an <%ae>"], cwd=repo_dir, text=True).strip()
+    branch_author = subprocess.check_output(["git", "log", "git-signoff/init", "-1", "--format=%an <%ae>"], cwd=repo_dir, text=True).strip()
     assert branch_author == "Signoff Bot <signoff@example.com>"
 
 
@@ -1705,9 +1705,9 @@ def test_unborn_repo_rollback_on_failure(tmp_path):
             skip_ruleset=True,
         )
 
-    # Branch signoff/init should be cleaned up
+    # Branch git-signoff/init should be cleaned up
     branches = subprocess.check_output(["git", "branch", "--list"], cwd=repo_dir, text=True)
-    assert "signoff/init" not in branches
+    assert "git-signoff/init" not in branches
 
     # A failed run leaves the repository exactly as found: still unborn on main,
     # with init's bootstrap commit undone rather than left behind.
@@ -1716,7 +1716,7 @@ def test_unborn_repo_rollback_on_failure(tmp_path):
     assert subprocess.run(["git", "rev-parse", "--verify", "-q", "HEAD"], cwd=repo_dir, capture_output=True).returncode != 0
     assert branches.strip() == ""
     assert not (repo_dir / ".github").exists()
-    assert not (repo_dir / ".signoff").exists()
+    assert not (repo_dir / ".git-signoff").exists()
     assert not (repo_dir / ".claude").exists()
     status = subprocess.check_output(["git", "status", "--porcelain"], cwd=repo_dir, text=True)
     assert status.strip() == ""
@@ -1724,7 +1724,7 @@ def test_unborn_repo_rollback_on_failure(tmp_path):
 
 @pytest.mark.parametrize("benign_name", [".DS_Store", "Thumbs.db", "desktop.ini"])
 def test_policy_a_ignores_benign_metadata(temp_git_repo, benign_name):
-    dest = temp_git_repo / ".claude" / "skills" / "signoff"
+    dest = temp_git_repo / ".claude" / "skills" / "git-signoff"
     dest.mkdir(parents=True, exist_ok=True)
     (dest / benign_name).write_bytes(b"\x00\x00\x00\x01")
     (temp_git_repo / ".gitignore").write_text(f"{benign_name}\n")
@@ -1736,7 +1736,7 @@ def test_policy_a_ignores_benign_metadata(temp_git_repo, benign_name):
 
 
 def test_policy_a_benign_metadata_with_real_ignored_file_fails(temp_git_repo):
-    dest = temp_git_repo / ".claude" / "skills" / "signoff"
+    dest = temp_git_repo / ".claude" / "skills" / "git-signoff"
     dest.mkdir(parents=True, exist_ok=True)
     (dest / ".DS_Store").write_bytes(b"\x00\x00\x00\x01")
     (dest / "secret.key").write_text("secret")
@@ -1747,12 +1747,12 @@ def test_policy_a_benign_metadata_with_real_ignored_file_fails(temp_git_repo):
     with pytest.raises(RuntimeError) as exc_info:
         init.validate_policy_a(dest, temp_git_repo, allow_dirty=False)
     err = str(exc_info.value)
-    assert 'rm -f ".claude/skills/signoff/secret.key"' in err
+    assert 'rm -f ".claude/skills/git-signoff/secret.key"' in err
     assert ".DS_Store" not in err
 
 
 def test_policy_a_diagnostic_exact_path(temp_git_repo):
-    dest = temp_git_repo / ".claude" / "skills" / "signoff"
+    dest = temp_git_repo / ".claude" / "skills" / "git-signoff"
     dest.mkdir(parents=True, exist_ok=True)
     (dest / "ignored_file.log").write_text("log content")
     (temp_git_repo / ".gitignore").write_text("*.log\n")
@@ -1762,7 +1762,7 @@ def test_policy_a_diagnostic_exact_path(temp_git_repo):
     with pytest.raises(RuntimeError) as exc_info:
         init.validate_policy_a(dest, temp_git_repo, allow_dirty=False)
     err = str(exc_info.value)
-    assert 'rm -f ".claude/skills/signoff/ignored_file.log"' in err
+    assert 'rm -f ".claude/skills/git-signoff/ignored_file.log"' in err
     assert "--allow-dirty" not in err
 
 
@@ -1772,7 +1772,7 @@ def test_tier2_markers_gemini_codex_opencode(tmp_path, marker):
     repo.mkdir()
     (repo / marker).mkdir()
     dest = init.detect_skill_destinations(repo)
-    assert dest == [repo / ".agents" / "skills" / "signoff"]
+    assert dest == [repo / ".agents" / "skills" / "git-signoff"]
 
 
 def test_tier2_marker_gemini_md(tmp_path):
@@ -1780,7 +1780,7 @@ def test_tier2_marker_gemini_md(tmp_path):
     repo.mkdir()
     (repo / "GEMINI.md").write_text("# Gemini Guide\n")
     dest = init.detect_skill_destinations(repo)
-    assert dest == [repo / ".agents" / "skills" / "signoff"]
+    assert dest == [repo / ".agents" / "skills" / "git-signoff"]
 
 
 def test_no_remote_next_steps(tmp_path, monkeypatch, capsys):
@@ -1817,7 +1817,7 @@ def test_with_remote_next_steps(tmp_path, monkeypatch, capsys):
         init.main()
 
     out = capsys.readouterr().out
-    assert "git push -u origin signoff/init" in out
+    assert "git push -u origin git-signoff/init" in out
     assert "git remote add origin" not in out
 
 
@@ -1843,7 +1843,7 @@ def test_rollback_detached_head_restores_original_commit(temp_git_repo):
     with pytest.raises(RuntimeError, match="does not contain SKILL.md"):
         init.run_init(
             repo_root=temp_git_repo,
-            branch="signoff/init",
+            branch="git-signoff/init",
             skip_ruleset=True,
             non_interactive=True,
             skill_source=empty_src,
@@ -1854,7 +1854,7 @@ def test_rollback_detached_head_restores_original_commit(temp_git_repo):
     head = subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=temp_git_repo, text=True).strip()
     assert head == first
     branches = subprocess.check_output(["git", "branch"], cwd=temp_git_repo, text=True)
-    assert "signoff/init" not in branches
+    assert "git-signoff/init" not in branches
     assert not (temp_git_repo / "second.txt").exists()
     status = subprocess.check_output(["git", "status", "--porcelain"], cwd=temp_git_repo, text=True)
     assert status.strip() == ""
@@ -1933,11 +1933,11 @@ def test_scaffold_workflow_refuses_symlinked_parent(temp_git_repo, tmp_path):
 def test_scaffold_profile_and_ruleset_refuse_symlinked_signoff_dir(temp_git_repo, tmp_path):
     external = tmp_path / "external_signoff"
     external.mkdir()
-    (temp_git_repo / ".signoff").symlink_to(external)
+    (temp_git_repo / ".git-signoff").symlink_to(external)
 
-    with pytest.raises(RuntimeError, match=r"\.signoff is a symbolic link"):
+    with pytest.raises(RuntimeError, match=r"\.git-signoff is a symbolic link"):
         init.scaffold_profile(temp_git_repo, profile_id="software-general")
-    with pytest.raises(RuntimeError, match=r"\.signoff is a symbolic link"):
+    with pytest.raises(RuntimeError, match=r"\.git-signoff is a symbolic link"):
         init.setup_ruleset(temp_git_repo, slug=None)
     assert list(external.iterdir()) == []
 
@@ -1957,7 +1957,7 @@ def test_run_init_refuses_symlinked_readme_before_mutation(temp_git_repo, tmp_pa
         init.run_init(
             repo_root=temp_git_repo,
             slug="org/proj",
-            branch="signoff/init",
+            branch="git-signoff/init",
             skip_ruleset=True,
             non_interactive=True,
             skill_source=SKILL_SRC,
@@ -1966,9 +1966,9 @@ def test_run_init_refuses_symlinked_readme_before_mutation(temp_git_repo, tmp_pa
     assert external.read_text(encoding="utf-8") == "# External\n"
     assert readme.is_symlink()
     assert subprocess.check_output(["git", "branch", "--show-current"], cwd=temp_git_repo, text=True).strip() == "main"
-    assert "signoff/init" not in subprocess.check_output(["git", "branch"], cwd=temp_git_repo, text=True)
+    assert "git-signoff/init" not in subprocess.check_output(["git", "branch"], cwd=temp_git_repo, text=True)
     assert not (temp_git_repo / ".github").exists()
-    assert not (temp_git_repo / ".signoff").exists()
+    assert not (temp_git_repo / ".git-signoff").exists()
     assert not (temp_git_repo / ".claude").exists()
     status = subprocess.check_output(["git", "status", "--porcelain"], cwd=temp_git_repo, text=True)
     assert status.strip() == ""
@@ -1979,15 +1979,15 @@ def test_rollback_prune_does_not_follow_symlinked_dir(temp_git_repo, tmp_path):
     external target) alone instead of traversing or reporting it."""
     external = tmp_path / "external_signoff_dir"
     external.mkdir()
-    link = temp_git_repo / ".signoff"
+    link = temp_git_repo / ".git-signoff"
     link.symlink_to(external)
-    subprocess.run(["git", "branch", "signoff/init"], cwd=temp_git_repo, check=True)
+    subprocess.run(["git", "branch", "git-signoff/init"], cwd=temp_git_repo, check=True)
 
     failures = init._rollback_scaffold(
         temp_git_repo,
         original_branch="main",
-        target_branch="signoff/init",
-        scaffold_paths=[temp_git_repo / ".signoff" / "profile.md"],
+        target_branch="git-signoff/init",
+        scaffold_paths=[temp_git_repo / ".git-signoff" / "profile.md"],
         preexisting=set(),
         preexisting_dirs=set(),
         scaffold_started=True,
@@ -2001,9 +2001,9 @@ def test_rollback_prune_does_not_follow_symlinked_dir(temp_git_repo, tmp_path):
 # --- Regression: benign metadata allowance must hold in the real flow ---
 
 def _commit_prior_skill_install(repo_dir: Path, benign_name: str, *, ignore: bool) -> Path:
-    dest = repo_dir / ".claude" / "skills" / "signoff"
+    dest = repo_dir / ".claude" / "skills" / "git-signoff"
     shutil.copytree(SKILL_SRC, dest)
-    subprocess.run(["git", "add", ".claude/skills/signoff"], cwd=repo_dir, check=True)
+    subprocess.run(["git", "add", ".claude/skills/git-signoff"], cwd=repo_dir, check=True)
     if ignore:
         (repo_dir / ".gitignore").write_text(f"{benign_name}\n", encoding="utf-8")
         subprocess.run(["git", "add", ".gitignore"], cwd=repo_dir, check=True)
@@ -2027,7 +2027,7 @@ def test_end_to_end_tolerates_ignored_benign_metadata_in_skill_destination(temp_
         skill_target="claude",
     )
     assert res.success is True
-    assert res.branch == "signoff/init"
+    assert res.branch == "git-signoff/init"
     assert (dest / "SKILL.md").is_file()
     assert (dest / init.VENDOR_STAMP_FILENAME).is_file()
     status = subprocess.check_output(["git", "status", "--porcelain"], cwd=temp_git_repo, text=True)
@@ -2071,7 +2071,7 @@ def test_rollback_after_staging_leaves_index_clean(temp_git_repo):
         with pytest.raises(RuntimeError, match="boom after add"):
             init.run_init(
                 repo_root=temp_git_repo,
-                branch="signoff/init",
+                branch="git-signoff/init",
                 skip_ruleset=True,
                 non_interactive=True,
                 skill_source=SKILL_SRC,
@@ -2086,7 +2086,7 @@ def test_rollback_after_staging_leaves_index_clean(temp_git_repo):
     )
     assert status.strip() == "", status
     assert not (temp_git_repo / ".claude").exists()
-    assert not (temp_git_repo / ".signoff").exists()
+    assert not (temp_git_repo / ".git-signoff").exists()
 
 
 def test_init_exits_loudly_below_python_floor(tmp_path):

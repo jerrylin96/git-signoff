@@ -1,9 +1,9 @@
 ---
-name: signoff
-description: Socratic reverse-interview to verify human comprehension, domain risk awareness, and explicit accountability for branch diffs before merging. Maps to /signoff. Use when the user asks to sign off, attest, or finalize a branch before merging.
+name: git-signoff
+description: Socratic reverse-interview to verify human comprehension, domain risk awareness, and explicit accountability for branch diffs before merging. Maps to /git-signoff. Use when the user asks to sign off, attest, or finalize a branch before merging.
 ---
 
-# /signoff: Human Comprehension & Accountability Verification
+# /git-signoff: Human Comprehension & Accountability Verification
 
 ## Core Philosophy
 Audit human understanding and conscious risk acceptance. Prevent cognitive surrender (rubber-stamping AI diffs).
@@ -29,15 +29,15 @@ Per-harness installation (Antigravity, Claude Code web/CLI, Codex, generic) and 
    ```
 3. Record `Base-SHA` (`$BASE_SHA`), `Reviewed-Commit-SHA` (`<reviewed-commit-sha>`), and `Reviewed-Tree-SHA` (`$TREE_SHA`) for the attestation record.
 4. Inspect range diff `git diff "$BASE_SHA...<reviewed-commit-sha>"` to analyze core mechanisms, contract deviations, and silent failure paths prior to starting the interview.
-5. Resolve the **active interview profile**. Resolution order: `SIGNOFF_PROFILE_FILE` env override → `<repo>/.signoff/profile.md` (repo-local) → the embedded INTERVIEW PROFILE block below (shipped default).
+5. Resolve the **active interview profile**. Resolution order: `GIT_SIGNOFF_PROFILE_FILE` env override → `<repo>/.git-signoff/profile.md` (repo-local) → the embedded INTERVIEW PROFILE block below (shipped default).
    ```bash
    REPO_ROOT=$(git rev-parse --show-toplevel)
    PROFILE_SOURCE=""
-   if [ -n "${SIGNOFF_PROFILE_FILE:-}" ]; then
-       [ -r "$SIGNOFF_PROFILE_FILE" ] || { echo "Error: SIGNOFF_PROFILE_FILE is set but unreadable. Aborting signoff." >&2; exit 1; }
-       PROFILE_SOURCE="$SIGNOFF_PROFILE_FILE"
-   elif [ -r "$REPO_ROOT/.signoff/profile.md" ]; then
-       PROFILE_SOURCE="$REPO_ROOT/.signoff/profile.md"
+   if [ -n "${GIT_SIGNOFF_PROFILE_FILE:-}" ]; then
+       [ -r "$GIT_SIGNOFF_PROFILE_FILE" ] || { echo "Error: GIT_SIGNOFF_PROFILE_FILE is set but unreadable. Aborting signoff." >&2; exit 1; }
+       PROFILE_SOURCE="$GIT_SIGNOFF_PROFILE_FILE"
+   elif [ -r "$REPO_ROOT/.git-signoff/profile.md" ]; then
+       PROFILE_SOURCE="$REPO_ROOT/.git-signoff/profile.md"
    fi
    if [ -n "$PROFILE_SOURCE" ]; then
        PROFILE_DIGEST=$(sed -n '/INTERVIEW-PROFILE:BEGIN/,/INTERVIEW-PROFILE:END/p' "$PROFILE_SOURCE" | sha256sum | cut -c1-12)
@@ -58,7 +58,7 @@ Pace: 1-2 probes per turn. Select the interview intensity level before the first
 
 #### Interview Intensity Levels & Adaptive Classification Matrix
 
-When `/signoff` is run without an explicit intensity flag (`--quick` / `--deep`), the agent dynamically inspects the range diff to auto-select the Adaptive Interview Intensity level based on semantic impact and blast radius. The matrix governs auto-classification for bare `/signoff`; explicit modifiers override the content-type criteria below but never the safety triggers, clamps, or escalation rules.
+When `/git-signoff` is run without an explicit intensity flag (`--quick` / `--deep`), the agent dynamically inspects the range diff to auto-select the Adaptive Interview Intensity level based on semantic impact and blast radius. The matrix governs auto-classification for bare `/git-signoff`; explicit modifiers override the content-type criteria below but never the safety triggers, clamps, or escalation rules.
 
 | Tier | Level | Target Churn & Profile | Heuristic Detection Signals | Probe Structure & Pass Criteria |
 |---|---|---|---|---|
@@ -75,7 +75,7 @@ A range diff auto-selects Tier 2 (`skeptical`) if it matches ANY of the followin
 5. **Executable Code Blast Radius:** >5 files or >200 lines of non-boilerplate executable code (excluding pure documentation, comments, formatting, lockfiles, and generated stubs).
 
 Classification Precedence & Evaluation Order:
-1. **Explicit `/signoff --deep`:** Unconditionally forces Tier 2 (`skeptical`) regardless of diff size or content.
+1. **Explicit `/git-signoff --deep`:** Unconditionally forces Tier 2 (`skeptical`) regardless of diff size or content.
 2. **High-Impact Content/Path Triggers:** If diff touches any trigger from the Canonical High-Impact Tier 2 list (security/auth, schemas/migrations, public APIs, scientific computation), auto-select Tier 2 (`skeptical`). Docs-only capping does not apply if executable code or schema files (e.g. `schema.sql`, `migrations/`) are touched.
 3. **Pure Documentation / Comment Capping:** Diffs consisting solely of pure documentation, comments, docstrings, formatting/lint, or pure type annotations cap at max Tier 1 (`standard`), even if exceeding >5 files or >200 lines. Path tokens like `auth/` or `migrations/` do not trigger Tier 2 on `*.md` files alone.
 4. **Executable Code Blast Radius:** Non-boilerplate executable code changes exceeding >5 files or >200 lines auto-select Tier 2 (`skeptical`).
@@ -84,11 +84,11 @@ Classification Precedence & Evaluation Order:
 
 Guards & Precedence:
 - **Modifier Precedence & Safety Clamps:**
-  - Bare `/signoff`: Dynamically auto-classifies into Tier 0 (`cursory`), Tier 1 (`standard`), or Tier 2 (`skeptical`) per the evaluation order above.
-  - `/signoff --deep`: Unconditionally forces Tier 2 (`skeptical`).
-  - `/signoff --quick`: Requests Tier 0 (`cursory`). Evaluated via the following 4-row safety clamp (rows are evaluated in order; the first matching row governs):
+  - Bare `/git-signoff`: Dynamically auto-classifies into Tier 0 (`cursory`), Tier 1 (`standard`), or Tier 2 (`skeptical`) per the evaluation order above.
+  - `/git-signoff --deep`: Unconditionally forces Tier 2 (`skeptical`).
+  - `/git-signoff --quick`: Requests Tier 0 (`cursory`). Evaluated via the following 4-row safety clamp (rows are evaluated in order; the first matching row governs):
     1. *Docs-only (any size):* Cursory permitted if <50 LoC AND ≤2 files; if exceeding docs size bounds (≥50 LoC or >2 files), the agent MUST refuse cursory and auto-escalate to Tier 1 (`standard`) per the docs cap. Never Tier 2.
-    2. *Small routine code:* Cursory permitted on executable feature/bugfix diffs within Tier 1 size bounds (≤200 LoC, ≤5 files) provided zero Tier 2 content/path triggers are present (i.e., explicit opt-in to a level below what bare `/signoff` would auto-select for this diff).
+    2. *Small routine code:* Cursory permitted on executable feature/bugfix diffs within Tier 1 size bounds (≤200 LoC, ≤5 files) provided zero Tier 2 content/path triggers are present (i.e., explicit opt-in to a level below what bare `/git-signoff` would auto-select for this diff).
     3. *High-impact content/path triggers:* If diff touches any Canonical Tier 2 content/path trigger (security, schemas, public APIs, scientific computation), the agent MUST refuse cursory and auto-escalate to Tier 2 (`skeptical`) — except that path-token triggers (`auth/`, `migrations/`, etc.) do not trigger Tier 2 on diffs consisting solely of `*.md`/docs files (see row 1).
     4. *Executable blast radius:* If executable code exceeds >5 files or >200 non-boilerplate lines, the agent MUST refuse cursory and auto-escalate to Tier 2 (`skeptical`).
 - **Graduated One-Way Escalation:**
@@ -101,7 +101,7 @@ Guards & Precedence:
 
 #### Interview Profile (sole customization point)
 
-The interview profile weights probes *within* the universal axes for the active domain and is the only supported customization point of this skill — profiles may add domain emphases but cannot remove axes or lower pass criteria. The block below is the **shipped default**, used when Section 1 step 5 resolves no file-sourced profile (`SIGNOFF_PROFILE_FILE` or repo-local `.signoff/profile.md`). Authoring and swap instructions, shipped profiles: [HARNESSES.md](HARNESSES.md), [profiles/](profiles/).
+The interview profile weights probes *within* the universal axes for the active domain and is the only supported customization point of this skill — profiles may add domain emphases but cannot remove axes or lower pass criteria. The block below is the **shipped default**, used when Section 1 step 5 resolves no file-sourced profile (`GIT_SIGNOFF_PROFILE_FILE` or repo-local `.git-signoff/profile.md`). Authoring and swap instructions, shipped profiles: [HARNESSES.md](HARNESSES.md), [profiles/](profiles/).
 
 <!-- INTERVIEW-PROFILE:BEGIN (sole customization point — replace only this block) -->
 ### Interview Profile: software-general
@@ -124,16 +124,16 @@ or lower pass criteria:
 ### 3. User Approval & Attestation
 
 > [!NOTE]
-> **Scratchpad Lifecycle Sync (make-feature Phase 4, Step 8)**: If `<appDataDir>/brain/<conversation-id>/scratch/scratchpad.md` exists, ensure it is updated pre-signoff with final completion status, matching Step 8 of the make-feature skill (in harnesses that ship it). If the scratchpad file does not exist (e.g. post-Phase-4 cleanup or standalone `/signoff` execution), skip this step rather than recreating it.
+> **Scratchpad Lifecycle Sync (make-feature Phase 4, Step 8)**: If `<appDataDir>/brain/<conversation-id>/scratch/scratchpad.md` exists, ensure it is updated pre-signoff with final completion status, matching Step 8 of the make-feature skill (in harnesses that ship it). If the scratchpad file does not exist (e.g. post-Phase-4 cleanup or standalone `/git-signoff` execution), skip this step rather than recreating it.
 
 1. **Request Explicit User Approval:**
-   Present proposed trade-offs, risks, and `Signoff-Verified-By` email. Propose the email deterministically, in order: `SIGNOFF_VERIFIED_BY` env override → harness-authenticated account email (`CLAUDE_CODE_USER_EMAIL` on Claude Code) → `git config user.email` (local harnesses only — in cloud sessions git config holds the session identity, not the human; see [HARNESSES.md](HARNESSES.md)). The human's explicit confirmation of the proposed value is the accountability step. Confirm user readiness to proceed with empty attestation commit (`git commit --allow-empty`).
+   Present proposed trade-offs, risks, and `Signoff-Verified-By` email. Propose the email deterministically, in order: `GIT_SIGNOFF_VERIFIED_BY` env override → harness-authenticated account email (`CLAUDE_CODE_USER_EMAIL` on Claude Code) → `git config user.email` (local harnesses only — in cloud sessions git config holds the session identity, not the human; see [HARNESSES.md](HARNESSES.md)). The human's explicit confirmation of the proposed value is the accountability step. Confirm user readiness to proceed with empty attestation commit (`git commit --allow-empty`).
 
 2. **Verify Clean & Stale-Free State:**
    After receiving initial user approval, re-verify state: current `HEAD` equals `<reviewed-commit-sha>`, no unstaged changes (`git diff --quiet`), and no staged changes (`git diff --cached --quiet`). If dirty or `HEAD` has moved, stop and declare signoff stale.
 
 3. **Resolve Harness Adapter & Capture Transcript Snapshot:**
-   After recording user confirmation in transcript, resolve the active harness adapter and capture the transcript snapshot (SHA256 digest + exact byte count) immediately before the commit, per GSA snapshot timing rules ([specs/gsa-core.md](specs/gsa-core.md) §2.3). Resolution order: `SIGNOFF_TRANSCRIPT_FILE` explicit override → `ANTIGRAVITY_CONVERSATION_ID` → `CLAUDE_CODE_SESSION_ID` → `CODEX_SESSION_ID`. Execute the Python helper via temporary file with explicit trap cleanup:
+   After recording user confirmation in transcript, resolve the active harness adapter and capture the transcript snapshot (SHA256 digest + exact byte count) immediately before the commit, per GSA snapshot timing rules ([specs/gsa-core.md](specs/gsa-core.md) §2.3). Resolution order: `GIT_SIGNOFF_TRANSCRIPT_FILE` explicit override → `ANTIGRAVITY_CONVERSATION_ID` → `CLAUDE_CODE_SESSION_ID` → `CODEX_SESSION_ID`. Execute the Python helper via temporary file with explicit trap cleanup:
    ```bash
    TMP_DIGEST_FILE=$(mktemp) || { echo "Error: mktemp failed. Aborting signoff." >&2; exit 1; }
    trap 'rm -f -- "$TMP_DIGEST_FILE"' EXIT INT TERM
@@ -179,7 +179,7 @@ or lower pass criteria:
    def slug(p):
        return p.replace("/", "-")
 
-   override = os.environ.get("SIGNOFF_TRANSCRIPT_FILE", "").strip()
+   override = os.environ.get("GIT_SIGNOFF_TRANSCRIPT_FILE", "").strip()
    ag_cid = os.environ.get("ANTIGRAVITY_CONVERSATION_ID", "").strip()
    cc_cid = os.environ.get("CLAUDE_CODE_SESSION_ID", "").strip()
    codex_sid = os.environ.get("CODEX_SESSION_ID", "").strip()
@@ -274,7 +274,7 @@ Signoff-Agent: harness=<HARNESS_ID>/<AGENT_HVER> model=<AGENT_MODEL> reasoning=<
 ```
 *Note: For missing/unreadable transcripts, use `Signoff-Status: VERIFIED_BY_HUMAN_NO_TRANSCRIPT_DIGEST` with `Signoff-Transcript-Digest: unavailable` and `Signoff-Transcript-Bytes: unavailable`. Repeat `Signoff-Tradeoff:` and `Signoff-Risk:` lines for each acknowledged item; use `none` if empty. Every value is a single line: never embed a line break in trade-off, risk, agent, or email text, and never let a line of the optional summary paragraph begin with `Signoff-` — every other trailer appears exactly once per attestation, and verifiers reject an attestation that repeats one (gsa-core §2.3).*
 
-*`Signoff-Agent` provenance (grammar: [specs/gsa-core.md](specs/gsa-core.md) §2.3): space-separated `key=value` tokens, values matching `[A-Za-z0-9._:/-]+`. When `<AGENT_MODEL>` is `unavailable`, substitute the agent's self-reported model identifier (use `N/A` only if genuinely unknown); keep `<AGENT_HVER>` and `<AGENT_REASONING>` exactly as emitted (`N/A` when the harness exposes none). `<intensity-level>` is the interview level actually run (post-escalation); `<profile-id>` is the `Profile-ID` of the active INTERVIEW PROFILE block. When the profile was file-sourced (Section 1 step 5: `SIGNOFF_PROFILE_FILE` or `.signoff/profile.md`), append `/sha256:$PROFILE_DIGEST` — the 12-hex-prefix digest computed at resolution time — so verifiers can identify the exact question set; omit the segment when the embedded shipped block is active.*
+*`Signoff-Agent` provenance (grammar: [specs/gsa-core.md](specs/gsa-core.md) §2.3): space-separated `key=value` tokens, values matching `[A-Za-z0-9._:/-]+`. When `<AGENT_MODEL>` is `unavailable`, substitute the agent's self-reported model identifier (use `N/A` only if genuinely unknown); keep `<AGENT_HVER>` and `<AGENT_REASONING>` exactly as emitted (`N/A` when the harness exposes none). `<intensity-level>` is the interview level actually run (post-escalation); `<profile-id>` is the `Profile-ID` of the active INTERVIEW PROFILE block. When the profile was file-sourced (Section 1 step 5: `GIT_SIGNOFF_PROFILE_FILE` or `.git-signoff/profile.md`), append `/sha256:$PROFILE_DIGEST` — the 12-hex-prefix digest computed at resolution time — so verifiers can identify the exact question set; omit the segment when the embedded shipped block is active.*
 
 ### 4. Commit Execution & Integrity Verification
 
@@ -320,7 +320,7 @@ git push origin refs/notes/signoff
 To manually verify the harness adapter and transcript digest helper logic across all outcome classes (helper emits exactly 7 lines: harness ID, conversation ID, digest, byte count, harness version, model, reasoning level):
 
 1. **Generic Override (any harness):**
-   `SIGNOFF_TRANSCRIPT_FILE="/path/to/transcript" ...`
+   `GIT_SIGNOFF_TRANSCRIPT_FILE="/path/to/transcript" ...`
    - Output: `generic-file` / conversation ID (or `unavailable`) / 64-hex digest / byte count. Status set to `VERIFIED_BY_HUMAN`. Override takes precedence over all harness env vars.
 
 2. **Antigravity CLI:**
@@ -358,6 +358,6 @@ To manually verify the harness adapter and transcript digest helper logic across
 
 ## Modifiers
 Modifiers select the named interview-intensity level (see Interview Intensity Levels & Adaptive Classification Matrix):
-- `/signoff`: **adaptive** intensity (default) — dynamically auto-selects Tier 0 (`cursory`), Tier 1 (`standard`), or Tier 2 (`skeptical`) based on range diff impact and blast radius heuristics.
-- `/signoff --quick`: **cursory** intensity (Tier 0) — subject to the 4-row safety clamp (rows evaluated in order): permitted on small routine code (≤200 LoC, ≤5 files) or small docs (<50 LoC, ≤2 files); strictly blocked and auto-escalated to Tier 1 for docs-only blast radius (≥50 LoC or >2 files), or to Tier 2 for executable blast radius (>5 files or >200 lines) or any Canonical Tier 2 trigger (`auth/`, `crypto/`, `permissions/`, `migrations/`, `schema.sql`, `ALTER TABLE`, `proto`, `OpenAPI`, scientific computation) except on docs-only diffs.
-- `/signoff --deep`: **skeptical** intensity (Tier 2) — unconditionally enforces skeptical rigor (8+ probes), multiple probes per axis, and prediction challenges.
+- `/git-signoff`: **adaptive** intensity (default) — dynamically auto-selects Tier 0 (`cursory`), Tier 1 (`standard`), or Tier 2 (`skeptical`) based on range diff impact and blast radius heuristics.
+- `/git-signoff --quick`: **cursory** intensity (Tier 0) — subject to the 4-row safety clamp (rows evaluated in order): permitted on small routine code (≤200 LoC, ≤5 files) or small docs (<50 LoC, ≤2 files); strictly blocked and auto-escalated to Tier 1 for docs-only blast radius (≥50 LoC or >2 files), or to Tier 2 for executable blast radius (>5 files or >200 lines) or any Canonical Tier 2 trigger (`auth/`, `crypto/`, `permissions/`, `migrations/`, `schema.sql`, `ALTER TABLE`, `proto`, `OpenAPI`, scientific computation) except on docs-only diffs.
+- `/git-signoff --deep`: **skeptical** intensity (Tier 2) — unconditionally enforces skeptical rigor (8+ probes), multiple probes per axis, and prediction challenges.

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Git Signoff Attestation (GSA) verifier — stdlib-only, single file.
 
-Verifies GSA v1.0 attestations (skills/signoff/specs/gsa-core.md) against a
+Verifies GSA v1.0 attestations (skills/git-signoff/specs/gsa-core.md) against a
 repository's history using the §5.1 lookup order: git notes
 (refs/notes/signoff) on the commit and its tree, then [SIGNOFF *]
 attestation commits in the log, with the tree-SHA fallback for squash
@@ -13,7 +13,7 @@ Two modes:
            PR-gate check. A commit that is itself an attestation commit
            passes when it is empty (same tree as its parent) and attests
            its own parent's commit and tree (the normal shape of a branch
-           ending in /signoff); a non-empty attestation commit fails, so
+           ending in /git-signoff); a non-empty attestation commit fails, so
            trailers cannot smuggle unreviewed changes past the gate.
            For 2-parent merge commits (e.g. GitHub standard PR merges),
            verifies that HEAD^{tree} cleanly matches git merge-tree HEAD^1 HEAD^2
@@ -55,7 +55,7 @@ import subprocess  # noqa: E402
 NOTES_REF = "refs/notes/signoff"
 # The verifier's own isolated mirror of origin's notes. Fetching origin straight
 # into NOTES_REF force-overwrites attestation notes that have not been pushed
-# yet — gsa-core §5.1 forbids exactly that, and a reviewer who runs /signoff
+# yet — gsa-core §5.1 forbids exactly that, and a reviewer who runs /git-signoff
 # offline and verifies before pushing would silently lose the record. This ref
 # is the only ref verification writes; NOTES_REF is read and never modified.
 NOTES_FETCH_REF = "refs/notes/signoff-verify"
@@ -358,7 +358,7 @@ def check_head(repo, target):
 
     return False, [
         f"FAIL: no valid attestation covers commit {commit[:7]} (or tree {tree[:7]})",
-        "  Run /signoff on this branch before merging.",
+        "  Run /git-signoff on this branch before merging.",
     ]
 
 
@@ -552,8 +552,8 @@ def check_audit(repo, target="HEAD", export_path=None):
         return False, [f"FAIL: Malformed Signoff-Transcript-Bytes {bytes_str!r}"]
 
     # Resolve transcript path
-    if os.environ.get("SIGNOFF_TRANSCRIPT_FILE"):
-        transcript_path = Path(os.environ["SIGNOFF_TRANSCRIPT_FILE"])
+    if os.environ.get("GIT_SIGNOFF_TRANSCRIPT_FILE"):
+        transcript_path = Path(os.environ["GIT_SIGNOFF_TRANSCRIPT_FILE"])
     else:
         home_dir = Path(os.environ.get("HOME") or os.environ.get("USERPROFILE") or Path.home())
         if harness_id == "claude-code":
@@ -617,7 +617,7 @@ def check_audit(repo, target="HEAD", export_path=None):
             else:
                 return False, [
                     "FAIL: For generic-file harnesses, the conversation ID is not a local file path. "
-                    "Please set SIGNOFF_TRANSCRIPT_FILE=<path/to/transcript.jsonl> to audit."
+                    "Please set GIT_SIGNOFF_TRANSCRIPT_FILE=<path/to/transcript.jsonl> to audit."
                 ]
         else:
             return False, [f"FAIL: Unsupported or unknown harness {harness_id!r}"]

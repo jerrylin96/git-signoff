@@ -20,7 +20,7 @@ Domain emphases — weight probes within the universal axes:
 
 
 def _write_repo_profile(scratch_repo, content=VALID_PROFILE):
-    d = scratch_repo / ".signoff"
+    d = scratch_repo / ".git-signoff"
     d.mkdir()
     (d / "profile.md").write_text(content, encoding="utf-8")
     return d / "profile.md"
@@ -53,7 +53,7 @@ def test_env_override_takes_precedence(scratch_repo, tmp_path):
     _write_repo_profile(scratch_repo)
     override = tmp_path / "override.md"
     override.write_text(VALID_PROFILE.replace("atmos-column-test", "override-id"), encoding="utf-8")
-    res = profile.resolve_profile(str(scratch_repo), env={"SIGNOFF_PROFILE_FILE": str(override)})
+    res = profile.resolve_profile(str(scratch_repo), env={"GIT_SIGNOFF_PROFILE_FILE": str(override)})
     assert res.source == profile.SOURCE_ENV_OVERRIDE
     assert res.path == str(override)
     assert res.profile_id == "override-id"
@@ -63,7 +63,7 @@ def test_unreadable_env_override_aborts_not_falls_back(scratch_repo, tmp_path):
     _write_repo_profile(scratch_repo)  # a valid fallback exists — must still abort
     with pytest.raises(profile.ProfileOverrideError, match="Aborting signoff"):
         profile.resolve_profile(
-            str(scratch_repo), env={"SIGNOFF_PROFILE_FILE": str(tmp_path / "missing.md")}
+            str(scratch_repo), env={"GIT_SIGNOFF_PROFILE_FILE": str(tmp_path / "missing.md")}
         )
 
 
@@ -179,6 +179,6 @@ def test_prepare_defaults_to_embedded_profile(scratch_repo):
 
 
 def test_prepare_aborts_on_unreadable_override(scratch_repo, tmp_path, monkeypatch):
-    monkeypatch.setenv("SIGNOFF_PROFILE_FILE", str(tmp_path / "missing.md"))
+    monkeypatch.setenv("GIT_SIGNOFF_PROFILE_FILE", str(tmp_path / "missing.md"))
     with pytest.raises(core.SignoffError, match="Aborting signoff"):
         core.prepare(core.GitRepo(str(scratch_repo)), "HEAD", reference_ref="main")
