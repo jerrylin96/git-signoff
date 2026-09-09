@@ -50,7 +50,7 @@ standard-library helper does every mechanical step.
   so the live-repo tests run there; ruff `target-version = "py310"` with the
   `B` and `I` rule sets.
 
-## v0.4.0 — 2026-09-08 (`verify-v1.3`, `init-v6`, spec 3.6.0)
+## v0.4.0 — tagged 2026-09-08, released 2026-09-09 (`verify-v1.3`, `init-v6`, spec 3.6.0)
 
 - **Security:** closed a PR-gate bypass in the verifier — a line break inside a
   trade-off could smuggle a second `Signoff-Reviewed-Tree-SHA` that anchored

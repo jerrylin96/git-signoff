@@ -412,9 +412,10 @@ Recorded so they never need re-derivation; each names its future fix.
 - GitHub About sidebar text.
 - Dispatch the `release` workflow to cut the `v0.5.0` tag once the
   deterministic-producer branch has merged and `tag.yml` has created
-  `verify-v1.4` / `init-v7` on `main` (`v0.4.0` was deliberately not cut; the
-  paper cites `v0.5.0`). Then set up Zenodo archiving for the DOI at
-  acceptance.
+  `verify-v1.4` / `init-v7` on `main`. (`v0.4.0` was released from `49187c4`
+  on 2026-09-09 00:02 UTC, before this branch; it predates the deterministic
+  producer, so the paper cites `v0.5.0`.) Then set up Zenodo archiving for the
+  DOI at acceptance.
 - PyPI, for the record: publication remains dropped; nothing in the
   adoption path is installed by name. Should a distribution ever be needed,
   `git-attest` was free on 2026-09-08 (`git-signoff` is rejected by PyPI as
