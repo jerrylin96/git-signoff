@@ -156,7 +156,7 @@ Output (`--json`: one object; otherwise labeled lines): `attestation_sha`,
 | 4 | Transcript problem: unavailable without `--ack-no-transcript`; marker not found; marker for an unrelated commit. |
 | 5 | `GIT_SIGNOFF_PROFILE_FILE` set but unreadable. A malformed repo-local profile is *not* an error (falls back, reported). |
 | 6 | git failure (rev-parse, commit, notes append). |
-| 7 | Self-check failure; anything written has been removed. |
+| 7 | Self-check failure; anything written has been removed. If a rollback step itself fails, the message says `ROLLBACK INCOMPLETE` and names the step instead of claiming a clean state. |
 
 ### Environment
 

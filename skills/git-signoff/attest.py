@@ -36,7 +36,9 @@ Exit codes:
      malformed repo-local profile is not an error: it falls back, reported)
   6  git failure (rev-parse, commit, notes append)
   7  self-check failure: the verifier rejects the produced attestation; the
-     empty commit and the notes just written are removed before exit
+     empty commit and the notes just written are removed before exit. If a
+     rollback step itself fails, the message says ROLLBACK INCOMPLETE and
+     names the step, so the exit never describes a state that is not true.
 
 Environment:
 
@@ -955,16 +957,42 @@ def _note_blob(repo: GitRepo, target: str) -> str | None:
     return proc.stdout.strip() if proc.returncode == 0 and proc.stdout.strip() else None
 
 
-def _restore_notes(repo: GitRepo, prior: dict[str, str | None]) -> None:
+def _restore_notes(repo: GitRepo, prior: dict[str, str | None]) -> list[str]:
+    """Put each note back as it was before this run. Returns the steps that failed."""
+    failures = []
     for target, blob in prior.items():
         if blob is None:
-            repo.git("notes", f"--ref={NOTES_REF}", "remove", "--ignore-missing", target, check=False)
+            proc = repo.git("notes", f"--ref={NOTES_REF}", "remove", "--ignore-missing", target, check=False)
+            action = f"remove the note on {target[:7]}"
         else:
-            repo.git("notes", f"--ref={NOTES_REF}", "add", "-f", "-C", blob, target, check=False)
+            proc = repo.git("notes", f"--ref={NOTES_REF}", "add", "-f", "-C", blob, target, check=False)
+            action = f"restore the prior note on {target[:7]}"
+        if proc.returncode != 0:
+            failures.append(f"{action}: {proc.stderr.strip() or f'exit {proc.returncode}'}")
+    return failures
 
 
-def _rollback_commit(repo: GitRepo) -> None:
-    repo.git("reset", "-q", "--soft", "HEAD~1", check=False)
+def _rollback_commit(repo: GitRepo) -> list[str]:
+    """Drop the attestation commit just written (soft: its tree equals its parent's).
+    Returns the failure, if any, so the caller never claims a removal that did not happen."""
+    proc = repo.git("reset", "-q", "--soft", "HEAD~1", check=False)
+    if proc.returncode != 0:
+        return [f"remove the attestation commit (git reset --soft HEAD~1): {proc.stderr.strip() or f'exit {proc.returncode}'}"]
+    return []
+
+
+def _rollback_error(code: int, message: str, failures: list[str]) -> AttestError:
+    """The exit message must describe the repository as it *is*: when any
+    rollback step failed, say so loudly instead of asserting a clean state."""
+    if not failures:
+        return AttestError(code, message)
+    return AttestError(
+        code,
+        message
+        + " ROLLBACK INCOMPLETE — the repository is NOT back in its pre-commit state: "
+        + "; ".join(failures)
+        + ". Inspect `git log -1` and `git notes --ref=signoff list` before doing anything else.",
+    )
 
 
 def push_notes(repo: GitRepo, remote: str = "origin") -> tuple[bool, bool, str | None]:
@@ -1088,16 +1116,25 @@ def commit(root: str, opts: CommitOptions, env: Mapping[str, str] | None = None,
     attestation_sha = repo.out("rev-parse", "HEAD")
 
     if repo.out("rev-parse", "HEAD^{tree}") != tree or repo.out("rev-parse", "HEAD~1") != reviewed:
-        _rollback_commit(repo)
-        raise AttestError(EXIT_SELFCHECK, "post-commit integrity check failed: tree or parent changed; commit removed.")
+        failures = _rollback_commit(repo)
+        raise _rollback_error(
+            EXIT_SELFCHECK,
+            "post-commit integrity check failed: tree or parent changed; "
+            + ("commit removed." if not failures else "commit removal attempted."),
+            failures,
+        )
 
     # Dual persistence (§2.5): note on both the reviewed commit and its tree.
     for sha in (reviewed, tree):
         proc = repo.git("notes", f"--ref={NOTES_REF}", "append", "-m", message, sha, check=False)
         if proc.returncode != 0:
-            _restore_notes(repo, prior_notes)
-            _rollback_commit(repo)
-            raise AttestError(EXIT_GIT, f"git notes append on {sha[:7]} failed: {proc.stderr.strip()}; commit removed.")
+            failures = _restore_notes(repo, prior_notes) + _rollback_commit(repo)
+            raise _rollback_error(
+                EXIT_GIT,
+                f"git notes append on {sha[:7]} failed: {proc.stderr.strip()}; "
+                + ("commit removed and notes restored." if not failures else "rollback attempted."),
+                failures,
+            )
 
     # Post-commit self-check with the sibling verifier, on our own output.
     try:
@@ -1105,11 +1142,13 @@ def commit(root: str, opts: CommitOptions, env: Mapping[str, str] | None = None,
     except SystemExit as exc:  # the verifier's git() raises SystemExit on git errors
         ok, lines = False, [str(exc)]
     if not ok:
-        _restore_notes(repo, prior_notes)
-        _rollback_commit(repo)
-        raise AttestError(
+        failures = _restore_notes(repo, prior_notes) + _rollback_commit(repo)
+        raise _rollback_error(
             EXIT_SELFCHECK,
-            "the verifier rejected the attestation just written; commit and notes removed: " + " ".join(lines),
+            "the verifier rejected the attestation just written; "
+            + ("commit and notes removed: " if not failures else "rollback attempted: ")
+            + " ".join(lines),
+            failures,
         )
 
     result.attestation_sha = attestation_sha

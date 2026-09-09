@@ -761,6 +761,61 @@ def test_commit_integrity_failure_rolls_back(scratch_repo, tmp_path, monkeypatch
     assert git(scratch_repo, "notes", "--ref=signoff", "list", check=False).stdout.strip() == ""
 
 
+def test_rollback_failure_is_reported_not_claimed(scratch_repo, tmp_path, monkeypatch):
+    """If `git reset --soft HEAD~1` fails inside the rollback, the exit-7 message
+    must say ROLLBACK INCOMPLETE and name the step, never "commit removed"."""
+    head = _head(scratch_repo)
+    t = _transcript(tmp_path, scratch_repo)
+    adapter = attest.GenericFileAdapter(str(t))
+
+    class RejectingVerifier:
+        parse_trailers = staticmethod(verify_signoff.parse_trailers)
+        validate_single = staticmethod(verify_signoff.validate_single)
+
+        @staticmethod
+        def check_head(repo, target):
+            return False, ["FAIL: simulated verifier rejection"]
+
+    real_git = attest.GitRepo.git
+
+    def failing_reset(self, *args, check=True):
+        if args[:2] == ("reset", "-q"):
+            return subprocess.CompletedProcess(["git", *args], 128, "", "fatal: Unable to create '.git/HEAD.lock': File exists.")
+        return real_git(self, *args, check=check)
+
+    monkeypatch.setattr(attest.GitRepo, "git", failing_reset)
+    opts = attest.CommitOptions(email="dev@example.com", level="standard", reference="main", push=False)
+    with pytest.raises(attest.AttestError) as exc:
+        attest.commit(str(scratch_repo), opts, env={}, adapter=adapter, verifier=RejectingVerifier())
+    msg = str(exc.value)
+    assert exc.value.code == 7
+    assert "ROLLBACK INCOMPLETE" in msg and "HEAD.lock" in msg and "git reset --soft HEAD~1" in msg
+    assert "commit and notes removed" not in msg
+    assert "git log -1" in msg
+    # the message told the truth: the rejected attestation commit is still at HEAD,
+    # while the notes (whose restore did not fail) are gone
+    assert _head(scratch_repo) != head and git(scratch_repo, "rev-parse", "HEAD~1").stdout.strip() == head
+    assert git(scratch_repo, "notes", "--ref=signoff", "list", check=False).stdout.strip() == ""
+
+
+def test_rollback_success_message_is_unqualified(scratch_repo, tmp_path, monkeypatch):
+    t = _transcript(tmp_path, scratch_repo)
+    adapter = attest.GenericFileAdapter(str(t))
+
+    class RejectingVerifier:
+        parse_trailers = staticmethod(verify_signoff.parse_trailers)
+        validate_single = staticmethod(verify_signoff.validate_single)
+
+        @staticmethod
+        def check_head(repo, target):
+            return False, ["FAIL: simulated verifier rejection"]
+
+    opts = attest.CommitOptions(email="dev@example.com", level="standard", reference="main", push=False)
+    with pytest.raises(attest.AttestError) as exc:
+        attest.commit(str(scratch_repo), opts, env={}, adapter=adapter, verifier=RejectingVerifier())
+    assert "commit and notes removed" in str(exc.value) and "ROLLBACK INCOMPLETE" not in str(exc.value)
+
+
 def test_load_verifier_requires_the_sibling_file(tmp_path, monkeypatch):
     lonely = tmp_path / "lonely"
     lonely.mkdir()
