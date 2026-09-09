@@ -809,9 +809,11 @@ def test_pyproject_builds_no_package():
     and the ruff configuration only."""
     repo_root = Path(__file__).parent.parent
     pyproject_content = (repo_root / "pyproject.toml").read_text(encoding="utf-8")
-    assert "py-modules" not in pyproject_content
     assert "[build-system]" not in pyproject_content
     assert "packages" not in pyproject_content
+    # py-modules = [] keeps an accidental `pip install -e .` from tripping
+    # setuptools' flat-layout discovery; it declares nothing to install.
+    assert "py-modules = []" in pyproject_content
     assert not (repo_root / "git_signoff").exists(), "the git_signoff package was removed in 0.5.0"
 
 
@@ -2217,3 +2219,28 @@ def test_setup_ruleset_reports_why_it_fell_back(temp_git_repo, monkeypatch, caps
     assert res.status == "fallback_manual"
     assert "not a GitHub remote" in capsys.readouterr().err
     assert (temp_git_repo / ".git-signoff" / "ruleset.json").is_file()
+
+
+def test_inject_readme_badge_migrates_legacy_signoff_workflow_url(temp_git_repo):
+    """A README badge from an install before the git-signoff rename points at
+    workflows/signoff.yml; re-running init rewrites it to git-signoff.yml
+    instead of leaving a badge for a workflow file the scaffold no longer writes."""
+    readme = temp_git_repo / "README.md"
+    legacy = (
+        "# Test Project\r\n\r\n"
+        "[![attested by humans](https://github.com/org/my-project/actions/workflows/signoff.yml/badge.svg)]"
+        "(https://github.com/org/my-project/actions/workflows/signoff.yml)\r\n\r\nA test repository.\r\n"
+    )
+    readme.write_bytes(legacy.encode("utf-8"))
+    init.inject_readme_badge(temp_git_repo, "org/my-project")
+    content = readme.read_bytes()
+    assert content == legacy.replace("actions/workflows/signoff.yml", "actions/workflows/git-signoff.yml").encode("utf-8")
+    assert content.count(b"badge.svg") == 1
+    assert b"\r\n" in content  # line endings preserved
+
+
+def test_inject_readme_badge_does_not_duplicate_a_hand_written_mention(temp_git_repo):
+    readme = temp_git_repo / "README.md"
+    readme.write_text("# Test Project\n\nThis repo is attested by humans (see CI).\n", encoding="utf-8")
+    init.inject_readme_badge(temp_git_repo, "org/my-project")
+    assert "badge.svg" not in readme.read_text(encoding="utf-8")

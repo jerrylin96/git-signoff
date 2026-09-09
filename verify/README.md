@@ -65,8 +65,8 @@ as `verify-v2`. Tracking `@main` works but couples your CI to this
 repository's development pace.
 
 **Stale-pin warning.** Since `verify-v1.4` the verifier lists this
-repository's `verify-v*` tags after fetching notes and prints one line to the
-CI log when a newer pin exists:
+repository's `verify-v*` tags after fetching notes and prints one line on
+stderr (visible in the CI log; stdout stays the verdict) when a newer pin exists:
 
 ```text
 warning: verifier pin verify-v1.4 is behind verify-v1.5; see verify/README.md

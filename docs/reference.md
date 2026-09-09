@@ -197,8 +197,8 @@ ref `refs/notes/signoff-verify` and never writes `refs/notes/signoff`, so an
 unpushed local attestation survives verification. Then it lists this
 repository's `verify-v*` tags and prints
 `warning: verifier pin verify-v1.4 is behind verify-vX.Y; see verify/README.md`
-when a newer pin exists (never changes the verdict; silent on network
-failure).
+on stderr when a newer pin exists (never changes the verdict; stdout carries
+only the verdict; silent on network failure).
 
 Exit status: `0` pass, `1` fail (the reason is on stdout; a failed notes
 fetch is named so "attested but unreachable" is not mistaken for "never

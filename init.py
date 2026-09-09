@@ -675,8 +675,15 @@ def inject_readme_badge(repo_root: Path, slug: str) -> Path:
     except UnicodeDecodeError as e:
         raise RuntimeError(f"README.md is not valid UTF-8: {e}") from e
         
-    if "actions/workflows/git-signoff.yml/badge.svg" in text or "attested by humans" in text:
+    if "actions/workflows/git-signoff.yml/badge.svg" in text:
         return readme  # already present
+    if "actions/workflows/signoff.yml" in text:
+        # A badge from an install predating the git-signoff rename (init-v6 and
+        # earlier): point it at the renamed workflow, preserving line endings.
+        readme.write_bytes(raw_bytes.replace(b"actions/workflows/signoff.yml", b"actions/workflows/git-signoff.yml"))
+        return readme
+    if "attested by humans" in text:
+        return readme  # a hand-written badge or mention; never inject a second one
         
     is_crlf = b"\r\n" in raw_bytes
     newline = "\r\n" if is_crlf else "\n"
@@ -897,7 +904,8 @@ def setup_ruleset(
 
     auth_check = subprocess.run(["gh", "auth", "status"], capture_output=True, text=True)
     if auth_check.returncode != 0:
-        _log(f"ruleset automation skipped: gh is not authenticated ({(auth_check.stderr or auth_check.stdout).strip().splitlines()[-1:] or 'no detail'}).")
+        auth_lines = (auth_check.stderr or auth_check.stdout).strip().splitlines()
+        _log(f"ruleset automation skipped: gh is not authenticated ({auth_lines[-1] if auth_lines else 'no detail'}).")
         _open_settings(url, open_browser)
         return RulesetResult(status="fallback_manual", rules_url=url)
 

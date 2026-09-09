@@ -953,7 +953,8 @@ def push_notes(repo: GitRepo, remote: str = "origin") -> tuple[bool, bool, str |
     if fetch.returncode == 0:
         merge = repo.git("notes", f"--ref={NOTES_REF}", "merge", "-s", "cat_sort_uniq", NOTES_TRACKING_REF, check=False)
         if merge.returncode != 0:
-            return False, False, f"notes merge failed: {merge.stderr.strip().splitlines()[-1:] or merge.stderr.strip()}"
+            err = merge.stderr.strip().splitlines()
+            return False, False, f"notes merge failed: {err[-1] if err else 'unknown error'}"
         merged = True
     push = repo.git("push", remote, NOTES_REF, check=False)
     if push.returncode != 0:

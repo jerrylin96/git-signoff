@@ -17,6 +17,12 @@ classifiers = ["Private :: Do Not Upload"]
 Homepage = "https://github.com/jerrylin96/git-signoff"
 Repository = "https://github.com/jerrylin96/git-signoff"
 
+# Nothing to install. Without this, setuptools' flat-layout auto-discovery
+# sees site/, skills/, verify/, conformance/ and refuses `pip install -e .`
+# with a confusing error; with it, an accidental editable install is empty.
+[tool.setuptools]
+py-modules = []
+
 [tool.ruff]
 line-length = 120
 target-version = "py310"

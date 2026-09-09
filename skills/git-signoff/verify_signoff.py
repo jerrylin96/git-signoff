@@ -38,9 +38,9 @@ Environment:
                                 (tests point it at a local bare repo).
 
 Stale-pin warning: after fetching notes, the verifier lists the verify-v*
-tags on the upstream repository and prints a one-line warning to stdout when
-a newer pin than VERIFIER_PIN exists. It never changes the verdict and is
-skipped silently on any network failure.
+tags on the upstream repository and prints a one-line warning to stderr when
+a newer pin than VERIFIER_PIN exists (stdout carries only the verdict). It
+never changes the verdict and is skipped silently on any network failure.
 
 Single-valued trailers appear exactly once per attestation (gsa-core §2.3):
 a commit message or note block that repeats one — the way a line break
@@ -752,7 +752,7 @@ def main(argv=None):
     fetched = git(args.repo, "fetch", "origin", f"+{NOTES_REF}:{NOTES_FETCH_REF}", check=False)
     stale = stale_pin_warning()
     if stale:
-        print(stale)
+        print(stale, file=sys.stderr)  # visible in CI logs; stdout stays the verdict
 
     if args.audit is not None:
         ok, lines = check_audit(args.repo, target=args.audit, export_path=args.export)

@@ -1182,11 +1182,13 @@ def test_stale_pin_warning_when_upstream_has_newer_tag(repo, tmp_path, monkeypat
     monkeypatch.setenv("GIT_SIGNOFF_PIN_REMOTE", remote)
     attest_head(repo)
     rc = verify_signoff.main(["--repo", str(repo), "--mode", "head"])
-    out = capsys.readouterr().out
-    assert rc == 0, out  # the warning never changes the verdict
-    assert f"warning: verifier pin {verify_signoff.VERIFIER_PIN} is behind verify-v1.5" in out
-    assert "see verify/README.md" in out
-    assert "PASS" in out
+    captured = capsys.readouterr()
+    assert rc == 0, captured.out  # the warning never changes the verdict
+    # stderr carries the warning so stdout stays the verdict for pipelines
+    assert f"warning: verifier pin {verify_signoff.VERIFIER_PIN} is behind verify-v1.5" in captured.err
+    assert "see verify/README.md" in captured.err
+    assert "warning: verifier pin" not in captured.out
+    assert captured.out.startswith("PASS")
 
 
 def test_no_stale_pin_warning_when_upstream_is_not_newer(repo, tmp_path, monkeypatch, capsys):
@@ -1195,7 +1197,8 @@ def test_no_stale_pin_warning_when_upstream_is_not_newer(repo, tmp_path, monkeyp
     monkeypatch.setenv("GIT_SIGNOFF_PIN_REMOTE", remote)
     attest_head(repo)
     verify_signoff.main(["--repo", str(repo), "--mode", "head"])
-    assert "warning: verifier pin" not in capsys.readouterr().out
+    captured = capsys.readouterr()
+    assert "warning: verifier pin" not in captured.out + captured.err
 
 
 def test_stale_pin_check_is_silent_when_remote_unreachable(repo, tmp_path, monkeypatch, capsys):
@@ -1205,8 +1208,8 @@ def test_stale_pin_check_is_silent_when_remote_unreachable(repo, tmp_path, monke
     rc = verify_signoff.main(["--repo", str(repo), "--mode", "head"])
     captured = capsys.readouterr()
     assert rc == 0
-    assert "warning: verifier pin" not in captured.out
-    assert "no-such-remote" not in captured.out
+    assert "warning: verifier pin" not in captured.out + captured.err
+    assert "no-such-remote" not in captured.out + captured.err
 
 
 def test_stale_pin_check_skipped_by_env(repo, tmp_path, monkeypatch, capsys):
@@ -1215,7 +1218,8 @@ def test_stale_pin_check_skipped_by_env(repo, tmp_path, monkeypatch, capsys):
     monkeypatch.setenv("GIT_SIGNOFF_PIN_REMOTE", remote)
     attest_head(repo)
     verify_signoff.main(["--repo", str(repo), "--mode", "head"])
-    assert "warning: verifier pin" not in capsys.readouterr().out
+    captured = capsys.readouterr()
+    assert "warning: verifier pin" not in captured.out + captured.err
 
 
 def test_version_flag_prints_pin(capsys):

@@ -64,9 +64,13 @@ def test_declared_pins_survive_the_guard():
         )
 
 
-def test_init_v5_declared_in_pins():
+def test_current_pins_declared_in_pins():
+    """The pins the install snippets and the scaffold reference must be ones the
+    workflow creates (init.py and verify_signoff.py pin their own constants to
+    this list too); historical pins stay so the list is a complete record."""
     m = PINS_RE.search(workflow_text())
     assert m, "PINS not declared in tag.yml"
     pins = m.group(1).split()
-    assert "init-v5" in pins, f"init-v5 not declared in tag.yml PINS: {pins}"
+    for pin in ("init-v7", "verify-v1.4", "init-v5", "verify-v1"):
+        assert pin in pins, f"{pin} not declared in tag.yml PINS: {pins}"
 
