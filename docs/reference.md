@@ -152,7 +152,7 @@ Output (`--json`: one object; otherwise labeled lines): `attestation_sha`,
 |---|---|
 | 0 | Success. A refused notes push is reported, not fatal. |
 | 2 | Usage or argument error, including unsafe free text; `--reference` that does not resolve; no default reference; missing sibling `verify_signoff.py`. |
-| 3 | Stale or dirty: unstaged or staged changes; HEAD moved since prepare (marker names an ancestor). |
+| 3 | Stale or dirty: unstaged or staged changes; HEAD moved since prepare (marker names an ancestor); HEAD is already an attestation commit (nothing new to attest, or a failed rollback left one behind). |
 | 4 | Transcript problem: unavailable without `--ack-no-transcript`; marker not found; marker for an unrelated commit. |
 | 5 | `GIT_SIGNOFF_PROFILE_FILE` set but unreadable. A malformed repo-local profile is *not* an error (falls back, reported). |
 | 6 | git failure (rev-parse, commit, notes append). |

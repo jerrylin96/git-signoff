@@ -231,6 +231,29 @@ def test_prepare_refuses_staged_changes(scratch_repo, monkeypatch, capsys):
     assert code == 3 and "Staged" in err
 
 
+def test_prepare_refuses_when_head_is_already_an_attestation(scratch_repo, tmp_path, monkeypatch, capsys):
+    """After a successful commit (or a failed rollback that left the rejected
+    attestation at HEAD), re-running prepare must stop rather than set up an
+    attestation of the attestation, which the verifier would pass."""
+    reviewed = _head(scratch_repo)
+    t = _transcript(tmp_path, scratch_repo)
+    code, _, err = run(
+        monkeypatch, capsys, scratch_repo, "commit", "--email", "dev@example.com", "--level", "standard",
+        "--reference", "main", "--no-push", env={"GIT_SIGNOFF_TRANSCRIPT_FILE": str(t)},
+    )
+    assert code == 0, err
+    attestation = _head(scratch_repo)
+    code, _, err = run(monkeypatch, capsys, scratch_repo, "prepare", "--reference", "main")
+    assert code == 3
+    assert "already an attestation commit" in err and attestation[:7] in err and reviewed[:7] in err
+    assert "git reset --soft HEAD~1" in err
+    code, _, err = run(
+        monkeypatch, capsys, scratch_repo, "commit", "--email", "dev@example.com", "--level", "standard",
+        "--reference", "main", "--no-push", env={"GIT_SIGNOFF_TRANSCRIPT_FILE": str(t)},
+    )
+    assert code == 3 and _head(scratch_repo) == attestation  # nothing stacked on top
+
+
 def test_prepare_refuses_unborn_head(tmp_path, monkeypatch, capsys):
     path = init_repo(tmp_path / "unborn")
     code, _, err = run(monkeypatch, capsys, path, "prepare")

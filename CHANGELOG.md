@@ -17,7 +17,10 @@ standard-library helper does every mechanical step.
   `cat_sort_uniq` merge before push, verifier self-check with rollback),
   `marker`, `--dry-run`, `--json`, documented exit codes 0/2/3/4/5/6/7. A
   rollback step that fails is reported as `ROLLBACK INCOMPLETE` rather than
-  asserted as done (found during this branch's own signoff interview).
+  asserted as done, and `prepare` refuses a HEAD that is already an
+  attestation commit, so a failed rollback cannot be followed by an
+  attestation of the rejected attestation (both found during this branch's
+  own signoff interview).
 - **Added** the approval marker `GSA-APPROVAL <reviewed-sha> <timestamp>`:
   `commit` refuses a transcript that does not carry this conversation's marker
   for this commit, so a stale or foreign session file fails closed (exit 4)

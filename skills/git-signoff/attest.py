@@ -29,7 +29,8 @@ Exit codes:
      commit and local notes stand; the recovery workflow rebuilds notes)
   2  usage or argument error, including a line break or a `Signoff-` line in
      free text, or a missing sibling verify_signoff.py
-  3  stale or dirty: HEAD moved since prepare, or unstaged / staged changes
+  3  stale or dirty: HEAD moved since prepare, unstaged / staged changes, or
+     HEAD is already an attestation commit (nothing new to attest)
   4  transcript problem: unresolvable without --ack-no-transcript, or the
      approval marker for this reviewed commit is not in the resolved transcript
   5  profile problem: GIT_SIGNOFF_PROFILE_FILE is set but unreadable (a
@@ -115,6 +116,7 @@ EXIT_GIT = 6
 EXIT_SELFCHECK = 7
 
 TOKEN_RE = re.compile(r"^[A-Za-z0-9._:/-]+$")
+ATTESTATION_SUBJECT_RE = re.compile(r"^\[SIGNOFF [0-9a-f]{7,40}\]: ")
 TRAILER_LINE_RE = re.compile(r"^Signoff-[A-Za-z0-9-]+:")
 TRAILER_RE = re.compile(r"^(Signoff-[A-Za-z0-9-]+):\s*(.*)$")
 
@@ -672,6 +674,19 @@ def prepare(
     if head.returncode != 0 or not head.stdout.strip():
         raise AttestError(EXIT_GIT, "HEAD does not point at a commit (unborn branch?); nothing to attest.")
     reviewed = head.stdout.strip()
+    subject = repo.git("log", "-1", "--format=%s", reviewed, check=False).stdout.strip()
+    if ATTESTATION_SUBJECT_RE.match(subject):
+        # Attesting an attestation is never meaningful, and this is exactly the
+        # state a failed rollback leaves behind: a rejected attestation commit at
+        # HEAD. Re-running from Section 1 here would attest *that* commit and the
+        # verifier would pass it. Stop instead.
+        parent = repo.git("rev-parse", f"{reviewed}~1", check=False).stdout.strip()
+        raise AttestError(
+            EXIT_STALE,
+            f"HEAD {reviewed[:7]} is already an attestation commit ({subject[:40]}...) on top of {parent[:7]}; "
+            "there is nothing new to attest. If it was left behind by a failed rollback, remove it with "
+            "`git reset --soft HEAD~1` and re-run; if it is a valid attestation, the branch is done.",
+        )
     check_clean_tree(repo)
 
     ref = _resolve_reference(repo, reference, reviewed, warnings)
