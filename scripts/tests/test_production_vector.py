@@ -10,15 +10,15 @@ import subprocess
 
 import pytest
 
-from git_signoff import core
+from _attest_loader import attest as core
 
 FIXTURE = os.path.join(os.path.dirname(__file__), "fixtures", "production_attestation.txt")
 REPO_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
 REVIEWED_SHA = "453c633078ecdd82d93c33eefac4d5f4cbe2ef55"
 # Tree SHA recorded in the production trailers. NOTE: it does NOT match the
 # actual tree of the reviewed commit (60856e6...) — the Phase 1 prompt-driven
-# run captured a stale tree, which is precisely the failure class Phase 2's
-# server-derived SHAs and post-commit integrity check eliminate. Notes were
+# run captured a stale tree, which is precisely the failure class attest.py's
+# helper-derived SHAs and post-commit integrity check eliminate. Notes were
 # mirrored onto this trailer value, so lookups still use it.
 TRAILER_TREE_SHA = "83679c5222ef2c7a7b8e5c83bc56c526d7f95567"
 ATTESTATION_SHA = "2fe1e7621d8c2ad391f572b2458c4c791387e0f5"
@@ -60,20 +60,24 @@ def test_build_message_roundtrips_production_vector():
         reviewed_commit_sha=t["Signoff-Reviewed-Commit-SHA"][0],
         base_sha=t["Signoff-Base-SHA"][0],
         tree_sha=t["Signoff-Reviewed-Tree-SHA"][0],
-        reference_ref="main",
+        reference="main",
+        name_status=[],
+        shortstat="",
+        numstat="",
         diff="",
-        files=[],
-        stats="",
+        profile=core.ProfileResolution("embedded-default", None, "software-general", None),
+        science_signals=[],
         harness_id=t["Signoff-Harness-ID"][0],
         conversation_id=t["Signoff-Conversation-ID"][0],
         transcript_available=True,
+        transcript_path=None,
+        hints={},
+        prepared_at="2026-08-04T19:40:00Z",
     )
     message = core.build_message(
         state,
         status=t["Signoff-Status"][0],
         timestamp=t["Signoff-Timestamp"][0],
-        harness_id=t["Signoff-Harness-ID"][0],
-        conversation_id=t["Signoff-Conversation-ID"][0],
         transcript_digest=t["Signoff-Transcript-Digest"][0],
         transcript_bytes=t["Signoff-Transcript-Bytes"][0],
         tradeoffs=t["Signoff-Tradeoff"],

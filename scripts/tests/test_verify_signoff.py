@@ -1,4 +1,4 @@
-"""Tests for verify/verify_signoff.py (the badge-backing CI verifier).
+"""Tests for skills/git-signoff/verify_signoff.py (the badge-backing CI verifier).
 
 Covers: PR-gate head mode (attestation tip, missing attestation, integrity
 failure), tree-SHA fallback via notes after a squash merge, history mode
@@ -8,13 +8,11 @@ counting/validation/dedup, and an end-to-end run against this repository.
 import importlib.util
 import os
 import subprocess
+import sys
 
 import pytest
 
-import sys
-
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", ".."))
-from git_signoff.tests.helpers import commit_file, git, init_repo  # noqa: E402
+from helpers import commit_file, git, init_repo
 
 _SPEC = importlib.util.spec_from_file_location(
     "verify_signoff",
@@ -1130,3 +1128,91 @@ def test_verifier_exits_loudly_below_python_floor(tmp_path):
     assert proc.returncode == 1
     assert "needs Python 3.10 or newer" in proc.stderr
     assert "3.9" in proc.stderr
+
+
+# --- stale-pin warning and VERIFIER_PIN consistency ---------------------------
+
+
+def _fake_pin_remote(tmp_path, tags):
+    """Bare repo carrying the given tags, standing in for the upstream repository."""
+    remote = tmp_path / "upstream.git"
+    remote.mkdir()
+    git(remote, "init", "-q", "--bare", "-b", "main")
+    seed = init_repo(tmp_path / "seed")
+    commit_file(seed, "a.txt", "a", "seed")
+    for tag in tags:
+        git(seed, "tag", tag)
+    git(seed, "remote", "add", "origin", str(remote))
+    git(seed, "push", "-q", "origin", "main", "--tags")
+    return str(remote)
+
+
+def test_verifier_pin_matches_newest_verify_tag_in_tag_workflow():
+    """VERIFIER_PIN must be the newest verify-v* pin tag.yml creates, or the
+    warning would fire against our own release (or never fire at all)."""
+    import re
+
+    wf = open(os.path.join(REPO_ROOT, ".github", "workflows", "tag.yml"), encoding="utf-8").read()
+    m = re.search(r"^\s*PINS:\s*(.+?)\s*$", wf, re.MULTILINE)
+    assert m, "PINS not declared in tag.yml"
+    verify_pins = [p for p in m.group(1).split() if p.startswith("verify-v")]
+    newest = max(verify_pins, key=verify_signoff._pin_version)
+    assert verify_signoff.VERIFIER_PIN == newest, (verify_signoff.VERIFIER_PIN, verify_pins)
+    assert verify_signoff.VERIFIER_PIN in verify_pins
+
+
+def test_pin_version_parsing():
+    assert verify_signoff._pin_version("verify-v1") == (1, 0)
+    assert verify_signoff._pin_version("verify-v1.4") == (1, 4)
+    assert verify_signoff._pin_version("refs/tags/verify-v2.10") == (2, 10)
+    assert verify_signoff._pin_version("init-v7") is None
+    assert verify_signoff._pin_version("verify-v1.4-rc1") is None
+
+
+def test_stale_pin_warning_when_upstream_has_newer_tag(repo, tmp_path, monkeypatch, capsys):
+    remote = _fake_pin_remote(tmp_path, ["verify-v1", "verify-v1.4", "verify-v1.5", "init-v9"])
+    monkeypatch.delenv("GIT_SIGNOFF_NO_UPDATE_CHECK", raising=False)
+    monkeypatch.setenv("GIT_SIGNOFF_PIN_REMOTE", remote)
+    attest_head(repo)
+    rc = verify_signoff.main(["--repo", str(repo), "--mode", "head"])
+    out = capsys.readouterr().out
+    assert rc == 0, out  # the warning never changes the verdict
+    assert f"warning: verifier pin {verify_signoff.VERIFIER_PIN} is behind verify-v1.5" in out
+    assert "see verify/README.md" in out
+    assert "PASS" in out
+
+
+def test_no_stale_pin_warning_when_upstream_is_not_newer(repo, tmp_path, monkeypatch, capsys):
+    remote = _fake_pin_remote(tmp_path, ["verify-v1", "verify-v1.3", verify_signoff.VERIFIER_PIN])
+    monkeypatch.delenv("GIT_SIGNOFF_NO_UPDATE_CHECK", raising=False)
+    monkeypatch.setenv("GIT_SIGNOFF_PIN_REMOTE", remote)
+    attest_head(repo)
+    verify_signoff.main(["--repo", str(repo), "--mode", "head"])
+    assert "warning: verifier pin" not in capsys.readouterr().out
+
+
+def test_stale_pin_check_is_silent_when_remote_unreachable(repo, tmp_path, monkeypatch, capsys):
+    monkeypatch.delenv("GIT_SIGNOFF_NO_UPDATE_CHECK", raising=False)
+    monkeypatch.setenv("GIT_SIGNOFF_PIN_REMOTE", str(tmp_path / "no-such-remote"))
+    attest_head(repo)
+    rc = verify_signoff.main(["--repo", str(repo), "--mode", "head"])
+    captured = capsys.readouterr()
+    assert rc == 0
+    assert "warning: verifier pin" not in captured.out
+    assert "no-such-remote" not in captured.out
+
+
+def test_stale_pin_check_skipped_by_env(repo, tmp_path, monkeypatch, capsys):
+    remote = _fake_pin_remote(tmp_path, ["verify-v9"])
+    monkeypatch.setenv("GIT_SIGNOFF_NO_UPDATE_CHECK", "1")
+    monkeypatch.setenv("GIT_SIGNOFF_PIN_REMOTE", remote)
+    attest_head(repo)
+    verify_signoff.main(["--repo", str(repo), "--mode", "head"])
+    assert "warning: verifier pin" not in capsys.readouterr().out
+
+
+def test_version_flag_prints_pin(capsys):
+    with pytest.raises(SystemExit) as exc:
+        verify_signoff.main(["--version"])
+    assert exc.value.code == 0
+    assert verify_signoff.VERIFIER_PIN in capsys.readouterr().out

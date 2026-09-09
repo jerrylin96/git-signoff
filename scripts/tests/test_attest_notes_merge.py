@@ -2,9 +2,8 @@
 
 import pytest
 
-from git_signoff import core
-from git_signoff.adapters import GenericFileAdapter
-from git_signoff.tests.helpers import commit_file, git, init_repo
+from _attest_loader import attest as core
+from helpers import commit_file, git, init_repo
 
 
 @pytest.fixture
@@ -31,35 +30,38 @@ def two_clones(tmp_path):
 
 
 def _attest(path, tmp_path, who, timestamp):
-    f = tmp_path / f"{who}.log"
-    f.write_bytes(f"{who} transcript\n".encode())
-    adapter = GenericFileAdapter(str(f), conversation_id=who)
     repo = core.GitRepo(str(path))
-    state = core.prepare(repo, "HEAD", reference_ref="origin/main", adapter=adapter)
-    result = core.commit(
-        repo, state, [], [], f"{who}@example.com", adapter=adapter,
-        agent=f"{who}/agent", timestamp=timestamp,
+    head = repo.out("rev-parse", "HEAD")
+    f = tmp_path / f"{who}.log"
+    f.write_bytes(f"{who} transcript\nGSA-APPROVAL {head} 2026-01-01T00:00:00Z\n".encode())
+    adapter = core.GenericFileAdapter(str(f), conversation_id=who)
+    opts = core.CommitOptions(
+        email=f"{who}@example.com", level="standard", reference="origin/main", push=False, timestamp=timestamp
     )
-    return repo, state, result
+    result = core.commit(str(path), opts, env={"ANTHROPIC_MODEL": f"{who}-model"}, adapter=adapter)
+    return repo, result, result.noted_shas[0]  # (repo, result, reviewed commit sha)
 
 
 def test_diverged_notes_merge_and_push(two_clones, tmp_path):
     alice, bob = two_clones
-    repo_a, state_a, result_a = _attest(alice, tmp_path, "alice", "2026-01-01T00:00:00Z")
-    repo_b, state_b, result_b = _attest(bob, tmp_path, "bob", "2026-01-02T00:00:00Z")
-    assert state_a.reviewed_commit_sha == state_b.reviewed_commit_sha
+    repo_a, result_a, state_a = _attest(alice, tmp_path, "alice", "2026-01-01T00:00:00Z")
+    repo_b, result_b, state_b = _attest(bob, tmp_path, "bob", "2026-01-02T00:00:00Z")
+    # prepare() after the attestation now sees the attestation commit as HEAD;
+    # the noted (reviewed) SHAs are what must agree between the clones.
+    assert result_a.noted_shas[0] == result_b.noted_shas[0]
+    reviewed = result_b.noted_shas[0]
 
-    assert core.push_notes(repo_a)["pushed"] is True
+    assert core.push_notes(repo_a)[0] is True
     # Bob's local notes diverged from remote (both noted the same SHAs). A direct
     # fetch into refs/notes/signoff would be a rejected non-fast-forward; the
     # tracking-ref cat_sort_uniq flow must succeed and preserve both payloads.
-    out = core.push_notes(repo_b)
-    assert out["merged_remote_notes"] is True and out["pushed"] is True
+    pushed, merged_remote, reason = core.push_notes(repo_b)
+    assert merged_remote is True and pushed is True and reason is None
 
-    merged = git(bob, "notes", "--ref=signoff", "show", state_b.reviewed_commit_sha).stdout
+    merged = git(bob, "notes", "--ref=signoff", "show", reviewed).stdout
     trailers = core.parse_trailers(merged)
     assert sorted(trailers["Signoff-Conversation-ID"]) == ["alice", "bob"]
-    assert sorted(trailers["Signoff-Agent"]) == ["alice/agent", "bob/agent"]
+    assert sorted(a.split()[1] for a in trailers["Signoff-Agent"]) == ["model=alice-model", "model=bob-model"]
     # origin now holds the merged ref
     assert git(bob, "rev-parse", "refs/notes/signoff").stdout == git(
         bob, "ls-remote", "origin", "refs/notes/signoff"
@@ -68,28 +70,29 @@ def test_diverged_notes_merge_and_push(two_clones, tmp_path):
 
 def test_push_notes_idempotent_repeat_run(two_clones, tmp_path):
     alice, bob = two_clones
-    repo_a, state_a, _ = _attest(alice, tmp_path, "alice", "2026-01-01T00:00:00Z")
+    repo_a, _, state_a = _attest(alice, tmp_path, "alice", "2026-01-01T00:00:00Z")
     repo_b, _, _ = _attest(bob, tmp_path, "bob", "2026-01-02T00:00:00Z")
     core.push_notes(repo_a)
     core.push_notes(repo_b)
     # Repeat run on alice: forced (+) tracking-ref fetch must not be rejected,
     # merge pulls in bob's payload, push succeeds.
-    out = core.push_notes(repo_a)
-    assert out["merged_remote_notes"] is True and out["pushed"] is True
-    merged = git(alice, "notes", "--ref=signoff", "show", state_a.reviewed_commit_sha).stdout
+    pushed, merged_remote, _ = core.push_notes(repo_a)
+    assert merged_remote is True and pushed is True
+    merged = git(alice, "notes", "--ref=signoff", "show", state_a).stdout
     assert sorted(core.parse_trailers(merged)["Signoff-Conversation-ID"]) == ["alice", "bob"]
 
 
 def test_push_notes_first_ever_push_tolerates_missing_remote_ref(two_clones, tmp_path):
     alice, _ = two_clones
-    repo_a, state_a, _ = _attest(alice, tmp_path, "alice", "2026-01-01T00:00:00Z")
-    out = core.push_notes(repo_a)
-    assert out["pushed"] is True and out["merged_remote_notes"] is False
+    repo_a, _, state_a = _attest(alice, tmp_path, "alice", "2026-01-01T00:00:00Z")
+    pushed, merged_remote, _ = core.push_notes(repo_a)
+    assert pushed is True and merged_remote is False
     assert git(alice, "ls-remote", "origin", "refs/notes/signoff").stdout.strip() != ""
 
 
-def test_push_notes_bad_remote_raises_structured_error(two_clones, tmp_path):
+def test_push_notes_bad_remote_is_reported_not_raised(two_clones, tmp_path):
     alice, _ = two_clones
     repo_a, _, _ = _attest(alice, tmp_path, "alice", "2026-01-01T00:00:00Z")
-    with pytest.raises(core.SignoffPushError, match="push failed"):
-        core.push_notes(repo_a, remote=str(tmp_path / "no-such-remote"))
+    pushed, merged_remote, reason = core.push_notes(repo_a, remote=str(tmp_path / "no-such-remote"))
+    assert pushed is False and merged_remote is False
+    assert reason and "notes push refused" in reason

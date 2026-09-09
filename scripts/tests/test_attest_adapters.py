@@ -1,13 +1,15 @@
+"""TranscriptProvider adapters in skills/git-signoff/attest.py (gsa-core §3)."""
+
 import os
 
-from git_signoff.adapters import (
-    AntigravityAdapter,
-    ClaudeCodeAdapter,
-    CodexAdapter,
-    GenericFileAdapter,
-    resolve_adapter,
-)
-from git_signoff.tests.helpers import git, init_repo
+from _attest_loader import attest
+from helpers import git, init_repo
+
+AntigravityAdapter = attest.AntigravityAdapter
+ClaudeCodeAdapter = attest.ClaudeCodeAdapter
+CodexAdapter = attest.CodexAdapter
+GenericFileAdapter = attest.GenericFileAdapter
+resolve_adapter = attest.resolve_adapter
 
 
 def _slug(p):

@@ -756,8 +756,18 @@ def test_base_branch_origin_fallback(tmp_path):
 
 
 
+def _load_attest():
+    import importlib.util
+
+    path = Path(__file__).parent.parent / "skills" / "git-signoff" / "attest.py"
+    spec = importlib.util.spec_from_file_location("attest_for_init_tests", str(path))
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
 def test_profile_text_byte_parity():
-    from git_signoff.profile import profile_block_digest
+    profile_block_digest = _load_attest().profile_block_digest
 
     repo_root = Path(__file__).parent.parent
     for pid in ("domain-science", "software-general"):
@@ -793,24 +803,27 @@ def test_initializer_is_not_duplicated_into_the_package():
     assert "Private :: Do Not Upload" in pyproject
 
 
-def test_pyproject_does_not_package_top_level_init():
+def test_pyproject_builds_no_package():
+    """Nothing is pip-installable from this repository: no build-system, no
+    packages, no modules — pyproject.toml carries the version (for release.yml)
+    and the ruff configuration only."""
     repo_root = Path(__file__).parent.parent
     pyproject_content = (repo_root / "pyproject.toml").read_text(encoding="utf-8")
     assert "py-modules" not in pyproject_content
-    assert 'include = ["git_signoff*"]' in pyproject_content
+    assert "[build-system]" not in pyproject_content
+    assert "packages" not in pyproject_content
+    assert not (repo_root / "git_signoff").exists(), "the git_signoff package was removed in 0.5.0"
 
 
 def test_versions_are_synchronized():
-    """pyproject.toml and git_signoff.__version__ agree (release.yml derives tags from pyproject)."""
+    """pyproject.toml and attest.py agree on the version (release.yml derives tags from pyproject)."""
     import re
-
-    import git_signoff
 
     repo_root = Path(__file__).parent.parent
     pyproject_content = (repo_root / "pyproject.toml").read_text(encoding="utf-8")
     m = re.search(r'^version = "([^"]+)"$', pyproject_content, re.MULTILINE)
     assert m, "pyproject.toml must declare a project version"
-    assert m.group(1) == git_signoff.__version__
+    assert m.group(1) == _load_attest().VERSION
 
 
 # --- Slice 2: Multi-Harness Architecture & Policy A Tests ---

@@ -23,7 +23,24 @@ Two modes:
            attestations (default 1) are found.
 
 Exit 0 on pass, 1 on fail. No dependencies beyond Python 3.10+ and git;
-copy this file anywhere or run it via the companion composite action.
+copy this file anywhere or run it via the companion composite action
+(verify/action.yml in the git-signoff repository). The file is vendored into
+adopter repositories as part of the skill folder, so `--audit` runs locally
+without a download, and the producer helper (attest.py, same folder) imports
+it to self-check every attestation it writes.
+
+Environment:
+
+  GIT_SIGNOFF_TRANSCRIPT_FILE   --audit: transcript file to hash instead of the
+                                harness-resolved path.
+  GIT_SIGNOFF_NO_UPDATE_CHECK   set to 1 to skip the stale-pin warning below.
+  GIT_SIGNOFF_PIN_REMOTE        repository URL queried for verify-v* tags
+                                (tests point it at a local bare repo).
+
+Stale-pin warning: after fetching notes, the verifier lists the verify-v*
+tags on the upstream repository and prints a one-line warning to stdout when
+a newer pin than VERIFIER_PIN exists. It never changes the verdict and is
+skipped silently on any network failure.
 
 Single-valued trailers appear exactly once per attestation (gsa-core §2.3):
 a commit message or note block that repeats one — the way a line break
@@ -51,6 +68,13 @@ import os  # noqa: E402
 from pathlib import Path  # noqa: E402
 import re  # noqa: E402
 import subprocess  # noqa: E402
+
+# The pin tag this file ships under. tag.yml's PINS list and the install
+# snippets must carry the same value (pinned by tests); the stale-pin warning
+# compares it against the tags published upstream.
+VERIFIER_PIN = "verify-v1.4"
+PIN_REMOTE = "https://github.com/jerrylin96/git-signoff"
+PIN_TAG_RE = re.compile(r"refs/tags/verify-v(\d+)(?:\.(\d+))?$")
 
 NOTES_REF = "refs/notes/signoff"
 # The verifier's own isolated mirror of origin's notes. Fetching origin straight
@@ -649,12 +673,63 @@ def check_audit(repo, target="HEAD", export_path=None):
     return True, lines
 
 
+def _pin_version(tag):
+    """(major, minor) of a verify-v* tag name, or None."""
+    m = PIN_TAG_RE.match(tag if tag.startswith("refs/tags/") else f"refs/tags/{tag}")
+    if not m:
+        return None
+    return int(m.group(1)), int(m.group(2) or 0)
+
+
+def newest_upstream_pin(remote=None, timeout=10):
+    """Newest verify-v* pin published at `remote`, as a tag name, or None on any
+    failure (offline, proxy refusal, timeout, unparseable output)."""
+    remote = remote or os.environ.get("GIT_SIGNOFF_PIN_REMOTE") or PIN_REMOTE
+    try:
+        proc = subprocess.run(
+            ["git", "ls-remote", "--tags", "--refs", remote, "refs/tags/verify-v*"],
+            capture_output=True,
+            text=True,
+            timeout=timeout,
+            env={**os.environ, "GIT_TERMINAL_PROMPT": "0"},
+        )
+    except (OSError, subprocess.SubprocessError):
+        return None
+    if proc.returncode != 0:
+        return None
+    best = None
+    for line in proc.stdout.splitlines():
+        parts = line.split()
+        if len(parts) != 2:
+            continue
+        version = _pin_version(parts[1])
+        if version and (best is None or version > best[0]):
+            best = (version, parts[1].rsplit("/", 1)[1])
+    return best[1] if best else None
+
+
+def stale_pin_warning(remote=None):
+    """One warning line when a newer verify-v* pin than VERIFIER_PIN exists
+    upstream, else None. Skipped when GIT_SIGNOFF_NO_UPDATE_CHECK=1."""
+    if os.environ.get("GIT_SIGNOFF_NO_UPDATE_CHECK", "").strip() == "1":
+        return None
+    newest = newest_upstream_pin(remote)
+    if newest is None:
+        return None
+    mine = _pin_version(VERIFIER_PIN)
+    theirs = _pin_version(newest)
+    if mine and theirs and theirs > mine:
+        return f"warning: verifier pin {VERIFIER_PIN} is behind {newest}; see verify/README.md"
+    return None
+
+
 def main(argv=None):
     p = argparse.ArgumentParser(description="Verify Git Signoff Attestations (GSA v1.0)")
     p.add_argument("--repo", default=".", help="repository to verify")
     p.add_argument("--mode", choices=("head", "history"), default="head")
     p.add_argument("--target", default="HEAD", help="commit (head mode) or ref (history mode)")
     p.add_argument("--require", type=int, default=1, help="history mode: minimum valid attestations")
+    p.add_argument("--version", action="version", version=f"verify_signoff.py {VERIFIER_PIN}")
     p.add_argument(
         "--audit",
         nargs="?",
@@ -675,6 +750,9 @@ def main(argv=None):
         p.error("--export requires --audit")
 
     fetched = git(args.repo, "fetch", "origin", f"+{NOTES_REF}:{NOTES_FETCH_REF}", check=False)
+    stale = stale_pin_warning()
+    if stale:
+        print(stale)
 
     if args.audit is not None:
         ok, lines = check_audit(args.repo, target=args.audit, export_path=args.export)

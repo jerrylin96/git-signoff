@@ -22,7 +22,7 @@ jobs:
           python-version: ${{ matrix.python-version }}
 
       - name: Install
-        run: pip install -e . pytest ruff
+        run: pip install pytest ruff
 
       - name: Lint
         run: ruff check .
