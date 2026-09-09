@@ -2244,3 +2244,58 @@ def test_inject_readme_badge_does_not_duplicate_a_hand_written_mention(temp_git_
     readme.write_text("# Test Project\n\nThis repo is attested by humans (see CI).\n", encoding="utf-8")
     init.inject_readme_badge(temp_git_repo, "org/my-project")
     assert "badge.svg" not in readme.read_text(encoding="utf-8")
+
+
+def test_unborn_repo_fallback_ignores_gits_auto_detected_identity(tmp_path, monkeypatch):
+    """On a host whose hostname has a domain, git synthesizes `<user>@<host>` and
+    `git var GIT_AUTHOR_IDENT` succeeds, so a probe based on it never falls back
+    and the bootstrap author depended on the machine. The EMAIL-free auto-detect
+    case cannot be forced portably, so this pins the probe itself: with no
+    user.name / user.email / GIT_* / EMAIL configured, the fallback fires even
+    when `git var` would have reported an identity."""
+    repo_dir = tmp_path / "unborn_autodetect"
+    repo_dir.mkdir()
+    subprocess.run(["git", "init", "-b", "main"], cwd=repo_dir, check=True, capture_output=True)
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.setenv("GIT_CONFIG_GLOBAL", "/dev/null")
+    monkeypatch.setenv("GIT_CONFIG_NOSYSTEM", "1")
+    for var in ("GIT_AUTHOR_NAME", "GIT_AUTHOR_EMAIL", "GIT_COMMITTER_NAME", "GIT_COMMITTER_EMAIL", "EMAIL"):
+        monkeypatch.delenv(var, raising=False)
+    env = init._get_commit_env(repo_dir)
+    assert env["GIT_AUTHOR_NAME"] == "Signoff Bot" and env["GIT_COMMITTER_EMAIL"] == "signoff@example.com"
+
+
+def test_commit_env_honors_explicit_identity_sources(tmp_path, monkeypatch):
+    repo_dir = tmp_path / "identity_sources"
+    repo_dir.mkdir()
+    subprocess.run(["git", "init", "-b", "main"], cwd=repo_dir, check=True, capture_output=True)
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.setenv("GIT_CONFIG_GLOBAL", "/dev/null")
+    monkeypatch.setenv("GIT_CONFIG_NOSYSTEM", "1")
+    for var in ("GIT_AUTHOR_NAME", "GIT_AUTHOR_EMAIL", "GIT_COMMITTER_NAME", "GIT_COMMITTER_EMAIL", "EMAIL"):
+        monkeypatch.delenv(var, raising=False)
+
+    # git config: no fallback injected
+    subprocess.run(["git", "config", "user.name", "Configured"], cwd=repo_dir, check=True)
+    subprocess.run(["git", "config", "user.email", "configured@example.com"], cwd=repo_dir, check=True)
+    env = init._get_commit_env(repo_dir)
+    assert "GIT_AUTHOR_NAME" not in env and "GIT_COMMITTER_EMAIL" not in env
+
+    # name configured but no email anywhere: fallback fills both halves consistently
+    subprocess.run(["git", "config", "--unset", "user.email"], cwd=repo_dir, check=True)
+    env = init._get_commit_env(repo_dir)
+    assert env["GIT_AUTHOR_EMAIL"] == "signoff@example.com" and env["GIT_AUTHOR_NAME"] == "Signoff Bot"
+
+    # EMAIL is an explicit choice git honors; it must not be overridden
+    monkeypatch.setenv("EMAIL", "chosen@example.com")
+    env = init._get_commit_env(repo_dir)
+    assert "GIT_AUTHOR_EMAIL" not in env and "GIT_AUTHOR_NAME" not in env
+
+    # GIT_* variables count as explicit too
+    subprocess.run(["git", "config", "--unset", "user.name"], cwd=repo_dir, check=True)
+    monkeypatch.delenv("EMAIL")
+    monkeypatch.setenv("GIT_AUTHOR_NAME", "Env Author")
+    monkeypatch.setenv("GIT_AUTHOR_EMAIL", "env@example.com")
+    env = init._get_commit_env(repo_dir)
+    assert env["GIT_AUTHOR_NAME"] == "Env Author" and env["GIT_AUTHOR_EMAIL"] == "env@example.com"
+    assert env["GIT_COMMITTER_NAME"] == "Signoff Bot"  # committer half had no explicit source

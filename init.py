@@ -991,26 +991,33 @@ def _prune_empty_dir(path: Path) -> str | None:
 
 
 def _get_commit_env(root: Path) -> dict[str, str]:
-    """Return environment dict with fallback committer/author identity if git identity is unset."""
+    """Return environment dict with a fallback author/committer identity when
+    none is explicitly configured.
+
+    "Explicitly configured" means `user.name` / `user.email` in git config, the
+    GIT_AUTHOR_* / GIT_COMMITTER_* variables, or the EMAIL variable git honors.
+    `git var GIT_AUTHOR_IDENT` is deliberately not used as the probe: on hosts
+    whose hostname carries a domain (macOS `Powerhouse.local`), git synthesizes
+    `<os-user>@<host>` from the password database, reports success, and the
+    fallback would never fire — so the bootstrap commit's author depended on
+    the machine it ran on. With explicit probes it is deterministic.
+    """
     env = os.environ.copy()
-    author_ok = subprocess.run(
-        ["git", "var", "GIT_AUTHOR_IDENT"],
-        cwd=root,
-        capture_output=True,
-        text=True,
-        env=env,
-    ).returncode == 0
-    committer_ok = subprocess.run(
-        ["git", "var", "GIT_COMMITTER_IDENT"],
-        cwd=root,
-        capture_output=True,
-        text=True,
-        env=env,
-    ).returncode == 0
-    if not author_ok:
+
+    def configured(key: str) -> bool:
+        proc = subprocess.run(["git", "config", "--get", key], cwd=root, capture_output=True, text=True, env=env)
+        return proc.returncode == 0 and bool(proc.stdout.strip())
+
+    has_name = configured("user.name")
+    has_email = configured("user.email") or bool(env.get("EMAIL", "").strip())
+    author_ok = bool(env.get("GIT_AUTHOR_NAME")) or has_name
+    author_email_ok = bool(env.get("GIT_AUTHOR_EMAIL")) or has_email
+    committer_ok = bool(env.get("GIT_COMMITTER_NAME")) or has_name
+    committer_email_ok = bool(env.get("GIT_COMMITTER_EMAIL")) or has_email
+    if not (author_ok and author_email_ok):
         env.setdefault("GIT_AUTHOR_NAME", "Signoff Bot")
         env.setdefault("GIT_AUTHOR_EMAIL", "signoff@example.com")
-    if not committer_ok:
+    if not (committer_ok and committer_email_ok):
         env.setdefault("GIT_COMMITTER_NAME", "Signoff Bot")
         env.setdefault("GIT_COMMITTER_EMAIL", "signoff@example.com")
     return env

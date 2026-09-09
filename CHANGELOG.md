@@ -40,6 +40,12 @@ standard-library helper does every mechanical step.
   tolerates untracked OS metadata (`.DS_Store` and friends) in the repo-wide
   clean-tree guard as it already did inside skill destinations, logs why
   ruleset automation fell back to the manual URL, and gains `--verbose`.
+- **Fixed** the unborn-repository bootstrap identity: `init.py` probed
+  `git var GIT_AUTHOR_IDENT`, which succeeds on hosts whose hostname has a
+  domain (macOS) because git synthesizes `<user>@<host>`, so the "Signoff Bot"
+  fallback never fired there and the bootstrap author depended on the machine.
+  It now probes `user.name` / `user.email`, the `GIT_*` variables, and `EMAIL`
+  explicitly (pre-existing since v0.4.0; found by adversarial review).
 - **Removed** the `git_signoff/` Python reference library; its tests now run
   against `attest.py`. `pyproject.toml` builds nothing (version and ruff
   configuration only).
