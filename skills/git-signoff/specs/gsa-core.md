@@ -1,8 +1,8 @@
 # Specification: Portable Git Signoff Attestation (GSA) Protocol Core
 
-**Document Version:** 3.6.0 (single-valued trailer rule: producers keep values on one line, verifiers reject repeated single-valued trailers within one attestation; merged-note anchoring scoped to the annotated object; §2.2 and §4 reworded from "the MCP server" to "the producer" — the MCP interface is one informative producer shape, not a required component)  
+**Document Version:** 3.7.0 (approval-marker binding: a producer SHOULD require a marker naming the reviewed commit to appear in the transcript snapshot it hashes, §2.3, with an informative note in §3.1; the skill-layer environment variables are renamed `GIT_SIGNOFF_*` in §2.3 and §3.2; §4 updated for the removal of the Python reference library — the shipped producer is `attest.py` in the skill folder. Previous: 3.6.0, single-valued trailer rule and merged-note anchoring scope.)  
 **Status:** Draft / Pending Review  
-**Target Scope:** `signoff` skill portability, producer implementations (skill layer; optionally an MCP server), Harness Adapters, Git Notes Attestation, and Open Commit Protocol Core  
+**Target Scope:** `git-signoff` skill portability, producer implementations (the skill folder's `attest.py`; optionally an MCP server), Harness Adapters, Git Notes Attestation, and Open Commit Protocol Core  
 **Canonical Spec Location:** `skills/git-signoff/specs/gsa-core.md`  
 **License:** This specification is licensed under the [Community Specification License 1.0](https://github.com/jerrylin96/git-signoff/blob/main/LICENSE-SPEC) (SPDX: `Community-Spec-1.0`); the reference implementations in this repository remain MIT.  
 
@@ -69,13 +69,14 @@ Signoff-Agent: harness=<harness-id>/<version|N/A> model=<model-id|N/A> reasoning
   - **Snapshot Timing:** The byte count and SHA256 digest MUST be captured synchronously inside `signoff_commit` upon final user approval, immediately before writing the commit/note.
   - The digest is calculated strictly over the first `Signoff-Transcript-Bytes` of the transcript file captured at commit time.
   - *Append-only Assumption:* First-N-bytes re-verification assumes append-only transcript logs. For harnesses with compaction/resume overwrites, mirroring transcript payloads to `refs/notes/signoff` or cloud archives provides complete immutability.
+  - **Approval-marker binding (SHOULD, added in 3.7.0):** a producer SHOULD bind the transcript snapshot to the approval turn by requiring a marker naming the reviewed commit to appear in the snapshot before it writes the attestation. The shipped producer uses the ASCII line `GSA-APPROVAL <reviewed-commit-sha-40hex> <utc-timestamp-of-prepare>`: `prepare` prints it, the agent emits it verbatim after the human's explicit approval, and `commit` refuses (exit 4) a snapshot whose last 64 KiB do not contain a marker whose SHA equals the reviewed commit. Rationale: without the binding, an agent that resolves a stale or foreign session file produces a well-formed digest of the wrong bytes that no verifier can distinguish from the right ones; with it, a wrong file cannot name this reviewed commit and the resolution error fails closed. The marker is not a trailer and does not change the protocol version; a verifier MUST NOT require it. When no transcript bytes are captured (`VERIFIED_BY_HUMAN_NO_TRANSCRIPT_DIGEST`), there is nothing to bind and the human's explicit second confirmation stands in for it.
 - `Signoff-Tradeoff` & `Signoff-Risk`:
   - **Repeat Rule:** Repeat the trailer key for each item acknowledged during interview.
   - **Empty Rule:** Write `Signoff-Tradeoff: none` or `Signoff-Risk: none` exactly once if zero items were identified.
 - **Single-Valued Trailers (all others):** Within one attestation, every trailer other than `Signoff-Tradeoff` and `Signoff-Risk` MUST appear exactly once if required (§2.1) and at most once if optional. Producers MUST write each value on a single line: free text (trade-offs, risks, the summary paragraph, the agent string, the email) MUST NOT contain line breaks, and no line of the summary paragraph may begin with `Signoff-`; a producer MUST refuse such input rather than write it. Verifiers MUST treat a payload that is one attestation — an attestation commit message, or one block of a note — as invalid when a single-valued trailer appears more than once, and MUST NOT use any value from such a payload to anchor a commit or tree. Rationale: the format is line-oriented, so a line break inside a trade-off is the difference between a comment and a second `Signoff-Reviewed-Tree-SHA` that anchors an unreviewed tree. (Added in 3.6.0 after the reference verifier was shown to accept exactly that; the conformance suite pins it via `invalid-duplicate-reviewed-tree-sha.txt`.)
 - `Signoff-Agent` (Interviewer Provenance):
-  - **Grammar (SHOULD):** `harness=<id>/<version|N/A> model=<model-id|N/A> reasoning=<level|N/A> interview=<intensity-level>/<profile-id>[/sha256:<profile-digest-prefix>]` — space-separated `key=value` tokens in this fixed order, each value matching `[A-Za-z0-9._:/-]+`; the literal `N/A` marks fields the harness does not expose. The optional `/sha256:<profile-digest-prefix>` segment (12-hex prefix of the SHA256 of the delimited profile block) is REQUIRED when the interview profile was resolved from a file (resolution order defined in the skill layer: `GIT_SIGNOFF_PROFILE_FILE` env override → `<repo>/.git-signoff/profile.md` → embedded default block) and MUST be omitted when the embedded shipped block ran — verifiers can thereby distinguish shipped question sets from repo-authored ones.
-  - **Sourcing:** `harness` mirrors `Signoff-Harness-ID` plus the harness version. `model` and `reasoning` identify the interviewing agent, deterministically sourced where the harness provides them (environment variables, transcript metadata from the same snapshot bytes as the digest), agent-self-reported otherwise. `interview` records the interview-intensity level actually run and the active INTERVIEW PROFILE identifier (both defined in the skill layer, `skills/git-signoff/SKILL.md`).
+  - **Grammar (SHOULD):** `harness=<id>/<version|N/A> model=<model-id|N/A> reasoning=<level|N/A> interview=<intensity-level>/<profile-id>[/sha256:<profile-digest-prefix>]` — space-separated `key=value` tokens in this fixed order, each value matching `[A-Za-z0-9._:/-]+`; the literal `N/A` marks fields the harness does not expose. The optional `/sha256:<profile-digest-prefix>` segment (12-hex prefix of the SHA256 of the delimited profile block) is REQUIRED when the interview profile was resolved from a file (resolution order defined in the skill layer: `GIT_SIGNOFF_PROFILE_FILE` env override → `<repo>/.git-signoff/profile.md` → embedded default block; before 3.7.0 the variable was named `SIGNOFF_PROFILE_FILE`) and MUST be omitted when the embedded shipped block ran — verifiers can thereby distinguish shipped question sets from repo-authored ones.
+  - **Sourcing:** `harness` mirrors `Signoff-Harness-ID` plus the harness version. `model` and `reasoning` identify the interviewing agent, deterministically sourced where the harness provides them (environment variables, transcript metadata from the same snapshot bytes as the digest), agent-self-reported otherwise. `interview` records the interview-intensity level actually run and the active INTERVIEW PROFILE identifier (both defined in the skill layer, `skills/git-signoff/SKILL.md`; the level is passed to the producer by the agent, the profile is resolved by the producer).
   - **Backward Compatibility:** Values not matching this grammar (including all pre-3c attestations) remain valid opaque strings; verifiers MUST NOT reject an attestation on `Signoff-Agent` format.
 
 ### 2.4 Cryptographic Developer Identity Binding
@@ -114,6 +115,8 @@ graph TD
 
 To guarantee identical hashing across all adapters, the adapter is responsible only for locating and fetching raw transcript bytes; the GSA core engine computes digests and byte offsets.
 
+*Informative (3.7.0):* the engine reads the bytes exactly once per attestation and runs every check — the approval-marker binding of §2.3, the digest, the byte count, and any provenance scan for a `"model"` field — over that one snapshot, so the digest always covers the same bytes the marker was found in. Adapters therefore need no notion of "the approval turn"; the marker, being plain ASCII, survives whatever encoding (JSON lines, plain text) the harness writes.
+
 ```python
 from typing import Protocol
 
@@ -143,13 +146,13 @@ class TranscriptProvider(Protocol):
    - Env: `CODEX_SESSION_ID` (optional `CODEX_HOME`)
    - Path: `$CODEX_HOME/sessions/**/rollout-*-{session-id}.jsonl` (newest by mtime, tie-broken by path)
 4. **`GenericFileAdapter`**:
-   - Env: `GIT_SIGNOFF_TRANSCRIPT_FILE=/path/to/transcript.log`
+   - Env: `GIT_SIGNOFF_TRANSCRIPT_FILE=/path/to/transcript.log` (named `SIGNOFF_TRANSCRIPT_FILE` before 3.7.0)
 
 ---
 
 ## 4. Scoped Model Context Protocol (MCP) Interface (informative)
 
-*Status: informative. This section specifies the tool surface a producer SHOULD expose if it offers GSA mechanics over MCP. No MCP server ships in this repository: one did from 2026-08 to 2026-09-08 and was removed for lack of adopter demand; the mechanics it wrapped remain as the `git_signoff` Python reference library and in the skill layer's helper. The interface is kept so that independent implementations converge on the same tool names and semantics.*
+*Status: informative. This section specifies the tool surface a producer SHOULD expose if it offers GSA mechanics over MCP. No MCP server ships in this repository: one did from 2026-08 to 2026-09-08 and was removed for lack of adopter demand, and the Python reference library it wrapped was folded into the skill folder's `attest.py` on 2026-09-09 (`prepare` and `commit` below correspond to its `attest.py prepare` and `attest.py commit` subcommands). The interface is kept so that independent implementations converge on the same tool names and semantics.*
 
 The Socratic interrogation logic (probing 4 axes, evaluating user clarity) remains in the LLM agent prompt. An MCP producer is strictly scoped to **deterministic Git state and diff mechanics**.
 
@@ -162,8 +165,8 @@ The Socratic interrogation logic (probing 4 axes, evaluating user clarity) remai
   - Reports the resolved interview profile (source, path, `Profile-ID`, 12-hex block digest — the skill-layer resolution order of §2.3, with an unreadable `GIT_SIGNOFF_PROFILE_FILE` aborting and a malformed file-sourced profile falling back to the embedded default with the reason surfaced) and the science-guard signal categories detected in the range diff (informative mirror of the skill layer's Section 1 step 5 and science-detection escalation guard; the agent prompt remains authoritative for interview conduct).
 * **`signoff_commit(tradeoffs: list[str], risks: list[str], user_email: str, sign_commit: bool = True, ack_no_transcript: bool = False)`**:
   - **Stale State Circuit Breaker:** Re-verifies `HEAD == reviewed_commit_sha`, `git diff --quiet`, and `git diff --cached --quiet`. Aborts if dirty or stale.
-  - **Deterministic Status & Ack Enforcement:** Calls `TranscriptProvider.fetch_transcript_bytes()`. If transcript is unavailable and `ack_no_transcript=False`, server MUST abort execution. If `ack_no_transcript=True`, server sets `Signoff-Status: VERIFIED_BY_HUMAN_NO_TRANSCRIPT_DIGEST`.
-  - Constructs flat GSA trailers, executes empty commit (`git commit --allow-empty [-S]`), and attaches Git Note (`refs/notes/signoff`).
+  - **Deterministic Status & Ack Enforcement:** Calls `TranscriptProvider.fetch_transcript_bytes()` once. If transcript is unavailable and `ack_no_transcript=False`, the producer MUST abort execution. If `ack_no_transcript=True`, the producer sets `Signoff-Status: VERIFIED_BY_HUMAN_NO_TRANSCRIPT_DIGEST`. When bytes are available the producer SHOULD require the §2.3 approval marker in the snapshot.
+  - Constructs flat GSA trailers, executes empty commit (`git commit --allow-empty [-S]`), attaches Git Notes (`refs/notes/signoff`) on the reviewed commit and its tree, and SHOULD verify its own output with the reference verifier's head-mode check before reporting success (removing the commit and notes if the check fails).
 
 ---
 

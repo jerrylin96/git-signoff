@@ -1,16 +1,19 @@
 """Zero-touch repository initializer for /git-signoff (Git Signoff Attestation).
 
 Scaffolds CI workflows, domain interview profiles, the vendored /git-signoff
-skill, README badges, and GitHub ruleset enforcement.
-"""
+skill (SKILL.md, attest.py, verify_signoff.py), README badges, and GitHub
+ruleset enforcement.
 
-from __future__ import annotations
+Run it with python3 (3.10 or newer). Python 2 is not guarded: the file uses
+f-strings, which Python 2 rejects at compile time before any guard could run,
+so the install snippets say `python3` and the message below covers 3.x only.
+"""
 
 import sys
 
 if sys.version_info < (3, 10):  # loud, before anything that only runs on newer Pythons
     sys.exit(
-        "signoff init.py needs Python 3.10 or newer; this is Python %d.%d. "
+        "git-signoff init.py needs Python 3.10 or newer; this is Python %d.%d. "
         "Run it with a newer interpreter, e.g. `python3.10 /tmp/signoff-init.py`." % sys.version_info[:2]
     )
 
@@ -22,6 +25,7 @@ import shutil  # noqa: E402
 import subprocess  # noqa: E402
 import tempfile  # noqa: E402
 import time  # noqa: E402
+import traceback  # noqa: E402
 import webbrowser  # noqa: E402
 from dataclasses import dataclass, field  # noqa: E402
 from pathlib import Path  # noqa: E402
@@ -298,7 +302,7 @@ def ensure_no_symlink_in_path(repo_root: Path, target: Path) -> None:
     try:
         target.relative_to(repo_root)
     except ValueError:
-        raise RuntimeError(f"Refusing to write outside the repository: {target} is not under {repo_root}.")
+        raise RuntimeError(f"Refusing to write outside the repository: {target} is not under {repo_root}.") from None
     curr = target
     while curr != repo_root and curr != curr.parent:
         if curr.is_symlink():
@@ -669,7 +673,7 @@ def inject_readme_badge(repo_root: Path, slug: str) -> Path:
     try:
         text = raw_bytes.decode("utf-8")
     except UnicodeDecodeError as e:
-        raise RuntimeError(f"README.md is not valid UTF-8: {e}")
+        raise RuntimeError(f"README.md is not valid UTF-8: {e}") from e
         
     if "actions/workflows/git-signoff.yml/badge.svg" in text or "attested by humans" in text:
         return readme  # already present
@@ -703,15 +707,28 @@ def inject_readme_badge(repo_root: Path, slug: str) -> Path:
     return readme
 
 
+def _is_benign_untracked(status_line: str) -> bool:
+    """`?? .DS_Store`-style lines: untracked OS metadata the initializer never
+    stages (it adds paths by name), so it is tolerated by the repo-wide guard
+    exactly as validate_policy_a tolerates it inside skill destinations.
+    Modified or staged entries are never benign, whatever their name."""
+    return status_line[:2] == "??" and Path(status_line[3:].strip().strip('"')).name in BENIGN_METADATA_FILES
+
+
 def ensure_clean_working_tree(repo_root: Path, allow_dirty: bool = False):
     if allow_dirty:
         return
-    proc = subprocess.run(["git", "status", "--porcelain"], cwd=repo_root, capture_output=True, text=True)
+    # --untracked-files=all lists every untracked file instead of collapsing a
+    # directory to `?? dir/`, so the benign-metadata allowance sees file names.
+    proc = subprocess.run(
+        ["git", "status", "--porcelain", "--untracked-files=all"], cwd=repo_root, capture_output=True, text=True
+    )
     if proc.returncode != 0:
         raise RuntimeError(f"git status failed: {proc.stderr.strip()}")
-    if proc.stdout.strip():
+    offending = [line for line in proc.stdout.splitlines() if line.strip() and not _is_benign_untracked(line)]
+    if offending:
         raise RuntimeError(
-            f"Working tree has uncommitted changes:\n{proc.stdout.rstrip()}\n"
+            "Working tree has uncommitted changes:\n" + "\n".join(offending) + "\n"
             "Commit or stash them, or use --allow-dirty for changes outside managed scaffold paths."
         )
 
@@ -835,12 +852,31 @@ def resolve_branch_name(repo_root: Path, desired_branch: str) -> str:
     return f"{desired_branch}-{timestamp}"
 
 
+def _log(message: str) -> None:
+    """Diagnostics for steps that degrade instead of failing (ruleset automation)."""
+    print(f"  ℹ️  {message}", file=sys.stderr)
+
+
+def _open_settings(url: str, open_browser: bool) -> None:
+    if not open_browser:
+        return
+    try:
+        webbrowser.open(url)
+    except Exception as exc:  # a missing browser is not a reason to fail init
+        _log(f"could not open a browser for {url}: {exc}")
+
+
 def setup_ruleset(
     repo_root: Path,
     slug: Optional[str],
     open_browser: bool = False,
     skip_ruleset: bool = False,
 ) -> RulesetResult:
+    """Write .git-signoff/ruleset.json and try to create the GitHub ruleset via gh.
+
+    Every path that cannot automate falls back to the manual settings URL and
+    says why on stderr; nothing here is silently swallowed.
+    """
     if skip_ruleset:
         return RulesetResult(status="skipped")
 
@@ -849,46 +885,40 @@ def setup_ruleset(
     ruleset_path.parent.mkdir(parents=True, exist_ok=True)
     ruleset_path.write_text(json.dumps(RULESET_PAYLOAD, indent=2) + "\n", encoding="utf-8")
 
-    if not slug or not shutil.which("gh"):
-        url = f"https://github.com/{slug}/settings/rules" if slug else "https://github.com"
-        if open_browser:
-            try:
-                webbrowser.open(url)
-            except Exception:
-                pass
+    url = f"https://github.com/{slug}/settings/rules" if slug else "https://github.com"
+    if not slug:
+        _log("ruleset automation skipped: origin is not a GitHub remote (no owner/repo slug).")
+        _open_settings(url, open_browser)
+        return RulesetResult(status="fallback_manual", rules_url=url)
+    if not shutil.which("gh"):
+        _log("ruleset automation skipped: the gh CLI is not installed.")
+        _open_settings(url, open_browser)
         return RulesetResult(status="fallback_manual", rules_url=url)
 
-    # Check gh auth
     auth_check = subprocess.run(["gh", "auth", "status"], capture_output=True, text=True)
     if auth_check.returncode != 0:
-        url = f"https://github.com/{slug}/settings/rules"
-        if open_browser:
-            try:
-                webbrowser.open(url)
-            except Exception:
-                pass
+        _log(f"ruleset automation skipped: gh is not authenticated ({(auth_check.stderr or auth_check.stdout).strip().splitlines()[-1:] or 'no detail'}).")
+        _open_settings(url, open_browser)
         return RulesetResult(status="fallback_manual", rules_url=url)
 
-    # Check existing rulesets
     list_check = subprocess.run(["gh", "api", f"repos/{slug}/rulesets"], capture_output=True, text=True)
     if list_check.returncode == 0:
         try:
             existing = json.loads(list_check.stdout)
-            for r in existing:
-                if r.get("name") == "Signoff Enforcement":
-                    return RulesetResult(status="already_exists")
-        except Exception:
-            pass
-    elif "HTTP 403" in list_check.stderr or "Resource not accessible" in list_check.stderr:
-        url = f"https://github.com/{slug}/settings/rules"
-        if open_browser:
-            try:
-                webbrowser.open(url)
-            except Exception:
-                pass
-        return RulesetResult(status="fallback_manual", rules_url=url)
+        except ValueError as exc:
+            _log(f"could not parse the ruleset listing from gh ({exc}); attempting to create the ruleset anyway.")
+            existing = []
+        for r in existing:
+            if isinstance(r, dict) and r.get("name") == "Signoff Enforcement":
+                return RulesetResult(status="already_exists")
+    else:
+        detail = list_check.stderr.strip().splitlines()[-1] if list_check.stderr.strip() else f"exit {list_check.returncode}"
+        if "HTTP 403" in list_check.stderr or "Resource not accessible" in list_check.stderr:
+            _log(f"ruleset automation skipped: this token may not administer rulesets ({detail}).")
+            _open_settings(url, open_browser)
+            return RulesetResult(status="fallback_manual", rules_url=url)
+        _log(f"could not list existing rulesets ({detail}); attempting to create the ruleset anyway.")
 
-    # Create ruleset
     create_check = subprocess.run(
         ["gh", "api", f"repos/{slug}/rulesets", "--method", "POST", "--input", "-"],
         input=json.dumps(RULESET_PAYLOAD),
@@ -898,12 +928,9 @@ def setup_ruleset(
     if create_check.returncode == 0:
         return RulesetResult(status="created")
 
-    url = f"https://github.com/{slug}/settings/rules"
-    if open_browser:
-        try:
-            webbrowser.open(url)
-        except Exception:
-            pass
+    detail = create_check.stderr.strip().splitlines()[-1] if create_check.stderr.strip() else f"exit {create_check.returncode}"
+    _log(f"ruleset creation via gh failed ({detail}); import .git-signoff/ruleset.json manually.")
+    _open_settings(url, open_browser)
     return RulesetResult(status="fallback_manual", rules_url=url)
 
 
@@ -1367,6 +1394,7 @@ def parse_args(args: Optional[list[str]] = None) -> argparse.Namespace:
     parser.add_argument("--open-browser", action="store_true", help="Open GitHub settings in browser if manual fallback is needed")
     parser.add_argument("--skill-source", type=Path, help="Local skills/git-signoff folder to vendor (offline installs; default: shallow clone)")
     parser.add_argument("--skill-target", choices=["auto", "claude", "agents", "both"], default="auto", help="Harness destination target (default: auto)")
+    parser.add_argument("--verbose", action="store_true", help="On error, print the exception type and traceback")
     return parser.parse_args(args)
 
 
@@ -1431,6 +1459,11 @@ def main() -> int:
 
     except Exception as e:
         print(f"\n❌ Error during initialization: {e}", file=sys.stderr)
+        if args.verbose:
+            print(f"   ({type(e).__module__}.{type(e).__qualname__})", file=sys.stderr)
+            traceback.print_exc()
+        else:
+            print("   Re-run with --verbose for the exception type and traceback.", file=sys.stderr)
         return 1
 
 

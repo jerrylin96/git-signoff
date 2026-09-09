@@ -1,15 +1,21 @@
 # Harness Setup & Portability Guide
 
 How to install and run `/git-signoff` on each agent harness. The skill is
-prompt-driven and self-contained; nothing is installed by name and no
-Python package is required — the initializer and the verifier are
-standard-library scripts. Canonical protocol:
-[specs/gsa-core.md](specs/gsa-core.md).
+one self-contained folder: the interview prompt (`SKILL.md`), the
+deterministic producer (`attest.py`), and the verifier (`verify_signoff.py`).
+Nothing is installed by name and no Python package is required — the
+initializer, the producer, and the verifier are standard-library scripts
+(Python 3.10+). Canonical protocol: [specs/gsa-core.md](specs/gsa-core.md).
 
 ## Portability Rules
 
-1. **Copy the entire `signoff/` folder**, including `specs/`, so relative links
-   (e.g. `specs/gsa-core.md`) keep resolving. Never copy `SKILL.md` alone.
+1. **Copy the entire `git-signoff/` folder**, including `specs/`, `attest.py`,
+   and `verify_signoff.py`, so relative links (e.g. `specs/gsa-core.md`) keep
+   resolving and the helper finds its sibling verifier. Never copy `SKILL.md`
+   alone. Licensing inside the folder: `attest.py`, `verify_signoff.py`, and
+   the Markdown guidance are MIT like the rest of the repository's code; the
+   documents under `specs/` are under the Community Specification License 1.0
+   (stated in each file). Neither license covers the other's files.
 2. **All links are relative** — enforced by `scripts/tests/test_skill_references.py`
    (no `file://` links).
 3. **Cross-skill references degrade gracefully outside Antigravity.** On
@@ -76,6 +82,20 @@ dogfoods via symlinks at both `.claude/skills/git-signoff` and
 `.agents/skills/git-signoff` to its own `skills/git-signoff/`; that symlink pattern is
 for this repo only.
 
+**Migration note (2026-09, `init-v7`):** the skill folder, command, config
+directory, workflow file, and environment variables were renamed from
+`signoff` to `git-signoff` (`.claude/skills/git-signoff`,
+`/git-signoff`, `.git-signoff/profile.md`, `.github/workflows/git-signoff.yml`,
+`GIT_SIGNOFF_TRANSCRIPT_FILE`, `GIT_SIGNOFF_PROFILE_FILE`,
+`GIT_SIGNOFF_VERIFIED_BY`). Protocol identifiers — `Signoff-*` trailers,
+`refs/notes/signoff`, the `[SIGNOFF <sha>]` subject — did not change, so
+existing attestations verify unchanged. The only install that existed under
+the old names was this repository's own pair of symlinks, which were moved;
+an adopter upgrading a hypothetical `.claude/skills/signoff` copy would re-run
+the initializer (which vendors to the new path), delete the old folder,
+rename `.signoff/` to `.git-signoff/`, and re-export any `SIGNOFF_*` variables
+under the new names.
+
 A machine-local install also works for local CLI/desktop sessions: copy the
 folder to `~/.claude/skills/git-signoff` (user-level, all projects). Linked git
 worktrees are handled by the `--git-common-dir` fallback: the transcript is
@@ -99,11 +119,13 @@ Web-specific caveats:
 - **`refs/notes/signoff` cannot be pushed from a web session** (verified
   2026-08-05): the cloud GitHub proxy restricts pushes to the session's
   working branch and returns HTTP 403 for notes refs (misreported by git as
-  "Everything up-to-date" — verify with `git ls-remote`). The attestation
-  commit still pushes with the branch, so verification falls back to the
-  git-log lookup (GSA §5.1). Recover the notes mirror afterward from any
-  unrestricted clone — the note body is byte-identical to the attestation
-  commit message:
+  "Everything up-to-date" — verify with `git ls-remote`). `attest.py commit`
+  reports this as `notes_pushed: false` with the reason and still exits 0:
+  the attestation commit pushes with the branch, so verification falls back
+  to the git-log lookup (GSA §5.1), and this repository's notes-recovery
+  workflow rebuilds the ref on merge. Recover the notes mirror by hand from
+  any unrestricted clone if needed — the note body is byte-identical to the
+  attestation commit message:
   ```bash
   NOTE_BODY=$(git log -1 --format=%B <attestation-sha>)
   git notes --ref=signoff append -m "$NOTE_BODY" <reviewed-commit-sha>
@@ -177,9 +199,11 @@ trailer (grammar: [specs/gsa-core.md](specs/gsa-core.md) §2.3):
 Signoff-Agent: harness=<id>/<version|N/A> model=<model-id|N/A> reasoning=<level|N/A> interview=<intensity-level>/<profile-id>
 ```
 
-Fields are deterministically sourced where the harness exposes them; the
-digest helper emits harness version, model, and reasoning from the same
-transcript snapshot bytes as the digest. Per-harness sources:
+Fields are deterministically sourced where the harness exposes them;
+`attest.py` derives harness version, model, and reasoning from the environment
+and from the same transcript snapshot bytes as the digest, and accepts the
+agent's self-reported model (`--model`) only when no deterministic source has
+one. Per-harness sources:
 
 | Harness | harness version | model | reasoning |
 |---|---|---|---|

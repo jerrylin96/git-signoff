@@ -917,7 +917,7 @@ def load_verifier():
             EXIT_USAGE,
             f"verify_signoff.py not found next to attest.py ({path}); the skill folder must be copied whole.",
         )
-    spec = importlib.util.spec_from_file_location("git_signoff_verifier", str(path))
+    spec = importlib.util.spec_from_file_location("gsa_verifier", str(path))
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
     return module

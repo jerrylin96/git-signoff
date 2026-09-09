@@ -64,8 +64,24 @@ tags; a breaking change to the action's inputs or pass criteria would ship
 as `verify-v2`. Tracking `@main` works but couples your CI to this
 repository's development pace.
 
-> **If you pinned `@verify-v1`, `@verify-v1.1`, or `@verify-v1.2`, move to `@verify-v1.3`.**
-> `verify-v1.3` closes a PR-gate bypass: earlier verifiers accepted an
+**Stale-pin warning.** Since `verify-v1.4` the verifier lists this
+repository's `verify-v*` tags after fetching notes and prints one line to the
+CI log when a newer pin exists:
+
+```text
+warning: verifier pin verify-v1.4 is behind verify-v1.5; see verify/README.md
+```
+
+It never changes the verdict, is skipped silently when the network is
+unavailable, and can be turned off with `GIT_SIGNOFF_NO_UPDATE_CHECK=1`.
+
+> **If you pinned `@verify-v1`, `@verify-v1.1`, `@verify-v1.2`, or `@verify-v1.3`, move to `@verify-v1.4`.**
+> `verify-v1.4` moves the verifier into the skill folder
+> (`skills/git-signoff/verify_signoff.py`, vendored into every adopter
+> repository, so `--audit` runs locally without a download and the producer
+> helper `attest.py` self-checks every attestation it writes), renames the
+> `--audit` override to `GIT_SIGNOFF_TRANSCRIPT_FILE`, and adds the stale-pin
+> warning described below. `verify-v1.3` closed a PR-gate bypass: earlier verifiers accepted an
 > attestation whose single-valued trailers appeared twice, so a line break
 > smuggled into a trade-off could carry a second `Signoff-Reviewed-Tree-SHA`
 > that made a later, unreviewed commit pass as attested. One attestation now
@@ -106,8 +122,12 @@ Override with inputs:
 ```
 
 The verifier is a single stdlib-only Python file
-([`verify_signoff.py`](verify_signoff.py)) — no dependencies beyond git and
-Python 3.10+. Copy it into any CI system; GitHub Actions is just the
+([`skills/git-signoff/verify_signoff.py`](../skills/git-signoff/verify_signoff.py))
+— no dependencies beyond git and Python 3.10+. It ships inside the skill
+folder, so every repository that vendored `/git-signoff` already has it at
+`.claude/skills/git-signoff/verify_signoff.py` (or `.agents/…`) for local
+`--mode head` and `--audit` runs; the composite action in this directory runs
+that same file. Copy it into any CI system; GitHub Actions is just the
 packaged path.
 
 Running it is non-destructive to your signoff notes: it fetches origin's
@@ -146,7 +166,7 @@ The auditor identifies the attestation on the commit or PR (e.g. `[SIGNOFF 979cb
 #### Step 2: Reviewer exports transcript
 On the machine where the signoff interview occurred, the reviewer runs the verifier CLI with `--audit` and `--export`:
 ```bash
-python3 verify/verify_signoff.py --audit HEAD --export /tmp/transcript.jsonl
+python3 .claude/skills/git-signoff/verify_signoff.py --audit HEAD --export /tmp/transcript.jsonl
 ```
 The verifier resolves the local transcript for the harness (`claude-code`, `antigravity-cli`, `codex-cli`, etc.), checks that the first $N$ bytes match the `Signoff-Transcript-Digest` trailer, and writes the snapshot to the specified path:
 ```text
@@ -161,7 +181,7 @@ The reviewer sends `/tmp/transcript.jsonl` to the auditor.
 #### Step 3: Auditor verifies snapshot against git trailers
 The auditor points `GIT_SIGNOFF_TRANSCRIPT_FILE` at the received file and audits the target commit:
 ```bash
-GIT_SIGNOFF_TRANSCRIPT_FILE=/tmp/transcript.jsonl python3 verify/verify_signoff.py --audit HEAD
+GIT_SIGNOFF_TRANSCRIPT_FILE=/tmp/transcript.jsonl python3 .claude/skills/git-signoff/verify_signoff.py --audit HEAD
 ```
 The verifier recomputes the SHA-256 digest and confirms it matches the git attestation byte-for-byte.
 

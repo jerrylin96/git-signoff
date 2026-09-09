@@ -13,7 +13,6 @@ import subprocess
 import sys
 
 import pytest
-
 from _attest_loader import SKILL_DIR, attest, verify_signoff
 from helpers import commit_file, git, init_repo
 

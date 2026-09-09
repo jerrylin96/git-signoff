@@ -65,9 +65,9 @@ import argparse  # noqa: E402
 import glob  # noqa: E402
 import hashlib  # noqa: E402
 import os  # noqa: E402
-from pathlib import Path  # noqa: E402
 import re  # noqa: E402
 import subprocess  # noqa: E402
+from pathlib import Path  # noqa: E402
 
 # The pin tag this file ships under. tag.yml's PINS list and the install
 # snippets must carry the same value (pinned by tests); the stale-pin warning

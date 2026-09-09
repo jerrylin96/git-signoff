@@ -2116,3 +2116,104 @@ def test_init_exits_loudly_below_python_floor(tmp_path):
     assert proc.returncode == 1
     assert "needs Python 3.10 or newer" in proc.stderr
     assert "3.9" in proc.stderr
+
+
+# --- 2026-09-09 follow-ups: benign metadata in the repo-wide guard, unborn
+# non-candidate branch, --verbose ------------------------------------------
+
+
+def test_clean_tree_guard_tolerates_untracked_os_metadata(temp_git_repo):
+    """A non-ignored, untracked .DS_Store at the repository root is not a dirty
+    tree: the initializer stages paths by name and can never sweep it into the
+    scaffold commit, mirroring the allowance inside skill destinations."""
+    (temp_git_repo / ".DS_Store").write_bytes(b"\x00junk")
+    (temp_git_repo / "sub").mkdir()
+    (temp_git_repo / "sub" / "Thumbs.db").write_bytes(b"\x00junk")
+    init.ensure_clean_working_tree(temp_git_repo)  # no raise
+    res = init.run_init(repo_root=temp_git_repo, non_interactive=True, skill_source=SKILL_SRC, skip_ruleset=True)
+    assert res.success
+    staged = subprocess.check_output(["git", "show", "--name-only", "--format=", "HEAD"], cwd=temp_git_repo, text=True)
+    assert ".DS_Store" not in staged and "Thumbs.db" not in staged
+    assert (temp_git_repo / ".DS_Store").exists()  # left alone
+
+
+def test_clean_tree_guard_still_refuses_real_untracked_and_modified_files(temp_git_repo):
+    (temp_git_repo / "notes.txt").write_text("work in progress\n")
+    with pytest.raises(RuntimeError, match=r"uncommitted changes[\s\S]*notes\.txt"):
+        init.ensure_clean_working_tree(temp_git_repo)
+    (temp_git_repo / "notes.txt").unlink()
+    # a *modified* tracked file named like OS metadata is never benign
+    (temp_git_repo / ".DS_Store").write_bytes(b"tracked")
+    subprocess.run(["git", "add", ".DS_Store"], cwd=temp_git_repo, check=True)
+    subprocess.run(["git", "commit", "-qm", "track metadata"], cwd=temp_git_repo, check=True)
+    (temp_git_repo / ".DS_Store").write_bytes(b"changed")
+    with pytest.raises(RuntimeError, match=r"uncommitted changes[\s\S]*\.DS_Store"):
+        init.ensure_clean_working_tree(temp_git_repo)
+
+
+def test_unborn_repo_on_non_candidate_branch_bootstraps_that_branch(tmp_path):
+    """An unborn repository whose HEAD names a branch that is not a default-branch
+    candidate (not main/master/trunk/...) is bootstrapped on that branch: the
+    empty initial commit lands there and the setup branch is cut from it."""
+    repo_dir = tmp_path / "unborn_custom"
+    repo_dir.mkdir()
+    subprocess.run(["git", "init", "-b", "feature-x"], cwd=repo_dir, check=True, capture_output=True)
+    subprocess.run(["git", "config", "user.name", "Author"], cwd=repo_dir, check=True)
+    subprocess.run(["git", "config", "user.email", "author@example.com"], cwd=repo_dir, check=True)
+
+    ctx = init.detect_git_context(repo_dir)
+    assert ctx.is_unborn and ctx.current_branch == "feature-x" and ctx.default_branch == "feature-x"
+
+    res = init.run_init(repo_root=repo_dir, non_interactive=True, skill_source=SKILL_SRC, skip_ruleset=True)
+    assert res.success and res.branch == "git-signoff/init"
+    base_commits = subprocess.check_output(["git", "log", "feature-x", "--oneline"], cwd=repo_dir, text=True).splitlines()
+    assert len(base_commits) == 1 and "chore: initialize feature-x" in base_commits[0]
+    branch_commits = subprocess.check_output(["git", "log", "git-signoff/init", "--oneline"], cwd=repo_dir, text=True).splitlines()
+    assert len(branch_commits) == 2
+    assert not subprocess.run(["git", "rev-parse", "-q", "--verify", "main"], cwd=repo_dir, capture_output=True).returncode == 0
+    workflow = (repo_dir / ".github" / "workflows" / "git-signoff.yml").read_text(encoding="utf-8")
+    assert "branches: [ feature-x ]" in workflow
+
+
+def test_unborn_repo_on_non_candidate_branch_rolls_back_to_unborn(tmp_path, monkeypatch):
+    repo_dir = tmp_path / "unborn_custom_rollback"
+    repo_dir.mkdir()
+    subprocess.run(["git", "init", "-b", "feature-x"], cwd=repo_dir, check=True, capture_output=True)
+    subprocess.run(["git", "config", "user.name", "Author"], cwd=repo_dir, check=True)
+    subprocess.run(["git", "config", "user.email", "author@example.com"], cwd=repo_dir, check=True)
+
+    def boom(*args, **kwargs):
+        raise RuntimeError("simulated vendor failure")
+
+    monkeypatch.setattr(init, "vendor_skill", boom)
+    with pytest.raises(RuntimeError, match="simulated vendor failure"):
+        init.run_init(repo_root=repo_dir, non_interactive=True, skill_source=SKILL_SRC, skip_ruleset=True)
+    assert subprocess.run(["git", "rev-parse", "--verify", "HEAD"], cwd=repo_dir, capture_output=True).returncode != 0
+    assert subprocess.check_output(["git", "symbolic-ref", "--short", "HEAD"], cwd=repo_dir, text=True).strip() == "feature-x"
+    assert not (repo_dir / ".git-signoff").exists()
+
+
+def test_main_verbose_prints_exception_type_and_traceback(temp_git_repo, monkeypatch, capsys):
+    (temp_git_repo / "dirty.txt").write_text("x\n")
+    monkeypatch.chdir(temp_git_repo)
+    monkeypatch.setattr(sys, "argv", ["init.py", "--non-interactive", "--skip-ruleset", "--skill-source", str(SKILL_SRC)])
+    assert init.main() == 1
+    err = capsys.readouterr().err
+    assert "Error during initialization" in err and "dirty.txt" in err
+    assert "Re-run with --verbose" in err and "Traceback" not in err
+
+    monkeypatch.setattr(sys, "argv", ["init.py", "--verbose", "--non-interactive", "--skip-ruleset", "--skill-source", str(SKILL_SRC)])
+    assert init.main() == 1
+    err = capsys.readouterr().err
+    assert "builtins.RuntimeError" in err and "Traceback (most recent call last)" in err
+
+
+def test_setup_ruleset_reports_why_it_fell_back(temp_git_repo, monkeypatch, capsys):
+    monkeypatch.setattr(init.shutil, "which", lambda name: None)
+    res = init.setup_ruleset(temp_git_repo, slug="org/repo")
+    assert res.status == "fallback_manual" and res.rules_url == "https://github.com/org/repo/settings/rules"
+    assert "gh CLI is not installed" in capsys.readouterr().err
+    res = init.setup_ruleset(temp_git_repo, slug=None)
+    assert res.status == "fallback_manual"
+    assert "not a GitHub remote" in capsys.readouterr().err
+    assert (temp_git_repo / ".git-signoff" / "ruleset.json").is_file()

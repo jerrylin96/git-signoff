@@ -1,7 +1,7 @@
 """Pin the reference verifier against the published conformance vectors.
 
 conformance/ is the seed suite for third-party GSA implementations; this
-test guarantees the reference implementation (verify/verify_signoff.py)
+test guarantees the reference implementation (skills/git-signoff/verify_signoff.py)
 reaches exactly the verdicts published in conformance/expected.json, so the
 suite and the implementation cannot drift apart silently.
 """

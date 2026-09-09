@@ -1,7 +1,6 @@
 """Shared fixtures for scripts/tests: env isolation and scratch repositories."""
 
 import pytest
-
 from helpers import commit_file, git, init_repo
 
 

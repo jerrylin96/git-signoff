@@ -11,7 +11,6 @@ import subprocess
 import sys
 
 import pytest
-
 from helpers import commit_file, git, init_repo
 
 _SPEC = importlib.util.spec_from_file_location(
@@ -149,13 +148,20 @@ REPO_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
 
 
 def _recent_attestations_in_local_main():
-    proc = subprocess.run(
-        ["git", "log", "--format=%s", r"--grep=^\[SIGNOFF ", "main"],
-        cwd=REPO_ROOT,
-        capture_output=True,
-        text=True,
-    )
-    return proc.returncode == 0 and "[SIGNOFF 979cb45]" in proc.stdout
+    """True when a full-history main (local `main` or `origin/main`) carrying
+    the 2026-08 attestations is available. False on shallow clones and on
+    checkouts without main, where the live-repo test skips; CI fetches full
+    history so it runs there (see CONTRIBUTING.md)."""
+    for ref in ("main", "origin/main"):
+        proc = subprocess.run(
+            ["git", "log", "--format=%s", r"--grep=^\[SIGNOFF ", ref],
+            cwd=REPO_ROOT,
+            capture_output=True,
+            text=True,
+        )
+        if proc.returncode == 0 and "[SIGNOFF 979cb45]" in proc.stdout:
+            return True
+    return False
 
 
 @pytest.mark.skipif(
@@ -164,7 +170,8 @@ def _recent_attestations_in_local_main():
 )
 def test_end_to_end_against_this_repo():
     """History mode passes on main; head mode passes on an attestation tip."""
-    ok, lines = verify_signoff.check_history(REPO_ROOT, "main", require=1)
+    ref = "main" if subprocess.run(["git", "rev-parse", "-q", "--verify", "main"], cwd=REPO_ROOT, capture_output=True).returncode == 0 else "origin/main"
+    ok, lines = verify_signoff.check_history(REPO_ROOT, ref, require=1)
     assert ok, lines
     ok, lines = verify_signoff.check_head(REPO_ROOT, "5bec5ee")
     assert ok, lines

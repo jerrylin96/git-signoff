@@ -11,7 +11,6 @@ import os
 import subprocess
 
 import pytest
-
 from helpers import commit_file, git, init_repo
 
 _SPEC = importlib.util.spec_from_file_location(
@@ -145,17 +144,20 @@ REPO_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
 
 
 def _recent_attestations_in_local_main():
-    """The clone below sees this repo's local branches; require a main branch
-    whose history already carries the three recent attestations."""
-    proc = subprocess.run(
-        ["git", "log", "--format=%s", r"--grep=^\[SIGNOFF ", "main"],
-        cwd=REPO_ROOT,
-        capture_output=True,
-        text=True,
-    )
-    return proc.returncode == 0 and all(
-        f"[SIGNOFF {short}]" in proc.stdout for short in ("a4d1c6c", "daf4939", "979cb45")
-    )
+    """True when a full-history main (local `main` or `origin/main`) carrying
+    the 2026-08 attestations is available. False on shallow clones and on
+    checkouts without main, where the live-repo test skips; CI fetches full
+    history so it runs there (see CONTRIBUTING.md)."""
+    for ref in ("main", "origin/main"):
+        proc = subprocess.run(
+            ["git", "log", "--format=%s", r"--grep=^\[SIGNOFF ", ref],
+            cwd=REPO_ROOT,
+            capture_output=True,
+            text=True,
+        )
+        if proc.returncode == 0 and "[SIGNOFF 979cb45]" in proc.stdout:
+            return True
+    return False
 
 
 @pytest.mark.skipif(

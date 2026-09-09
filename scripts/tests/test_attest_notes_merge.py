@@ -1,7 +1,6 @@
 """Diverged-notes concurrency merge per GSA §2.5 (tracking ref + cat_sort_uniq)."""
 
 import pytest
-
 from _attest_loader import attest as core
 from helpers import commit_file, git, init_repo
 

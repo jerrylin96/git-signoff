@@ -129,7 +129,7 @@ The auditor identifies the attestation on the commit or PR (e.g. `[SIGNOFF 979cb
 #### Step 2: Reviewer exports transcript
 On the machine where the signoff interview occurred, the reviewer runs the verifier CLI with `--audit` and `--export`:
 ```bash
-python3 verify/verify_signoff.py --audit HEAD --export /tmp/transcript.jsonl
+python3 .claude/skills/git-signoff/verify_signoff.py --audit HEAD --export /tmp/transcript.jsonl
 ```
 The verifier resolves the local transcript for the harness (`claude-code`, `antigravity-cli`, `codex-cli`, etc.), checks that the first $N$ bytes match the `Signoff-Transcript-Digest` trailer, and writes the snapshot to the specified path:
 ```text
@@ -144,7 +144,7 @@ The reviewer sends `/tmp/transcript.jsonl` to the auditor.
 #### Step 3: Auditor verifies snapshot against git trailers
 The auditor points `GIT_SIGNOFF_TRANSCRIPT_FILE` at the received file and audits the target commit:
 ```bash
-GIT_SIGNOFF_TRANSCRIPT_FILE=/tmp/transcript.jsonl python3 verify/verify_signoff.py --audit HEAD
+GIT_SIGNOFF_TRANSCRIPT_FILE=/tmp/transcript.jsonl python3 .claude/skills/git-signoff/verify_signoff.py --audit HEAD
 ```
 The verifier recomputes the SHA-256 digest and confirms it matches the git attestation byte-for-byte.
 
@@ -152,10 +152,12 @@ The verifier recomputes the SHA-256 digest and confirms it matches the git attes
 
 ## Installation
 
-One channel, everywhere: the skill is a self-contained folder of Markdown
-that lives *in the repository under review*. Committed once, `/git-signoff`
-works for every collaborator — no plugins, no marketplaces, no downloads,
-nothing account-scoped.
+One channel, everywhere: the skill is a self-contained folder — the
+interview prompt (`SKILL.md`), the deterministic producer (`attest.py`) and
+the verifier (`verify_signoff.py`), both standard-library Python — that lives
+*in the repository under review*. Committed once, `/git-signoff` works for
+every collaborator — no plugins, no marketplaces, no downloads, nothing
+account-scoped, nothing to pip-install.
 
 | Where you work | One-time action |
 |---|---|
@@ -275,19 +277,27 @@ jobs:
 
 Supports standard merge strategies: **2-parent PR merges** (verifies clean merge tree & attested PR head in `head` mode), **fast-forward merges** (`head` mode), **squash merges** (`history` mode; in `head` mode when base is unchanged), and **rebase merges** (`history` mode; in `head` mode, re-run `/git-signoff` after rebase). Enforce strictly with preconfigured [`ruleset.json`](verify/ruleset.json). Full setup & badge markdown: [`verify/`](verify/README.md).
 
-The protocol is harness-, model-, and vendor-neutral. The skill is
-prompt-driven and self-contained, and nothing is installed by name: the
-initializer is a curl-run script and the verifier is a single file, both
-standard-library Python. A Python reference implementation of the producer
-mechanics lives in [`git_signoff/`](git_signoff/) as an executable,
-unit-tested specification; it is not distributed.
+The protocol is harness-, model-, and vendor-neutral, and nothing is
+installed by name: the initializer is a curl-run script, and the skill folder
+carries the interview prompt plus two standard-library Python files. The
+agent conducts the interview; **`attest.py`** does every mechanical step
+deterministically — it resolves the SHAs, snapshots the transcript once,
+requires an approval marker naming the reviewed commit to be present in that
+snapshot (so a stale or wrong session file is refused instead of hashed),
+derives the status from the bytes, writes the commit and the notes, and runs
+the verifier on its own output before reporting success. What this does
+*not* close is a malicious agent or human with push rights writing a false
+attestation; that needs an identity the agent does not hold and stays
+deferred (see [docs/roadmap.md](docs/roadmap.md)).
 
 - **Protocol spec:** [`skills/git-signoff/specs/gsa-core.md`](skills/git-signoff/specs/gsa-core.md)
+- **Producer and verifier reference (flags, exit codes, env vars):** [`docs/reference.md`](docs/reference.md)
+- **Reproducible walkthrough:** [`docs/walkthrough.md`](docs/walkthrough.md)
 - **Project roadmap:** [`docs/roadmap.md`](docs/roadmap.md)
 - **Per-harness install & portability guide:** [`skills/git-signoff/HARNESSES.md`](skills/git-signoff/HARNESSES.md)
 - **Skill entry point:** [`skills/git-signoff/SKILL.md`](skills/git-signoff/SKILL.md)
 
-Distribution is deliberately boring: a folder of Markdown committed to the
+Distribution is deliberately boring: one folder committed to the
 repository under review, loaded by the harness from disk. Earlier
 account-scoped channels (a Claude Code plugin marketplace and a release-zip
 skill upload) were retired in v0.4.0 — the vendored folder replaced them on
@@ -295,9 +305,10 @@ every surface; [docs/roadmap.md#phase-4-amendment-2026-08-30](docs/roadmap.md#ph
 
 ## Status & roadmap
 
-**v0.4.0** ships the researcher-facing feature set described above —
+**v0.5.0** ships the researcher-facing feature set described above —
 repo-local profiles, the default-on science guard, and profile provenance
-digests — on a single distribution channel (the vendored skill folder),
+digests — plus the deterministic producer `attest.py` with approval-marker
+binding, on a single distribution channel (the vendored skill folder),
 verified end-to-end by scripted mechanics checks plus live interview runs:
 this repository signs off its own branches, and the resulting attestations
 are in its history (`git log --grep='SIGNOFF'`).
@@ -314,12 +325,13 @@ Cloud escrow implementation remains next.
 ## Development
 
 ```bash
-pip install -e . pytest ruff   # installs the in-repo reference library for the tests; no dependencies
+pip install pytest ruff   # the only development dependencies; nothing from this repo is installed
 ruff check . && pytest
 ```
 
-Contract tests live in `scripts/tests/` (skill contracts), `tests/` (repo
-initializer), and `git_signoff/tests/` (server mechanics).
+Tests live in `scripts/tests/` (the producer `attest.py`, the verifier, skill
+contracts, conformance vectors, notes recovery, the site) and `tests/` (the
+repository initializer). See [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ## License
 

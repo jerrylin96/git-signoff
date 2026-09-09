@@ -379,12 +379,16 @@ and risk attestation</span>
       <h2>A record that outlives the branch</h2>
     </div>
     <div class="body">
-      <p>When you pass, git-signoff writes an empty signed commit plus a mirrored
-      git note (<code class="inline">refs/notes/signoff</code>) carrying flat,
-      machine-parsable trailers: the reviewed commit and tree SHAs, the
-      acknowledged trade-offs and risks, a SHA-256 digest of the interview
+      <p>When you pass, a small standard-library helper shipped with the skill
+      (<code class="inline">attest.py</code>) — not the agent — writes an empty signed
+      commit plus a mirrored git note (<code class="inline">refs/notes/signoff</code>)
+      carrying flat, machine-parsable trailers: the reviewed commit and tree SHAs,
+      the acknowledged trade-offs and risks, a SHA-256 digest of the interview
       transcript, your identity, and exactly which question set you were held
-      to.</p>
+      to. The helper snapshots the transcript once, refuses a transcript that does
+      not carry this conversation’s approval marker for this exact commit, derives
+      the status from the bytes, and runs the verifier on its own output before
+      it reports success.</p>
       <p>Verification survives squash merges and branch deletion via the
       reviewed <strong>tree SHA</strong> and the notes mirror. The protocol —
       the <strong>Git Signoff Attestation (GSA)</strong> spec — is open,
@@ -419,13 +423,13 @@ and risk attestation</span>
         <div class="row">
           <h3>Step 2: Reviewer exports transcript snapshot</h3>
           <p class="note">On the machine where the signoff interview took place, the reviewer runs the verifier with <code class="inline">--audit</code> and <code class="inline">--export</code> to extract the exact byte snapshot:</p>
-          <pre class="cmd"><code>python3 verify/verify_signoff.py --audit HEAD --export transcript.jsonl</code></pre>
+          <pre class="cmd"><code>python3 .claude/skills/git-signoff/verify_signoff.py --audit HEAD --export transcript.jsonl</code></pre>
           <p class="note">The verifier verifies that the local session transcript matches the commit's <code class="inline">Signoff-Transcript-Digest</code> and writes the snapshot to the target path.</p>
         </div>
         <div class="row">
           <h3>Step 3: Auditor verifies snapshot against git trailers</h3>
           <p class="note">The reviewer sends <code class="inline">transcript.jsonl</code> to the auditor. The auditor verifies the received transcript against the git trailers:</p>
-          <pre class="cmd"><code>GIT_SIGNOFF_TRANSCRIPT_FILE=transcript.jsonl python3 verify/verify_signoff.py --audit HEAD</code></pre>
+          <pre class="cmd"><code>GIT_SIGNOFF_TRANSCRIPT_FILE=transcript.jsonl python3 .claude/skills/git-signoff/verify_signoff.py --audit HEAD</code></pre>
           <p class="note">Output confirms the transcript digest matches byte-for-byte:</p>
           <pre class="cmd"><code>✅ VALID MATCH: Transcript SHA-256 matches sha256:1675b6...
   Harness: claude-code
@@ -475,7 +479,8 @@ curl -fsSL https://raw.githubusercontent.com/jerrylin96/git-signoff/init-v7/init
         </div>
         <div class="row">
           <h3>Other harnesses — Antigravity, Codex, Goose, …</h3>
-          <p class="note">The skill is a self-contained folder of prompts: copy
+          <p class="note">The skill is one self-contained folder — the interview
+          prompt plus two standard-library Python files, nothing to install: copy
           <code class="inline">skills/git-signoff/</code> into your harness’s skill
           location and set the transcript adapter env vars. Full matrix in
           <a href="https://github.com/jerrylin96/git-signoff/blob/main/skills/git-signoff/HARNESSES.md">HARNESSES.md</a>.</p>

@@ -9,7 +9,6 @@ import os
 import subprocess
 
 import pytest
-
 from _attest_loader import attest as core
 
 FIXTURE = os.path.join(os.path.dirname(__file__), "fixtures", "production_attestation.txt")

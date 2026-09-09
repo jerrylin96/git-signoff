@@ -4,7 +4,6 @@ import shutil
 import subprocess
 
 import pytest
-
 from _attest_loader import attest as profile
 from helpers import git
 

@@ -151,7 +151,7 @@ donation vehicle. Milestones, in order:
 2. **Spec licensing** — ✅ 2026-08-06: Community Specification License 1.0
    in `LICENSE-SPEC`, declared by `gsa-core.md` and `gsa-escrow.md`; code
    stays MIT.
-3. **Independent implementations**: the skill and the `git_signoff` Python reference library are two
+3. **Independent implementations**: the skill's `attest.py` producer and the verifier are
    same-author implementations; the milestone is one *third-party* verifier
    or producer. The enabler shipped 2026-08-06 — `conformance/` publishes
    the test-vector suite (mostly real attestations, reference verifier
@@ -166,7 +166,7 @@ donation vehicle. Milestones, in order:
    head tree, closing a real reference-verifier false positive where a
    non-empty "attestation" commit could smuggle unreviewed changes past
    head mode) and enforced `Signoff-Spec-Version: 1.0` as a value — both
-   adopted into `verify/verify_signoff.py` with tests and a new conformance
+   adopted into the reference verifier (now `skills/git-signoff/verify_signoff.py`) with tests and a new conformance
    vector. One of its checks is *over-strict*: an exactly-one-occurrence
    rule per mandatory trailer, which rejects `cat_sort_uniq`-merged note
    blobs that §2.5's own notes flow produces (our
@@ -214,12 +214,11 @@ audit principle is dotgemini's ponytail skill: simplest working thing,
 deletion over addition, nothing speculative. Remaining candidates, each
 with a verdict and the trigger that changes it:
 
-- **`init.py` duplication** (1328 byte-identical lines at root and
-  `git_signoff/init.py`, pinned by `test_init_scripts_byte_parity`):
-  mechanical debt — the parity test makes it safe, but every change is
-  written twice. Dedupe when packaging allows, or shrink the script itself:
-  the vendor step is the essential one; ruleset/badge/branch automation is
-  optional polish that could become flags-off-by-default.
+- **`init.py` duplication — RESOLVED 2026-09-08** with the MCP/PyPI
+  deletion below (the package copy existed only for a console-script `init`
+  subcommand). Remaining candidate: shrink the script itself — the vendor
+  step is the essential one; ruleset/badge/branch automation is optional
+  polish that could become flags-off-by-default.
 - **Transcript-digest machinery** (per-harness adapters, the env-var
   matrix, snapshot timing rules): the single biggest onboarding/portability
   tax — it is why HARNESSES.md needs a harness matrix at all — and weakest
@@ -257,18 +256,60 @@ with a verdict and the trigger that changes it:
   credentials (the escrow / in-toto / Sigstore direction). That is the
   future in which "server-side enforcement" becomes necessary, and it is not
   a client-side MCP server, which shares the agent's privileges. What
-  stays is `git_signoff/` as an unpublished Python reference implementation
-  of the producer mechanics (status derivation, notes merge, adapters,
-  profile resolution): the only executable, unit-tested form of the producer
-  rules, since the skill's bash cannot be unit tested. A thin MCP wrapper
-  (~100 lines over that core) is easy to add back if an adopter asks; that
-  is the test for bloat — cheaper to recreate on demand than to carry. The
-  one benefit the server did deliver — deterministic mechanics that protect
-  against agent *mistakes* (a miscomputed digest, a mis-derived status, a
-  skipped notes merge) — never needed MCP or pip: if live runs show agents
-  fumbling the mechanics, a stdlib helper script inside the vendored skill
-  folder, replacing the inline bash heredoc, gives the same determinism with
-  zero install.
+  stayed for one day was `git_signoff/`, an unpublished Python reference
+  implementation of the producer mechanics; on 2026-09-09 it was folded into
+  the skill folder as `attest.py` (next entry), so there is exactly one
+  implementation of the producer, shipped and unit-tested.
+- **Deterministic producer `attest.py` — SHIPPED 2026-09-09 (`init-v7`,
+  `verify-v1.4`, spec 3.7.0).** Decision record. The one benefit the MCP
+  server had delivered — mechanics that protect against agent *mistakes* —
+  never needed MCP or pip: a standard-library script inside the vendored
+  skill folder gives the same determinism with zero install, and it can be
+  unit-tested where the skill's bash could not. `SKILL.md` no longer carries
+  a bash heredoc, digest regexes, or a trailer template; the agent runs
+  `attest.py prepare`, conducts the interview, presents `attest.py commit
+  --dry-run`, and on approval runs `attest.py commit`. The helper resolves
+  the SHAs, snapshots the transcript once, derives the status from the
+  bytes, refuses free text that would read as a trailer (exit 2 — the
+  injection PR #20 closed at the verifier is now refused at the producer
+  too), writes the commit and both notes, runs the sibling verifier's
+  `check_head` on its own output and rolls everything back if it fails
+  (exit 7), and always merges remote notes with `cat_sort_uniq` before
+  pushing. A refused notes push (the cloud proxy's 403) is reported, not
+  fatal.
+  *Approval-marker rationale.* The one mistake determinism alone does not
+  catch is hashing the wrong file: an agent that resolves a stale session
+  transcript produces a well-formed digest that CI accepts and that only a
+  manual `--audit` on the same machine could question — and the audit
+  resolves the same file. The marker closes this: `prepare` prints
+  `GSA-APPROVAL <reviewed-sha> <utc-timestamp>`, the agent emits it verbatim
+  after the human's explicit approval, and `commit` requires it in the last
+  64 KiB of the snapshot with a SHA equal to HEAD. A file from another
+  conversation cannot name this reviewed commit, so the resolution error
+  fails closed (exit 4) instead of becoming a plausible lie; a marker for an
+  ancestor of HEAD is reported as stale (exit 3). Recorded as a producer
+  SHOULD in gsa-core §2.3; no trailer changes, protocol stays 1.0. Known
+  limit, stated deliberately: the marker also appears in the transcript as
+  `prepare`'s tool output, so it binds *file identity and commit*, not the
+  approval turn itself — the approval turn is inside the hashed bytes
+  because it precedes `commit`, not because of the marker. And none of this
+  is authenticity: a malicious agent or human with push rights can still
+  write a false attestation (roadmap deferred item 3, unchanged); the paper
+  must say so. Ergonomic trade recorded: `/git-signoff` is longer to type
+  than `/signoff` and reads as a noun; accepted for discoverability
+  (naming record below).
+  *Verifier history lookup, decided kept (2026-09-09).* `check_head`'s last
+  resort — scanning `[SIGNOFF *]` commits reachable from the target for one
+  whose reviewed commit or tree anchors it — is gsa-core §5.1 steps 2–3 (the
+  git-log lookup with the tree fallback) and has a legitimate case: notes not
+  fetched or never pushed (the cloud-session 403), and a target whose tree
+  equals an attested tree (an empty follow-up commit, a squash onto an
+  unchanged base before notes recovery runs). It is strict — `validate_single`
+  plus an exact commit- or tree-SHA anchor — so an identical tree is by
+  definition attested content, and a rebased attestation commit still fails
+  because it no longer attests its parent. Removing it would make CI red for
+  exactly the adopters the recovery workflow exists to serve; kept, with the
+  existing tests as the sweep.
   Naming record: the GitHub repository was renamed `jerrylin96/git-signoff`
   on 2026-09-08 (old URLs redirect). The surviving rationale is
   discoverability — the bare word "signoff" is shared with two AI products,
@@ -369,9 +410,16 @@ Recorded so they never need re-derivation; each names its future fix.
 - Purchase custom domain; DNS to Pages.
 - Enable GitHub Pages in repo settings.
 - GitHub About sidebar text.
-- Dispatch the `release` workflow to cut the `v0.4.0` tag: `pyproject.toml`
-  has said 0.4.0 since the channel consolidation but the newest release tag
-  on origin is `v0.3.0`.
+- Dispatch the `release` workflow to cut the `v0.5.0` tag once the
+  deterministic-producer branch has merged and `tag.yml` has created
+  `verify-v1.4` / `init-v7` on `main` (`v0.4.0` was deliberately not cut; the
+  paper cites `v0.5.0`). Then set up Zenodo archiving for the DOI at
+  acceptance.
+- PyPI, for the record: publication remains dropped; nothing in the
+  adoption path is installed by name. Should a distribution ever be needed,
+  `git-attest` was free on 2026-09-08 (`git-signoff` is rejected by PyPI as
+  too similar to the unrelated `git-sign-off`; `signoff-mcp` belongs to an
+  unrelated project).
 - Discovery conversations with prospective users — script:
   [`docs/discovery-interview.md`](discovery-interview.md); keep filled
   notes private, record only aggregated evidence back into this document.
