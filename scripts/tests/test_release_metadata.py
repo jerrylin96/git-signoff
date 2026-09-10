@@ -87,3 +87,20 @@ def test_citation_date_matches_changelog_release_date():
     assert _cff_field("date-released") == match.group(1), (
         f"CITATION.cff date-released {_cff_field('date-released')} != CHANGELOG date {match.group(1)} for v{version}"
     )
+
+
+def test_citation_file_shape_is_yaml_safe():
+    """Not a YAML parser (none in the standard library): a narrow guard for
+    the edits a regex test would otherwise let through and that Zenodo would
+    reject only after the release, visibly on its own page and nowhere in CI.
+    Tabs are invalid YAML indentation; indentation must step by two spaces;
+    every unindented line must be a top-level `key:` entry."""
+    text = _read("CITATION.cff")
+    assert "\t" not in text, "CITATION.cff contains a tab; YAML indentation must be spaces"
+    for number, line in enumerate(text.splitlines(), start=1):
+        if not line.strip():
+            continue
+        indent = len(line) - len(line.lstrip(" "))
+        assert indent % 2 == 0, f"CITATION.cff line {number}: indentation of {indent} is not a multiple of two"
+        if indent == 0:
+            assert re.match(r"^[a-z][a-z-]*:( |$)", line), f"CITATION.cff line {number}: not a top-level key: {line!r}"
