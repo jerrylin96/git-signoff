@@ -1,0 +1,26 @@
+[SIGNOFF 2031c29]: human comprehension and risk attestation
+
+v0.5.0: rename every user-facing name to git-signoff, replace the prompt-executed bash with the stdlib producer attest.py and its approval-marker protocol, move the verifier into the skill folder, delete git_signoff/, spec 3.7.0, pins init-v7/verify-v1.4; plus init.py identity and clean-tree fixes, SHA-pinned workflows, reference/walkthrough/changelog docs, and a CI fix for the live-repo notes-recovery test
+
+Signoff-Spec-Version: 1.0
+Signoff-Status: VERIFIED_BY_HUMAN
+Signoff-Timestamp: 2026-09-10T01:44:04Z
+Signoff-Base-SHA: 49187c43781de67f0e3850b22e9bddb4a998fd53
+Signoff-Reviewed-Commit-SHA: 2031c29c99b90d5186496d915dce7e2bf2b11772
+Signoff-Reviewed-Tree-SHA: 199714c0fd694248aabd6e7ddbf5fe958a82a636
+Signoff-Harness-ID: claude-code
+Signoff-Conversation-ID: c1e53b01-7dcf-58ea-9986-f329888081a1
+Signoff-Transcript-Digest: sha256:9220a0e4a0f1de32890fc1ee706d41ed30c8304dfa288ee1ac4bcf2aab6b14b2
+Signoff-Transcript-Bytes: 5295430
+Signoff-Tradeoff: Supersedes attestation 0a6e328 of 731b39c after a one-file CI test fix (2031c29); the skeptical interview of the other 67 files is the one earlier in this same transcript, and only the test fix was newly probed (prediction, refspec mechanics, ownership)
+Signoff-Tradeoff: Live-repo notes-recovery test runs the branch's recover_notes.py against main's attestations, never the branch's own; its guard prefers a local main over origin/main, so a stale local main is used on developer machines
+Signoff-Tradeoff: Approval marker binds the transcript file to the reviewed commit, not to the approval turn: prepare's own output contains the marker, so a stale earlier marker in this file would also satisfy commit
+Signoff-Tradeoff: Interview conducted by the same agent that wrote the code; author and interviewer share blind spots
+Signoff-Tradeoff: Attestation signed with the cloud session's SSH key, not the reviewer's personal key
+Signoff-Tradeoff: Verifier does not check Signoff-Base-SHA; an explicit --reference behind HEAD but not the merge target is accepted silently
+Signoff-Tradeoff: Notes push to refs/notes/signoff is refused by the cloud git proxy (HTTP 403; the helper reports git's trailing 'Everything up-to-date' line instead of the error line); notes are rebuilt by the notes-recovery workflow on merge
+Signoff-Tradeoff: Marker must sit within the last 64 KiB of the transcript; intermediate tool output between approval and commit can push it out (loud exit 4, one retry)
+Signoff-Tradeoff: Science-detection guard fires as a false positive on this diff because the skill vendors its own guard vocabulary
+Signoff-Risk: A green verifier check may be read as proof the reviewer understood the change; it proves only that a structurally valid GSA 1.0 attestation exists (pre-existing, roadmap item 3 open)
+Signoff-Verified-By: jerrylin247365@gmail.com
+Signoff-Agent: harness=claude-code/2.1.42 model=claude-fable-5-1 reasoning=high interview=skeptical/software-general

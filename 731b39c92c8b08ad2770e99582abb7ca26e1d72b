@@ -1,0 +1,24 @@
+[SIGNOFF 731b39c]: human comprehension and risk attestation
+
+v0.5.0: rename every user-facing name to git-signoff, replace the prompt-executed bash with the stdlib producer attest.py and its approval-marker protocol, move the verifier into the skill folder, delete git_signoff/, spec 3.7.0, pins init-v7/verify-v1.4; plus init.py identity and clean-tree fixes, SHA-pinned workflows, and reference/walkthrough/changelog docs
+
+Signoff-Spec-Version: 1.0
+Signoff-Status: VERIFIED_BY_HUMAN
+Signoff-Timestamp: 2026-09-10T01:19:16Z
+Signoff-Base-SHA: 49187c43781de67f0e3850b22e9bddb4a998fd53
+Signoff-Reviewed-Commit-SHA: 731b39c92c8b08ad2770e99582abb7ca26e1d72b
+Signoff-Reviewed-Tree-SHA: 958144e1e97b04d94a701eb979d4d8d67fb98ec5
+Signoff-Harness-ID: claude-code
+Signoff-Conversation-ID: c1e53b01-7dcf-58ea-9986-f329888081a1
+Signoff-Transcript-Digest: sha256:6f70af2f610e77b6042945a9ee937d2d69786901e6af94a80f1506c208942d2a
+Signoff-Transcript-Bytes: 4922098
+Signoff-Tradeoff: Approval marker binds the transcript file to the reviewed commit, not to the approval turn: prepare's own output contains the marker, so a stale earlier marker in this file would also satisfy commit
+Signoff-Tradeoff: Interview conducted by the same agent that wrote the code; author and interviewer share blind spots
+Signoff-Tradeoff: Attestation signed with the cloud session's SSH key, not the reviewer's personal key
+Signoff-Tradeoff: Verifier does not check Signoff-Base-SHA; an explicit --reference behind HEAD but not the merge target is accepted silently
+Signoff-Tradeoff: Notes push to refs/notes/signoff is refused by the cloud git proxy; notes are rebuilt by the notes-recovery workflow on merge
+Signoff-Tradeoff: Marker must sit within the last 64 KiB of the transcript; intermediate tool output between approval and commit can push it out (loud exit 4, one retry)
+Signoff-Tradeoff: Science-detection guard fires as a false positive on this diff because the skill vendors its own guard vocabulary
+Signoff-Risk: A green verifier check may be read as proof the reviewer understood the change; it proves only that a structurally valid GSA 1.0 attestation exists (pre-existing, roadmap item 3 open)
+Signoff-Verified-By: jerrylin247365@gmail.com
+Signoff-Agent: harness=claude-code/2.1.42 model=claude-fable-5-1 reasoning=high interview=skeptical/software-general
