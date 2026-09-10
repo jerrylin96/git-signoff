@@ -336,16 +336,18 @@ repository initializer). See [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ## Citing
 
-Releases are archived on Zenodo. Each release has its own DOI (v0.5.0 is
-`10.5281/zenodo.22683017`); the concept DOI `10.5281/zenodo.22683016`
-represents all versions and always resolves to the newest, so cite it unless
-you mean one specific release. `CITATION.cff` in the repository root carries the citation
+Releases are archived on Zenodo under the concept DOI
+`10.5281/zenodo.22683016`, which represents all versions and always resolves
+to the newest. It is the DOI recorded in `CITATION.cff` and the one to cite:
+a release cannot know its own version DOI, since Zenodo mints that only after
+the release is published. Version DOIs are listed on the Zenodo record
+(v0.5.0 is `10.5281/zenodo.22683017`) for citing one exact snapshot. `CITATION.cff` in the repository root carries the citation
 metadata (GitHub's "Cite this repository" button reads it), and
 [`docs/reference.md`](docs/reference.md) documents the protocol version each
 release implements.
 
 ```text
-Lin, J. (2026). git-signoff: Git Signoff Attestation (GSA) (v0.5.0) [Computer software]. Zenodo. https://doi.org/10.5281/zenodo.22683017
+Lin, J. (2026). git-signoff: Git Signoff Attestation (GSA) (v0.5.0) [Computer software]. Zenodo. https://doi.org/10.5281/zenodo.22683016
 ```
 
 ## License

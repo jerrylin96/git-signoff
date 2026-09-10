@@ -63,15 +63,13 @@ def test_readme_carries_the_citation_doi():
     assert f"https://doi.org/{doi}" in _read("README.md")
 
 
-def test_readme_carries_the_concept_doi():
-    """The concept DOI (all versions) is declared once in CITATION.cff under
-    identifiers and must be the one the README recommends citing."""
-    match = re.search(r"^\s+value:\s*(10\.\d{4,9}/\S+)\s*$", _read("CITATION.cff"), re.M)
-    assert match, "CITATION.cff declares no concept DOI under identifiers"
-    concept = match.group(1)
-    assert concept != _cff_field("doi"), "concept DOI must differ from the version DOI"
+def test_citation_doi_is_the_badge_doi():
+    """CITATION.cff's doi must be the concept DOI: the one the badge links to.
+    A release cannot know its own version DOI (Zenodo mints it afterwards),
+    so a tagged tree may only claim the DOI that represents all versions."""
+    doi = _cff_field("doi")
     readme = _read("README.md")
-    assert f"https://doi.org/{concept}" in readme and f"`{concept}`" in readme
+    assert f"[![DOI](https://img.shields.io/badge/DOI-{doi.replace('/', '%2F')}-blue)](https://doi.org/{doi})" in readme
 
 
 def test_citation_date_matches_changelog_release_date():
