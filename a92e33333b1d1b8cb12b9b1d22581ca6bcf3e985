@@ -1,0 +1,18 @@
+[SIGNOFF a92e333]: human comprehension and risk attestation
+
+Date the v0.5.0 changelog heading and add CITATION.cff (title, author with ORCID, version, license) so the tree Zenodo archives at the v0.5.0 tag carries correct release metadata
+
+Signoff-Spec-Version: 1.0
+Signoff-Status: VERIFIED_BY_HUMAN
+Signoff-Timestamp: 2026-09-10T02:19:30Z
+Signoff-Base-SHA: c6143d557c509815b0223c6dd60a2e1bf76e2ede
+Signoff-Reviewed-Commit-SHA: a92e33333b1d1b8cb12b9b1d22581ca6bcf3e985
+Signoff-Reviewed-Tree-SHA: bee5641457c1971a68c04d9f192d5d780eca5abe
+Signoff-Harness-ID: claude-code
+Signoff-Conversation-ID: c1e53b01-7dcf-58ea-9986-f329888081a1
+Signoff-Transcript-Digest: sha256:7666329ee0cc664593644d004d57a883a8c68d998e7b934e79607fa02776dad9
+Signoff-Transcript-Bytes: 5780978
+Signoff-Tradeoff: CITATION.cff hard-codes version 0.5.0 and date-released 2026-09-10; nothing enforces agreement with pyproject.toml, so each release must bump it by hand until a test compares the two
+Signoff-Risk: A future release tagged without bumping CITATION.cff archives a Zenodo record with the wrong version and date
+Signoff-Verified-By: jerrylin247365@gmail.com
+Signoff-Agent: harness=claude-code/2.1.42 model=claude-fable-5-1 reasoning=high interview=cursory/software-general
