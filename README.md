@@ -1,7 +1,7 @@
 # git-signoff — Git Signoff Attestation (GSA)
 
 [![attested by humans](https://github.com/jerrylin96/git-signoff/actions/workflows/git-signoff.yml/badge.svg)](https://github.com/jerrylin96/git-signoff/actions/workflows/git-signoff.yml)
-[![DOI](https://zenodo.org/badge/1324190593.svg)](https://zenodo.org/badge/latestdoi/1324190593)
+[![DOI](https://zenodo.org/badge/1324190593.svg)](https://doi.org/10.5281/zenodo.22683017)
 
 **Verify that a human actually understands an AI-assisted diff before it merges.**
 
@@ -337,13 +337,14 @@ repository initializer). See [CONTRIBUTING.md](CONTRIBUTING.md).
 ## Citing
 
 Releases are archived on Zenodo; the DOI badge above always resolves to the
-newest version. `CITATION.cff` in the repository root carries the citation
+newest version, and `https://doi.org/10.5281/zenodo.22683017` is the
+permanent DOI to cite. `CITATION.cff` in the repository root carries the citation
 metadata (GitHub's "Cite this repository" button reads it), and
 [`docs/reference.md`](docs/reference.md) documents the protocol version each
 release implements.
 
 ```text
-Lin, J. (2026). git-signoff: Git Signoff Attestation (GSA) (v0.5.0) [Computer software]. Zenodo.
+Lin, J. (2026). git-signoff: Git Signoff Attestation (GSA) (v0.5.0) [Computer software]. Zenodo. https://doi.org/10.5281/zenodo.22683017
 ```
 
 ## License

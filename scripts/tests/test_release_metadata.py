@@ -55,3 +55,9 @@ def test_changelog_top_heading_is_unreleased_or_current_version():
 
 def test_readme_citation_names_current_version():
     assert f"(v{_pyproject_version()})" in _read("README.md")
+
+
+def test_readme_carries_the_citation_doi():
+    doi = _cff_field("doi")
+    assert re.fullmatch(r"10\.\d{4,9}/\S+", doi), f"CITATION.cff doi {doi!r} is not a DOI"
+    assert f"https://doi.org/{doi}" in _read("README.md")
