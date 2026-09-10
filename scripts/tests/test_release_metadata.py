@@ -61,3 +61,14 @@ def test_readme_carries_the_citation_doi():
     doi = _cff_field("doi")
     assert re.fullmatch(r"10\.\d{4,9}/\S+", doi), f"CITATION.cff doi {doi!r} is not a DOI"
     assert f"https://doi.org/{doi}" in _read("README.md")
+
+
+def test_readme_carries_the_concept_doi():
+    """The concept DOI (all versions) is declared once in CITATION.cff under
+    identifiers and must be the one the README recommends citing."""
+    match = re.search(r"^\s+value:\s*(10\.\d{4,9}/\S+)\s*$", _read("CITATION.cff"), re.M)
+    assert match, "CITATION.cff declares no concept DOI under identifiers"
+    concept = match.group(1)
+    assert concept != _cff_field("doi"), "concept DOI must differ from the version DOI"
+    readme = _read("README.md")
+    assert f"https://doi.org/{concept}" in readme and f"`{concept}`" in readme
