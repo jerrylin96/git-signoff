@@ -1,7 +1,7 @@
 # git-signoff — Git Signoff Attestation (GSA)
 
 [![attested by humans](https://github.com/jerrylin96/git-signoff/actions/workflows/git-signoff.yml/badge.svg)](https://github.com/jerrylin96/git-signoff/actions/workflows/git-signoff.yml)
-[![DOI](https://zenodo.org/badge/1324190593.svg)](https://doi.org/10.5281/zenodo.22683016)
+[![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.22683016.svg)](https://doi.org/10.5281/zenodo.22683016)
 
 **Verify that a human actually understands an AI-assisted diff before it merges.**
 
