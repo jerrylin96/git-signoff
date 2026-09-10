@@ -1,0 +1,22 @@
+[SIGNOFF 12b328d]: human comprehension and risk attestation
+
+Zenodo DOI badge and Citing section in the README; CITATION.cff carries the concept DOI; a release-metadata test keeps CITATION.cff, pyproject.toml, CHANGELOG.md, and the README citation in agreement (version, date, DOI) so a tagged tree cannot archive stale metadata
+
+Signoff-Spec-Version: 1.0
+Signoff-Status: VERIFIED_BY_HUMAN
+Signoff-Timestamp: 2026-09-10T18:38:05Z
+Signoff-Base-SHA: 086161083770e1d5f9767413c66100de1b93f231
+Signoff-Reviewed-Commit-SHA: 12b328d69ea272a0f9c6472c445d1e611a4e8d6c
+Signoff-Reviewed-Tree-SHA: 4a7d9ab41a9ecca285b9fb7de5e4ea2a61c763b2
+Signoff-Harness-ID: claude-code
+Signoff-Conversation-ID: c1e53b01-7dcf-58ea-9986-f329888081a1
+Signoff-Transcript-Digest: sha256:1c98e6bcff4a70369d6f7fe490d0bf6e0fd5444ad46d05f777fe11e827da18d8
+Signoff-Transcript-Bytes: 7044908
+Signoff-Tradeoff: CITATION.cff and the README claim only the concept DOI; a release cannot know its own version DOI, so v0.5.0's version DOI appears once in prose as a historical fact
+Signoff-Tradeoff: Release-metadata test reads pyproject.toml and CITATION.cff with regular expressions (no TOML/YAML parser in the standard library): valid single-quoted TOML fails it, and only a narrow shape guard stands in for YAML validation; Zenodo remains the final validator, after the release
+Signoff-Tradeoff: DOI badge is a static shields.io image showing the concept DOI (Zenodo's own badge renderer timed out); the test ties it to CITATION.cff, but a deliberate change of the cited DOI is a hand edit
+Signoff-Tradeoff: Badge image and citation link depend on shields.io and doi.org being reachable
+Signoff-Tradeoff: Intermediate commit 5f91ab1 on this branch describes a CITATION.cff change it does not contain (the edit was lost to a git checkout from the index before staging) and its tests were red; corrected in 12b328d, history left unrewritten
+Signoff-Risk: A reader who cites the concept DOI is citing whatever the newest release is, not necessarily the snapshot they used; version DOIs live on the Zenodo record
+Signoff-Verified-By: jerrylin247365@gmail.com
+Signoff-Agent: harness=claude-code/2.1.42 model=claude-fable-5-1 reasoning=high interview=standard/software-general
