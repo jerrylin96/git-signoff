@@ -5,7 +5,7 @@ the composite action (`verify-vX.Y`) and the initializer (`init-vN`) never
 move and are listed with the release that introduced them. Dates are the tag
 dates on `origin`.
 
-## Unreleased — v0.5.0 (`verify-v1.4`, `init-v7`, spec 3.7.0)
+## v0.5.0 — 2026-09-10 (`verify-v1.4`, `init-v7`, spec 3.7.0)
 
 The deterministic-producer release: the agent conducts the interview, a
 standard-library helper does every mechanical step.

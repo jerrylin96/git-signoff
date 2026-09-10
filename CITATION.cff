@@ -1,0 +1,21 @@
+cff-version: 1.2.0
+message: "If you use git-signoff or the Git Signoff Attestation (GSA) format, please cite it as below."
+type: software
+title: "git-signoff: Git Signoff Attestation (GSA)"
+abstract: "A Socratic reverse-interview skill for AI coding agents that verifies a human understands an AI-assisted diff before it merges, and records that comprehension as a signed, verifiable attestation in git history."
+authors:
+  - family-names: Lin
+    given-names: Jerry
+    orcid: "https://orcid.org/0000-0003-1778-9426"
+    email: jerrylin247365@gmail.com
+version: 0.5.0
+date-released: 2026-09-10
+license: MIT
+repository-code: "https://github.com/jerrylin96/git-signoff"
+url: "https://jerrylin96.github.io/git-signoff/"
+keywords:
+  - code review
+  - AI-assisted development
+  - attestation
+  - git
+  - software provenance
