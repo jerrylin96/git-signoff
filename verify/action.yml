@@ -1,6 +1,6 @@
 name: 'Verify Git Signoff Attestation'
 description: >-
-  CI check that verifies GSA human-comprehension attestations (/signoff)
+  CI check that verifies GSA human-comprehension attestations (/git-signoff)
   against your repository. Backs an "attested by humans" badge.
 branding:
   icon: 'user-check'
@@ -40,5 +40,5 @@ runs:
             TARGET=HEAD
           fi
         fi
-        python3 "${GITHUB_ACTION_PATH}/verify_signoff.py" \
+        python3 "${GITHUB_ACTION_PATH}/../skills/git-signoff/verify_signoff.py" \
           --mode "$MODE" --target "$TARGET" --require '${{ inputs.require }}'

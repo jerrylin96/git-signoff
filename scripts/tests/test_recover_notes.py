@@ -9,12 +9,9 @@ compatibility (gsa-core.md §2.5), and malformed-target skipping.
 import importlib.util
 import os
 import subprocess
-import sys
 
 import pytest
-
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", ".."))
-from git_signoff.tests.helpers import commit_file, git, init_repo  # noqa: E402
+from helpers import commit_file, git, init_repo
 
 _SPEC = importlib.util.spec_from_file_location(
     "recover_notes",
@@ -146,35 +143,41 @@ def test_non_attestation_commits_ignored(repo):
 REPO_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
 
 
-def _recent_attestations_in_local_main():
-    """The clone below sees this repo's local branches; require a main branch
-    whose history already carries the three recent attestations."""
-    proc = subprocess.run(
-        ["git", "log", "--format=%s", r"--grep=^\[SIGNOFF ", "main"],
-        cwd=REPO_ROOT,
-        capture_output=True,
-        text=True,
-    )
-    return proc.returncode == 0 and all(
-        f"[SIGNOFF {short}]" in proc.stdout for short in ("a4d1c6c", "daf4939", "979cb45")
-    )
+def _full_history_main_ref():
+    """The ref in this checkout — local `main` or remote-tracking `origin/main`
+    — that carries the 2026-08 attestations, or None on shallow clones and on
+    checkouts without main, where the live-repo test skips. CI fetches full
+    history so it runs there (see CONTRIBUTING.md)."""
+    for ref in ("refs/heads/main", "refs/remotes/origin/main"):
+        proc = subprocess.run(
+            ["git", "log", "--format=%s", r"--grep=^\[SIGNOFF ", ref],
+            cwd=REPO_ROOT,
+            capture_output=True,
+            text=True,
+        )
+        if proc.returncode == 0 and "[SIGNOFF 979cb45]" in proc.stdout:
+            return ref
+    return None
 
 
-@pytest.mark.skipif(
-    not _recent_attestations_in_local_main(),
-    reason="shallow clone or stale local main",
-)
+MAIN_REF = _full_history_main_ref()
+
+
+@pytest.mark.skipif(MAIN_REF is None, reason="shallow clone or stale local main")
 def test_end_to_end_against_this_repo(tmp_path):
     """The workflow's exact invocation, against a local clone of this repo."""
     clone = tmp_path / "clone"
     subprocess.run(
         ["git", "clone", "-q", REPO_ROOT, str(clone)], check=True, capture_output=True
     )
+    # `git clone` only turns the source's *local* branches into `origin/*`. A
+    # pull-request checkout in CI has main solely as `origin/main`, so the
+    # clone would have no `origin/main` at all; fetch it explicitly from
+    # whichever ref the guard found.
+    git(clone, "fetch", "-q", "origin", f"+{MAIN_REF}:refs/remotes/origin/main")
     git(clone, "config", "user.email", "tester@example.com")
     git(clone, "config", "user.name", "Tester")
-    fixture = os.path.join(
-        REPO_ROOT, "git_signoff", "tests", "fixtures", "production_attestation.txt"
-    )
+    fixture = os.path.join(os.path.dirname(__file__), "fixtures", "production_attestation.txt")
     assert recover_notes.recover(str(clone), "origin/main", [fixture]) == 0
     # Recent attestations: notes resolve on the reviewed commits in main.
     for reviewed in ("a4d1c6c", "daf4939", "979cb45"):

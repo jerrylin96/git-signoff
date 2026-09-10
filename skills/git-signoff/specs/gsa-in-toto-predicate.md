@@ -2,7 +2,7 @@
 
 **Document Version:** 0.1.0  
 **Status:** Draft / Informative (open-standard milestone 4, ecosystem interop) — not yet submitted to the in-toto attestation registry.  
-**Canonical Location:** `skills/signoff/specs/gsa-in-toto-predicate.md`  
+**Canonical Location:** `skills/git-signoff/specs/gsa-in-toto-predicate.md`  
 **License:** [Community Specification License 1.0](https://github.com/jerrylin96/git-signoff/blob/main/LICENSE-SPEC)  
 
 ## Purpose
@@ -61,7 +61,7 @@ rebases (gsa-core §5) — the reviewed tree.
     ],
     "risks": [],
     "verifiedBy": "jerrylin247365@gmail.com",
-    "agent": "Antigravity /signoff v1.0",
+    "agent": "Antigravity /git-signoff v1.0",
     "attestationCommitSha": "<sha-of-the-empty-attestation-commit, when known>"
   }
 }

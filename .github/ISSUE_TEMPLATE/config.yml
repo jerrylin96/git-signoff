@@ -1,0 +1,5 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Security issue
+    url: https://github.com/jerrylin96/git-signoff/security/advisories/new
+    about: A way to make the verifier pass, or the producer write, an attestation it should refuse. Please report privately.

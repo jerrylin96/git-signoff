@@ -19,7 +19,7 @@ jobs:
   recover:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
           fetch-depth: 0
 
@@ -31,7 +31,7 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           python3 scripts/recover_notes.py --ref origin/main \
-            --payload-file git_signoff/tests/fixtures/production_attestation.txt
+            --payload-file scripts/tests/fixtures/production_attestation.txt
 
       - name: Push notes ref
         run: git push origin refs/notes/signoff

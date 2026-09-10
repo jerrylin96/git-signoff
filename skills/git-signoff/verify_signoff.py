@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Git Signoff Attestation (GSA) verifier — stdlib-only, single file.
 
-Verifies GSA v1.0 attestations (skills/signoff/specs/gsa-core.md) against a
+Verifies GSA v1.0 attestations (skills/git-signoff/specs/gsa-core.md) against a
 repository's history using the §5.1 lookup order: git notes
 (refs/notes/signoff) on the commit and its tree, then [SIGNOFF *]
 attestation commits in the log, with the tree-SHA fallback for squash
@@ -13,7 +13,7 @@ Two modes:
            PR-gate check. A commit that is itself an attestation commit
            passes when it is empty (same tree as its parent) and attests
            its own parent's commit and tree (the normal shape of a branch
-           ending in /signoff); a non-empty attestation commit fails, so
+           ending in /git-signoff); a non-empty attestation commit fails, so
            trailers cannot smuggle unreviewed changes past the gate.
            For 2-parent merge commits (e.g. GitHub standard PR merges),
            verifies that HEAD^{tree} cleanly matches git merge-tree HEAD^1 HEAD^2
@@ -23,7 +23,24 @@ Two modes:
            attestations (default 1) are found.
 
 Exit 0 on pass, 1 on fail. No dependencies beyond Python 3.10+ and git;
-copy this file anywhere or run it via the companion composite action.
+copy this file anywhere or run it via the companion composite action
+(verify/action.yml in the git-signoff repository). The file is vendored into
+adopter repositories as part of the skill folder, so `--audit` runs locally
+without a download, and the producer helper (attest.py, same folder) imports
+it to self-check every attestation it writes.
+
+Environment:
+
+  GIT_SIGNOFF_TRANSCRIPT_FILE   --audit: transcript file to hash instead of the
+                                harness-resolved path.
+  GIT_SIGNOFF_NO_UPDATE_CHECK   set to 1 to skip the stale-pin warning below.
+  GIT_SIGNOFF_PIN_REMOTE        repository URL queried for verify-v* tags
+                                (tests point it at a local bare repo).
+
+Stale-pin warning: after fetching notes, the verifier lists the verify-v*
+tags on the upstream repository and prints a one-line warning to stderr when
+a newer pin than VERIFIER_PIN exists (stdout carries only the verdict). It
+never changes the verdict and is skipped silently on any network failure.
 
 Single-valued trailers appear exactly once per attestation (gsa-core §2.3):
 a commit message or note block that repeats one — the way a line break
@@ -48,14 +65,21 @@ import argparse  # noqa: E402
 import glob  # noqa: E402
 import hashlib  # noqa: E402
 import os  # noqa: E402
-from pathlib import Path  # noqa: E402
 import re  # noqa: E402
 import subprocess  # noqa: E402
+from pathlib import Path  # noqa: E402
+
+# The pin tag this file ships under. tag.yml's PINS list and the install
+# snippets must carry the same value (pinned by tests); the stale-pin warning
+# compares it against the tags published upstream.
+VERIFIER_PIN = "verify-v1.4"
+PIN_REMOTE = "https://github.com/jerrylin96/git-signoff"
+PIN_TAG_RE = re.compile(r"refs/tags/verify-v(\d+)(?:\.(\d+))?$")
 
 NOTES_REF = "refs/notes/signoff"
 # The verifier's own isolated mirror of origin's notes. Fetching origin straight
 # into NOTES_REF force-overwrites attestation notes that have not been pushed
-# yet — gsa-core §5.1 forbids exactly that, and a reviewer who runs /signoff
+# yet — gsa-core §5.1 forbids exactly that, and a reviewer who runs /git-signoff
 # offline and verifies before pushing would silently lose the record. This ref
 # is the only ref verification writes; NOTES_REF is read and never modified.
 NOTES_FETCH_REF = "refs/notes/signoff-verify"
@@ -358,7 +382,7 @@ def check_head(repo, target):
 
     return False, [
         f"FAIL: no valid attestation covers commit {commit[:7]} (or tree {tree[:7]})",
-        "  Run /signoff on this branch before merging.",
+        "  Run /git-signoff on this branch before merging.",
     ]
 
 
@@ -552,8 +576,8 @@ def check_audit(repo, target="HEAD", export_path=None):
         return False, [f"FAIL: Malformed Signoff-Transcript-Bytes {bytes_str!r}"]
 
     # Resolve transcript path
-    if os.environ.get("SIGNOFF_TRANSCRIPT_FILE"):
-        transcript_path = Path(os.environ["SIGNOFF_TRANSCRIPT_FILE"])
+    if os.environ.get("GIT_SIGNOFF_TRANSCRIPT_FILE"):
+        transcript_path = Path(os.environ["GIT_SIGNOFF_TRANSCRIPT_FILE"])
     else:
         home_dir = Path(os.environ.get("HOME") or os.environ.get("USERPROFILE") or Path.home())
         if harness_id == "claude-code":
@@ -617,7 +641,7 @@ def check_audit(repo, target="HEAD", export_path=None):
             else:
                 return False, [
                     "FAIL: For generic-file harnesses, the conversation ID is not a local file path. "
-                    "Please set SIGNOFF_TRANSCRIPT_FILE=<path/to/transcript.jsonl> to audit."
+                    "Please set GIT_SIGNOFF_TRANSCRIPT_FILE=<path/to/transcript.jsonl> to audit."
                 ]
         else:
             return False, [f"FAIL: Unsupported or unknown harness {harness_id!r}"]
@@ -649,12 +673,63 @@ def check_audit(repo, target="HEAD", export_path=None):
     return True, lines
 
 
+def _pin_version(tag):
+    """(major, minor) of a verify-v* tag name, or None."""
+    m = PIN_TAG_RE.match(tag if tag.startswith("refs/tags/") else f"refs/tags/{tag}")
+    if not m:
+        return None
+    return int(m.group(1)), int(m.group(2) or 0)
+
+
+def newest_upstream_pin(remote=None, timeout=10):
+    """Newest verify-v* pin published at `remote`, as a tag name, or None on any
+    failure (offline, proxy refusal, timeout, unparseable output)."""
+    remote = remote or os.environ.get("GIT_SIGNOFF_PIN_REMOTE") or PIN_REMOTE
+    try:
+        proc = subprocess.run(
+            ["git", "ls-remote", "--tags", "--refs", remote, "refs/tags/verify-v*"],
+            capture_output=True,
+            text=True,
+            timeout=timeout,
+            env={**os.environ, "GIT_TERMINAL_PROMPT": "0"},
+        )
+    except (OSError, subprocess.SubprocessError):
+        return None
+    if proc.returncode != 0:
+        return None
+    best = None
+    for line in proc.stdout.splitlines():
+        parts = line.split()
+        if len(parts) != 2:
+            continue
+        version = _pin_version(parts[1])
+        if version and (best is None or version > best[0]):
+            best = (version, parts[1].rsplit("/", 1)[1])
+    return best[1] if best else None
+
+
+def stale_pin_warning(remote=None):
+    """One warning line when a newer verify-v* pin than VERIFIER_PIN exists
+    upstream, else None. Skipped when GIT_SIGNOFF_NO_UPDATE_CHECK=1."""
+    if os.environ.get("GIT_SIGNOFF_NO_UPDATE_CHECK", "").strip() == "1":
+        return None
+    newest = newest_upstream_pin(remote)
+    if newest is None:
+        return None
+    mine = _pin_version(VERIFIER_PIN)
+    theirs = _pin_version(newest)
+    if mine and theirs and theirs > mine:
+        return f"warning: verifier pin {VERIFIER_PIN} is behind {newest}; see verify/README.md"
+    return None
+
+
 def main(argv=None):
     p = argparse.ArgumentParser(description="Verify Git Signoff Attestations (GSA v1.0)")
     p.add_argument("--repo", default=".", help="repository to verify")
     p.add_argument("--mode", choices=("head", "history"), default="head")
     p.add_argument("--target", default="HEAD", help="commit (head mode) or ref (history mode)")
     p.add_argument("--require", type=int, default=1, help="history mode: minimum valid attestations")
+    p.add_argument("--version", action="version", version=f"verify_signoff.py {VERIFIER_PIN}")
     p.add_argument(
         "--audit",
         nargs="?",
@@ -675,6 +750,9 @@ def main(argv=None):
         p.error("--export requires --audit")
 
     fetched = git(args.repo, "fetch", "origin", f"+{NOTES_REF}:{NOTES_FETCH_REF}", check=False)
+    stale = stale_pin_warning()
+    if stale:
+        print(stale, file=sys.stderr)  # visible in CI logs; stdout stays the verdict
 
     if args.audit is not None:
         ok, lines = check_audit(args.repo, target=args.audit, export_path=args.export)

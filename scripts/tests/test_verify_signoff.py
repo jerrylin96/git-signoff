@@ -1,4 +1,4 @@
-"""Tests for verify/verify_signoff.py (the badge-backing CI verifier).
+"""Tests for skills/git-signoff/verify_signoff.py (the badge-backing CI verifier).
 
 Covers: PR-gate head mode (attestation tip, missing attestation, integrity
 failure), tree-SHA fallback via notes after a squash merge, history mode
@@ -8,17 +8,14 @@ counting/validation/dedup, and an end-to-end run against this repository.
 import importlib.util
 import os
 import subprocess
-
-import pytest
-
 import sys
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", ".."))
-from git_signoff.tests.helpers import commit_file, git, init_repo  # noqa: E402
+import pytest
+from helpers import commit_file, git, init_repo
 
 _SPEC = importlib.util.spec_from_file_location(
     "verify_signoff",
-    os.path.join(os.path.dirname(__file__), "..", "..", "verify", "verify_signoff.py"),
+    os.path.join(os.path.dirname(__file__), "..", "..", "skills", "git-signoff", "verify_signoff.py"),
 )
 verify_signoff = importlib.util.module_from_spec(_SPEC)
 _SPEC.loader.exec_module(verify_signoff)
@@ -151,13 +148,20 @@ REPO_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
 
 
 def _recent_attestations_in_local_main():
-    proc = subprocess.run(
-        ["git", "log", "--format=%s", r"--grep=^\[SIGNOFF ", "main"],
-        cwd=REPO_ROOT,
-        capture_output=True,
-        text=True,
-    )
-    return proc.returncode == 0 and "[SIGNOFF 979cb45]" in proc.stdout
+    """True when a full-history main (local `main` or `origin/main`) carrying
+    the 2026-08 attestations is available. False on shallow clones and on
+    checkouts without main, where the live-repo test skips; CI fetches full
+    history so it runs there (see CONTRIBUTING.md)."""
+    for ref in ("main", "origin/main"):
+        proc = subprocess.run(
+            ["git", "log", "--format=%s", r"--grep=^\[SIGNOFF ", ref],
+            cwd=REPO_ROOT,
+            capture_output=True,
+            text=True,
+        )
+        if proc.returncode == 0 and "[SIGNOFF 979cb45]" in proc.stdout:
+            return True
+    return False
 
 
 @pytest.mark.skipif(
@@ -166,7 +170,8 @@ def _recent_attestations_in_local_main():
 )
 def test_end_to_end_against_this_repo():
     """History mode passes on main; head mode passes on an attestation tip."""
-    ok, lines = verify_signoff.check_history(REPO_ROOT, "main", require=1)
+    ref = "main" if subprocess.run(["git", "rev-parse", "-q", "--verify", "main"], cwd=REPO_ROOT, capture_output=True).returncode == 0 else "origin/main"
+    ok, lines = verify_signoff.check_history(REPO_ROOT, ref, require=1)
     assert ok, lines
     ok, lines = verify_signoff.check_head(REPO_ROOT, "5bec5ee")
     assert ok, lines
@@ -455,7 +460,7 @@ def test_check_audit_valid_match(repo, tmp_path, monkeypatch):
     t_file.write_bytes(raw_content)
     nbytes = 25
     expected_digest = f"sha256:{hashlib.sha256(raw_content[:nbytes]).hexdigest()}"
-    monkeypatch.setenv("SIGNOFF_TRANSCRIPT_FILE", str(t_file))
+    monkeypatch.setenv("GIT_SIGNOFF_TRANSCRIPT_FILE", str(t_file))
 
     reviewed = git(repo, "rev-parse", "HEAD").stdout.strip()
     tree = git(repo, "rev-parse", "HEAD^{tree}").stdout.strip()
@@ -478,7 +483,7 @@ def test_check_audit_export(repo, tmp_path, monkeypatch):
     t_file.write_bytes(raw_content)
     nbytes = 17
     expected_digest = f"sha256:{hashlib.sha256(raw_content[:nbytes]).hexdigest()}"
-    monkeypatch.setenv("SIGNOFF_TRANSCRIPT_FILE", str(t_file))
+    monkeypatch.setenv("GIT_SIGNOFF_TRANSCRIPT_FILE", str(t_file))
 
     reviewed = git(repo, "rev-parse", "HEAD").stdout.strip()
     tree = git(repo, "rev-parse", "HEAD^{tree}").stdout.strip()
@@ -498,7 +503,7 @@ def test_check_audit_export(repo, tmp_path, monkeypatch):
 def test_check_audit_mismatch(repo, tmp_path, monkeypatch):
     t_file = tmp_path / "transcript.jsonl"
     t_file.write_bytes(b'{"msg": "altered content"}\n')
-    monkeypatch.setenv("SIGNOFF_TRANSCRIPT_FILE", str(t_file))
+    monkeypatch.setenv("GIT_SIGNOFF_TRANSCRIPT_FILE", str(t_file))
 
     reviewed = git(repo, "rev-parse", "HEAD").stdout.strip()
     tree = git(repo, "rev-parse", "HEAD^{tree}").stdout.strip()
@@ -514,7 +519,7 @@ def test_check_audit_mismatch(repo, tmp_path, monkeypatch):
 
 
 def test_check_audit_missing_file(repo, tmp_path, monkeypatch):
-    monkeypatch.setenv("SIGNOFF_TRANSCRIPT_FILE", str(tmp_path / "nonexistent.jsonl"))
+    monkeypatch.setenv("GIT_SIGNOFF_TRANSCRIPT_FILE", str(tmp_path / "nonexistent.jsonl"))
 
     reviewed = git(repo, "rev-parse", "HEAD").stdout.strip()
     tree = git(repo, "rev-parse", "HEAD^{tree}").stdout.strip()
@@ -606,7 +611,7 @@ def test_check_audit_from_git_notes_on_commit(repo, tmp_path, monkeypatch):
     t_file.write_bytes(raw_content)
     nbytes = len(raw_content)
     expected_digest = f"sha256:{hashlib.sha256(raw_content).hexdigest()}"
-    monkeypatch.setenv("SIGNOFF_TRANSCRIPT_FILE", str(t_file))
+    monkeypatch.setenv("GIT_SIGNOFF_TRANSCRIPT_FILE", str(t_file))
 
     commit_file(repo, "feature.txt", "content\n", "regular feature commit")
     reviewed = git(repo, "rev-parse", "HEAD").stdout.strip()
@@ -629,7 +634,7 @@ def test_check_audit_from_git_notes_on_tree(repo, tmp_path, monkeypatch):
     t_file.write_bytes(raw_content)
     nbytes = len(raw_content)
     expected_digest = f"sha256:{hashlib.sha256(raw_content).hexdigest()}"
-    monkeypatch.setenv("SIGNOFF_TRANSCRIPT_FILE", str(t_file))
+    monkeypatch.setenv("GIT_SIGNOFF_TRANSCRIPT_FILE", str(t_file))
 
     commit_file(repo, "feature.txt", "content\n", "squash commit without commit note")
     reviewed = git(repo, "rev-parse", "HEAD").stdout.strip()
@@ -653,7 +658,7 @@ def test_check_audit_multi_note_block_selection(repo, tmp_path, monkeypatch):
     t_file.write_bytes(raw_content)
     nbytes = len(raw_content)
     expected_digest = f"sha256:{hashlib.sha256(raw_content).hexdigest()}"
-    monkeypatch.setenv("SIGNOFF_TRANSCRIPT_FILE", str(t_file))
+    monkeypatch.setenv("GIT_SIGNOFF_TRANSCRIPT_FILE", str(t_file))
 
     commit_file(repo, "feature.txt", "content\n", "multi-note target commit")
     reviewed = git(repo, "rev-parse", "HEAD").stdout.strip()
@@ -740,7 +745,7 @@ def test_check_audit_cli_flags(repo, tmp_path, monkeypatch):
     t_file.write_bytes(raw_content)
     nbytes = len(raw_content)
     expected_digest = f"sha256:{hashlib.sha256(raw_content).hexdigest()}"
-    monkeypatch.setenv("SIGNOFF_TRANSCRIPT_FILE", str(t_file))
+    monkeypatch.setenv("GIT_SIGNOFF_TRANSCRIPT_FILE", str(t_file))
 
     reviewed = git(repo, "rev-parse", "HEAD").stdout.strip()
     tree = git(repo, "rev-parse", "HEAD^{tree}").stdout.strip()
@@ -938,7 +943,7 @@ def test_check_audit_harness_codex_cli(repo, tmp_path, monkeypatch):
 
 
 def test_check_audit_generic_file_missing_env(repo, monkeypatch):
-    monkeypatch.delenv("SIGNOFF_TRANSCRIPT_FILE", raising=False)
+    monkeypatch.delenv("GIT_SIGNOFF_TRANSCRIPT_FILE", raising=False)
     conv_id = "session-not-a-file-id"
 
     commit_file(repo, "generic_feature.py", "y = 2\n", "add generic feature")
@@ -953,7 +958,7 @@ def test_check_audit_generic_file_missing_env(repo, monkeypatch):
 
     ok, lines = verify_signoff.check_audit(str(repo), "HEAD")
     assert ok is False
-    assert any("SIGNOFF_TRANSCRIPT_FILE" in line for line in lines)
+    assert any("GIT_SIGNOFF_TRANSCRIPT_FILE" in line for line in lines)
 
 
 def test_check_audit_rejects_malformed_trailers(repo):
@@ -1118,7 +1123,7 @@ def test_history_mode_counts_cat_sort_uniq_merged_note_once(repo):
 def test_verifier_exits_loudly_below_python_floor(tmp_path):
     """The verifier runs under whatever python3 a runner or laptop has; below the
     documented floor it must say so instead of dying on a syntax or type error."""
-    script = os.path.join(REPO_ROOT, "verify", "verify_signoff.py")
+    script = os.path.join(REPO_ROOT, "skills", "git-signoff", "verify_signoff.py")
     probe = tmp_path / "probe.py"
     probe.write_text(
         "import runpy, sys\n"
@@ -1130,3 +1135,95 @@ def test_verifier_exits_loudly_below_python_floor(tmp_path):
     assert proc.returncode == 1
     assert "needs Python 3.10 or newer" in proc.stderr
     assert "3.9" in proc.stderr
+
+
+# --- stale-pin warning and VERIFIER_PIN consistency ---------------------------
+
+
+def _fake_pin_remote(tmp_path, tags):
+    """Bare repo carrying the given tags, standing in for the upstream repository."""
+    remote = tmp_path / "upstream.git"
+    remote.mkdir()
+    git(remote, "init", "-q", "--bare", "-b", "main")
+    seed = init_repo(tmp_path / "seed")
+    commit_file(seed, "a.txt", "a", "seed")
+    for tag in tags:
+        git(seed, "tag", tag)
+    git(seed, "remote", "add", "origin", str(remote))
+    git(seed, "push", "-q", "origin", "main", "--tags")
+    return str(remote)
+
+
+def test_verifier_pin_matches_newest_verify_tag_in_tag_workflow():
+    """VERIFIER_PIN must be the newest verify-v* pin tag.yml creates, or the
+    warning would fire against our own release (or never fire at all)."""
+    import re
+
+    wf = open(os.path.join(REPO_ROOT, ".github", "workflows", "tag.yml"), encoding="utf-8").read()
+    m = re.search(r"^\s*PINS:\s*(.+?)\s*$", wf, re.MULTILINE)
+    assert m, "PINS not declared in tag.yml"
+    verify_pins = [p for p in m.group(1).split() if p.startswith("verify-v")]
+    newest = max(verify_pins, key=verify_signoff._pin_version)
+    assert verify_signoff.VERIFIER_PIN == newest, (verify_signoff.VERIFIER_PIN, verify_pins)
+    assert verify_signoff.VERIFIER_PIN in verify_pins
+
+
+def test_pin_version_parsing():
+    assert verify_signoff._pin_version("verify-v1") == (1, 0)
+    assert verify_signoff._pin_version("verify-v1.4") == (1, 4)
+    assert verify_signoff._pin_version("refs/tags/verify-v2.10") == (2, 10)
+    assert verify_signoff._pin_version("init-v7") is None
+    assert verify_signoff._pin_version("verify-v1.4-rc1") is None
+
+
+def test_stale_pin_warning_when_upstream_has_newer_tag(repo, tmp_path, monkeypatch, capsys):
+    remote = _fake_pin_remote(tmp_path, ["verify-v1", "verify-v1.4", "verify-v1.5", "init-v9"])
+    monkeypatch.delenv("GIT_SIGNOFF_NO_UPDATE_CHECK", raising=False)
+    monkeypatch.setenv("GIT_SIGNOFF_PIN_REMOTE", remote)
+    attest_head(repo)
+    rc = verify_signoff.main(["--repo", str(repo), "--mode", "head"])
+    captured = capsys.readouterr()
+    assert rc == 0, captured.out  # the warning never changes the verdict
+    # stderr carries the warning so stdout stays the verdict for pipelines
+    assert f"warning: verifier pin {verify_signoff.VERIFIER_PIN} is behind verify-v1.5" in captured.err
+    assert "see verify/README.md" in captured.err
+    assert "warning: verifier pin" not in captured.out
+    assert captured.out.startswith("PASS")
+
+
+def test_no_stale_pin_warning_when_upstream_is_not_newer(repo, tmp_path, monkeypatch, capsys):
+    remote = _fake_pin_remote(tmp_path, ["verify-v1", "verify-v1.3", verify_signoff.VERIFIER_PIN])
+    monkeypatch.delenv("GIT_SIGNOFF_NO_UPDATE_CHECK", raising=False)
+    monkeypatch.setenv("GIT_SIGNOFF_PIN_REMOTE", remote)
+    attest_head(repo)
+    verify_signoff.main(["--repo", str(repo), "--mode", "head"])
+    captured = capsys.readouterr()
+    assert "warning: verifier pin" not in captured.out + captured.err
+
+
+def test_stale_pin_check_is_silent_when_remote_unreachable(repo, tmp_path, monkeypatch, capsys):
+    monkeypatch.delenv("GIT_SIGNOFF_NO_UPDATE_CHECK", raising=False)
+    monkeypatch.setenv("GIT_SIGNOFF_PIN_REMOTE", str(tmp_path / "no-such-remote"))
+    attest_head(repo)
+    rc = verify_signoff.main(["--repo", str(repo), "--mode", "head"])
+    captured = capsys.readouterr()
+    assert rc == 0
+    assert "warning: verifier pin" not in captured.out + captured.err
+    assert "no-such-remote" not in captured.out + captured.err
+
+
+def test_stale_pin_check_skipped_by_env(repo, tmp_path, monkeypatch, capsys):
+    remote = _fake_pin_remote(tmp_path, ["verify-v9"])
+    monkeypatch.setenv("GIT_SIGNOFF_NO_UPDATE_CHECK", "1")
+    monkeypatch.setenv("GIT_SIGNOFF_PIN_REMOTE", remote)
+    attest_head(repo)
+    verify_signoff.main(["--repo", str(repo), "--mode", "head"])
+    captured = capsys.readouterr()
+    assert "warning: verifier pin" not in captured.out + captured.err
+
+
+def test_version_flag_prints_pin(capsys):
+    with pytest.raises(SystemExit) as exc:
+        verify_signoff.main(["--version"])
+    assert exc.value.code == 0
+    assert verify_signoff.VERIFIER_PIN in capsys.readouterr().out

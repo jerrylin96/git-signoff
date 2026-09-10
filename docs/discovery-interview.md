@@ -9,7 +9,7 @@ produces *comparable, recordable* evidence.
 repository. Keep raw notes in private storage; feed only aggregated,
 de-identified findings back into `productionization.md` (and escrow-demand
 evidence into the gates of
-[`gsa-escrow.md` §5](../skills/signoff/specs/gsa-escrow.md)).
+[`gsa-escrow.md` §5](../skills/git-signoff/specs/gsa-escrow.md)).
 
 ## Ground rules (Mom-Test discipline)
 
@@ -89,7 +89,7 @@ the reaction verbatim.
 
 ## 5. Evidence-gate probes (weave in where natural — these unlock recorded decisions)
 
-Escrow demand ([`gsa-escrow.md` §5](../skills/signoff/specs/gsa-escrow.md)
+Escrow demand ([`gsa-escrow.md` §5](../skills/git-signoff/specs/gsa-escrow.md)
 — the operated registry may be built only on this evidence):
 
 16. Would anyone (auditor, legal, customer) ever need to *re-read the
@@ -114,7 +114,7 @@ Advancement is the only reliable positive signal. Ask for exactly one:
 - Install the badge + verifier on one active repo this week
   ([two-minute install](../verify/README.md)) and let us see the result.
 - An intro to the person who owns review policy / compliance.
-- A scheduled follow-up after they've run `/signoff` on a real branch.
+- A scheduled follow-up after they've run `/git-signoff` on a real branch.
 
 A "yes, but later" with no date is a no — record it as one.
 

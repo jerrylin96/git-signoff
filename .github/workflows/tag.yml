@@ -32,9 +32,9 @@ jobs:
   tag:
     runs-on: ubuntu-latest
     env:
-      PINS: verify-v1 verify-v1.1 verify-v1.2 verify-v1.3 init-v1 init-v2 init-v3 init-v4 init-v5 init-v6
+      PINS: verify-v1 verify-v1.1 verify-v1.2 verify-v1.3 verify-v1.4 init-v1 init-v2 init-v3 init-v4 init-v5 init-v6 init-v7
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
           fetch-depth: 0
       - name: Create and push tags

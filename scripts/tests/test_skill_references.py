@@ -8,10 +8,8 @@ rules; everything else must resolve to a valid in-repo skill.
 """
 
 import glob
-import hashlib
 import os
 import re
-import subprocess
 import sys
 
 # External skills referenced by signoff that degrade gracefully when absent
@@ -139,21 +137,23 @@ def test_no_non_portable_file_links():
 
 
 def test_repo_dogfoods_project_skill():
-    """This repo ships the per-repo channel it documents: .claude/skills/signoff
-    and .agents/skills/signoff resolve (via symlink) to the canonical skills/signoff folder."""
+    """This repo ships the per-repo channel it documents: .claude/skills/git-signoff
+    and .agents/skills/git-signoff resolve (via symlink) to the canonical skills/git-signoff folder."""
     root_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "../.."))
-    canonical = os.path.realpath(os.path.join(root_dir, "skills", "signoff"))
-    for rel in [".claude/skills/signoff", ".agents/skills/signoff"]:
+    canonical = os.path.realpath(os.path.join(root_dir, "skills", "git-signoff"))
+    for rel in [".claude/skills/git-signoff", ".agents/skills/git-signoff"]:
         vendored = os.path.join(root_dir, *rel.split("/"))
         assert os.path.isdir(vendored), f"{rel} missing"
         assert os.path.isfile(os.path.join(vendored, "SKILL.md")), f"{rel}/SKILL.md missing"
-        assert os.path.realpath(vendored) == canonical, f"{rel} must resolve to skills/signoff"
+        assert os.path.realpath(vendored) == canonical, f"{rel} must resolve to skills/git-signoff"
 
 
 def test_skill_folder_is_self_contained():
-    """No relative markdown link inside skills/signoff may escape the folder (Phase 3a)."""
+    """The vendored folder must work copied anywhere on its own (Phase 3a):
+    no relative markdown link may escape it, and its Python files may import
+    only the standard library and each other."""
     skills_dir = _skills_dir()
-    signoff_dir = os.path.join(skills_dir, "signoff")
+    signoff_dir = os.path.join(skills_dir, "git-signoff")
     link_pattern = re.compile(r"\]\(([^)#\s]+)")
 
     errors = []
@@ -166,9 +166,64 @@ def test_skill_folder_is_self_contained():
             resolved = os.path.normpath(os.path.join(os.path.dirname(filepath), target))
             if not resolved.startswith(signoff_dir + os.sep):
                 rel = os.path.relpath(filepath, skills_dir)
-                errors.append(f"In {rel}: link '{target}' escapes skills/signoff")
+                errors.append(f"In {rel}: link '{target}' escapes skills/git-signoff")
+
+    py_files = sorted(glob.glob(os.path.join(signoff_dir, "**/*.py"), recursive=True))
+    assert {os.path.basename(p) for p in py_files} == {"attest.py", "verify_signoff.py"}, py_files
+    siblings = {os.path.splitext(os.path.basename(p))[0] for p in py_files}
+    import ast
+
+    for filepath in py_files:
+        tree = ast.parse(open(filepath, encoding="utf-8").read(), filename=filepath)
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Import):
+                names = [alias.name for alias in node.names]
+            elif isinstance(node, ast.ImportFrom):
+                names = [node.module or ""]
+            else:
+                continue
+            for name in names:
+                top = name.split(".")[0]
+                if top not in sys.stdlib_module_names and top not in siblings:
+                    rel = os.path.relpath(filepath, skills_dir)
+                    errors.append(f"In {rel}: import of non-stdlib module '{name}'")
+        # attest.py reaches its sibling verifier by path, never via sys.path
+        content = open(filepath, encoding="utf-8").read()
+        assert "sys.path" not in content, f"{filepath} manipulates sys.path"
 
     assert not errors, "\n".join(errors)
+
+
+def test_attest_helper_pins_producer_mechanics():
+    """The producer mechanics that SKILL.md used to spell out in bash now live in
+    attest.py (Part II of the 2026-09-09 handoff); pin them where they live."""
+    root_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "../.."))
+    with open(os.path.join(root_dir, "skills/git-signoff/attest.py"), encoding="utf-8") as f:
+        src = f.read()
+
+    for adapter_env in [
+        "GIT_SIGNOFF_TRANSCRIPT_FILE",
+        "ANTIGRAVITY_CONVERSATION_ID",
+        "CLAUDE_CODE_SESSION_ID",
+        "CODEX_SESSION_ID",
+        "CODEX_HOME",
+    ]:
+        assert adapter_env in src, f"Missing adapter env var '{adapter_env}' in attest.py"
+    assert "--git-common-dir" in src, "Missing worktree git-common-dir fallback in attest.py"
+    assert "GIT_SIGNOFF_PROFILE_FILE" in src and ".git-signoff" in src, "Missing profile resolution in attest.py"
+    assert "def profile_block_digest" in src, "Missing profile digest in attest.py"
+    assert "/sha256:" in src, "Missing /sha256: profile-digest segment in attest.py"
+    for env_var in ["CLAUDE_CODE_VERSION", "CLAUDE_EFFORT", "ANTHROPIC_MODEL"]:
+        assert env_var in src, f"Deterministic provenance source '{env_var}' missing from attest.py"
+    assert 'NOTES_REF = "refs/notes/signoff"' in src
+    assert 'NOTES_TRACKING_REF = "refs/notes/signoff-remote"' in src
+    assert "cat_sort_uniq" in src, "Missing cat_sort_uniq notes merge in attest.py"
+    assert "user.signingkey" in src, "Missing signed-commit support (user.signingkey) in attest.py"
+    assert "--allow-empty" in src
+    assert "GSA-APPROVAL" in src and "MARKER_WINDOW = 64 * 1024" in src, "Missing approval marker protocol"
+    assert "validate_single" in src and "check_head" in src, "Missing verifier self-checks"
+    for status in ["VERIFIED_BY_HUMAN", "VERIFIED_BY_HUMAN_NO_TRANSCRIPT_DIGEST"]:
+        assert status in src
 
 
 # Focused test cases using pytest tmp_path
@@ -203,19 +258,19 @@ def test_validation_quoted_valid_name(tmp_path):
 
 
 def test_signoff_socratic_remediation_rule():
-    """Verify skills/signoff/SKILL.md defines hardened Socratic remediation rules."""
+    """Verify skills/git-signoff/SKILL.md defines hardened Socratic remediation rules."""
     root_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "../.."))
-    signoff_md = os.path.join(root_dir, "skills/signoff/SKILL.md")
+    signoff_md = os.path.join(root_dir, "skills/git-signoff/SKILL.md")
 
-    assert os.path.exists(signoff_md), "skills/signoff/SKILL.md does not exist"
+    assert os.path.exists(signoff_md), "skills/git-signoff/SKILL.md does not exist"
 
     with open(signoff_md, "r", encoding="utf-8") as f:
         signoff_content = f.read()
 
-    assert "Evaluation & Remediation" in signoff_content, "Missing Evaluation & Remediation in skills/signoff/SKILL.md"
+    assert "Evaluation & Remediation" in signoff_content, "Missing Evaluation & Remediation in skills/git-signoff/SKILL.md"
 
     section_match = re.search(r"Evaluation & Remediation:\s*(.*?)(?=\n### |\n## |\Z)", signoff_content, re.DOTALL)
-    assert section_match, "Could not extract Evaluation & Remediation section from skills/signoff/SKILL.md"
+    assert section_match, "Could not extract Evaluation & Remediation section from skills/git-signoff/SKILL.md"
     remediation_text = section_match.group(1)
 
     assert any(term in remediation_text for term in ["not sure", "uncertainty"]), "Missing uncertainty trigger in remediation rule"
@@ -224,17 +279,17 @@ def test_signoff_socratic_remediation_rule():
     assert "@skill:explain-diff" in remediation_text, "Missing '@skill:explain-diff' reference in remediation rule"
     assert "re-probe" in remediation_text, "Missing re-probing requirement in remediation rule"
 
-    assert "Worktree Target Mandate" in signoff_content, "Missing Worktree Target Mandate in skills/signoff/SKILL.md"
-    assert "worktree_path" in signoff_content, "Missing 'worktree_path' in skills/signoff/SKILL.md Section 4"
+    assert "Worktree Target Mandate" in signoff_content, "Missing Worktree Target Mandate in skills/git-signoff/SKILL.md"
+    assert "worktree_path" in signoff_content, "Missing 'worktree_path' in skills/git-signoff/SKILL.md Section 4"
 
 
 def test_signoff_gsa_protocol_spec_and_trailers():
-    """Verify the GSA Protocol core spec exists and skills/signoff/SKILL.md implements its portable trailer schema, harness adapters, and Git Notes persistence."""
+    """Verify the GSA Protocol core spec exists and skills/git-signoff/SKILL.md implements its portable trailer schema, harness adapters, and Git Notes persistence."""
     root_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "../.."))
-    spec_md = os.path.join(root_dir, "skills/signoff/specs/gsa-core.md")
-    signoff_md = os.path.join(root_dir, "skills/signoff/SKILL.md")
+    spec_md = os.path.join(root_dir, "skills/git-signoff/specs/gsa-core.md")
+    signoff_md = os.path.join(root_dir, "skills/git-signoff/SKILL.md")
 
-    assert os.path.exists(spec_md), "skills/signoff/specs/gsa-core.md does not exist"
+    assert os.path.exists(spec_md), "skills/git-signoff/specs/gsa-core.md does not exist"
 
     with open(spec_md, "r", encoding="utf-8") as f:
         spec_content = f.read()
@@ -245,7 +300,7 @@ def test_signoff_gsa_protocol_spec_and_trailers():
         "cat_sort_uniq",
         "ack_no_transcript",
     ]:
-        assert anchor in spec_content, f"Missing '{anchor}' in skills/signoff/specs/gsa-core.md"
+        assert anchor in spec_content, f"Missing '{anchor}' in skills/git-signoff/specs/gsa-core.md"
 
     with open(signoff_md, "r", encoding="utf-8") as f:
         signoff_content = f.read()
@@ -255,25 +310,30 @@ def test_signoff_gsa_protocol_spec_and_trailers():
         "Signoff-Harness-ID",
         "Signoff-Transcript-Bytes",
     ]:
-        assert trailer in signoff_content, f"Missing '{trailer}' trailer in skills/signoff/SKILL.md"
+        assert trailer in signoff_content, f"Missing '{trailer}' trailer in skills/git-signoff/SKILL.md"
 
+    # SKILL.md names the adapter resolution order and the notes mirror it asks the
+    # helper to write; the mechanics themselves are pinned in attest.py
+    # (test_attest_helper_pins_producer_mechanics).
     for adapter_env in [
-        "SIGNOFF_TRANSCRIPT_FILE",
+        "GIT_SIGNOFF_TRANSCRIPT_FILE",
         "ANTIGRAVITY_CONVERSATION_ID",
         "CLAUDE_CODE_SESSION_ID",
         "CODEX_SESSION_ID",
     ]:
-        assert adapter_env in signoff_content, f"Missing '{adapter_env}' adapter resolution in skills/signoff/SKILL.md"
+        assert adapter_env in signoff_content, f"Missing '{adapter_env}' adapter resolution in skills/git-signoff/SKILL.md"
 
-    assert "--git-common-dir" in signoff_content, "Missing worktree git-common-dir fallback in skills/signoff/SKILL.md"
+    assert "refs/notes/signoff" in signoff_content, "Missing 'refs/notes/signoff' persistence in skills/git-signoff/SKILL.md"
+    assert "cat_sort_uniq" in signoff_content, "Missing 'cat_sort_uniq' notes merge mention in skills/git-signoff/SKILL.md"
+    assert "attest.py commit" in signoff_content and "attest.py prepare" in signoff_content, (
+        "SKILL.md must invoke the helper for the mechanics"
+    )
+    assert "python3 - <<" not in signoff_content and "sha256sum" not in signoff_content, (
+        "SKILL.md must not carry prompt-executed mechanics any more"
+    )
+    assert "GSA-APPROVAL" in signoff_content, "Missing approval marker instruction in skills/git-signoff/SKILL.md"
 
-    assert "refs/notes/signoff" in signoff_content, "Missing 'refs/notes/signoff' persistence in skills/signoff/SKILL.md"
-    assert "cat_sort_uniq" in signoff_content, "Missing 'cat_sort_uniq' notes merge strategy in skills/signoff/SKILL.md"
-    assert "refs/notes/signoff-remote" in signoff_content, "Missing tracking-ref fetch for notes merge in skills/signoff/SKILL.md"
-
-    assert "user.signingkey" in signoff_content, "Missing signed-commit support (user.signingkey) in skills/signoff/SKILL.md"
-
-    assert "specs/gsa-core.md" in signoff_content, "Missing specs/gsa-core.md reference in skills/signoff/SKILL.md"
+    assert "specs/gsa-core.md" in signoff_content, "Missing specs/gsa-core.md reference in skills/git-signoff/SKILL.md"
 
 
 PROFILE_BLOCK_RE = re.compile(
@@ -291,11 +351,11 @@ def _extract_profile_block(content, source):
 def test_signoff_phase3c_interview_contract():
     """Verify Phase 3c: Signoff-Agent provenance grammar, named intensity levels, and the single swappable INTERVIEW PROFILE block."""
     root_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "../.."))
-    signoff_md = os.path.join(root_dir, "skills/signoff/SKILL.md")
-    spec_md = os.path.join(root_dir, "skills/signoff/specs/gsa-core.md")
-    harnesses_md = os.path.join(root_dir, "skills/signoff/HARNESSES.md")
-    default_profile_md = os.path.join(root_dir, "skills/signoff/profiles/software-general.md")
-    science_profile_md = os.path.join(root_dir, "skills/signoff/profiles/domain-science.md")
+    signoff_md = os.path.join(root_dir, "skills/git-signoff/SKILL.md")
+    spec_md = os.path.join(root_dir, "skills/git-signoff/specs/gsa-core.md")
+    harnesses_md = os.path.join(root_dir, "skills/git-signoff/HARNESSES.md")
+    default_profile_md = os.path.join(root_dir, "skills/git-signoff/profiles/software-general.md")
+    science_profile_md = os.path.join(root_dir, "skills/git-signoff/profiles/domain-science.md")
 
     for path in [signoff_md, spec_md, harnesses_md, default_profile_md, science_profile_md]:
         assert os.path.exists(path), f"{os.path.relpath(path, root_dir)} does not exist"
@@ -313,37 +373,39 @@ def test_signoff_phase3c_interview_contract():
 
     # (1) Signoff-Agent provenance grammar defined in the spec and used by the skill
     for token in ["harness=", "model=", "reasoning=", "interview="]:
-        assert token in signoff_content, f"Signoff-Agent grammar token '{token}' missing from skills/signoff/SKILL.md"
-        assert token in spec_content, f"Signoff-Agent grammar token '{token}' missing from skills/signoff/specs/gsa-core.md"
+        assert token in signoff_content, f"Signoff-Agent grammar token '{token}' missing from skills/git-signoff/SKILL.md"
+        assert token in spec_content, f"Signoff-Agent grammar token '{token}' missing from skills/git-signoff/specs/gsa-core.md"
     assert "N/A" in spec_content, "Missing N/A convention for unexposed provenance fields in gsa-core.md"
+    # Deterministic provenance sources are pinned in attest.py
+    # (test_attest_helper_pins_producer_mechanics); SKILL.md still names them.
     for env_var in ["CLAUDE_CODE_VERSION", "CLAUDE_EFFORT", "ANTHROPIC_MODEL"]:
-        assert env_var in signoff_content, f"Deterministic provenance source '{env_var}' missing from skills/signoff/SKILL.md"
+        assert env_var in signoff_content, f"Provenance source '{env_var}' missing from skills/git-signoff/SKILL.md"
 
     # (2) Named intensity levels formalizing --quick/--deep
     for level in ["cursory", "standard", "skeptical"]:
-        assert level in signoff_content, f"Intensity level '{level}' missing from skills/signoff/SKILL.md"
-    assert "--quick" in signoff_content and "--deep" in signoff_content, "Missing --quick/--deep modifier mapping in skills/signoff/SKILL.md"
-    assert "Interview Intensity Levels" in signoff_content, "Missing Interview Intensity Levels section in skills/signoff/SKILL.md"
-    assert "prediction challenge" in signoff_content, "Missing skeptical-level prediction challenges in skills/signoff/SKILL.md"
+        assert level in signoff_content, f"Intensity level '{level}' missing from skills/git-signoff/SKILL.md"
+    assert "--quick" in signoff_content and "--deep" in signoff_content, "Missing --quick/--deep modifier mapping in skills/git-signoff/SKILL.md"
+    assert "Interview Intensity Levels" in signoff_content, "Missing Interview Intensity Levels section in skills/git-signoff/SKILL.md"
+    assert "prediction challenge" in signoff_content, "Missing skeptical-level prediction challenges in skills/git-signoff/SKILL.md"
 
     # (3) Exactly one delimited INTERVIEW PROFILE block, byte-identical to the shipped default
-    embedded_block = _extract_profile_block(signoff_content, "skills/signoff/SKILL.md")
-    default_block = _extract_profile_block(default_profile_content, "skills/signoff/profiles/software-general.md")
+    embedded_block = _extract_profile_block(signoff_content, "skills/git-signoff/SKILL.md")
+    default_block = _extract_profile_block(default_profile_content, "skills/git-signoff/profiles/software-general.md")
     assert embedded_block == default_block, (
         "Embedded INTERVIEW PROFILE block in SKILL.md diverged from profiles/software-general.md"
     )
 
     for block, source in [
-        (embedded_block, "skills/signoff/SKILL.md"),
-        (science_profile_content, "skills/signoff/profiles/domain-science.md"),
+        (embedded_block, "skills/git-signoff/SKILL.md"),
+        (science_profile_content, "skills/git-signoff/profiles/domain-science.md"),
     ]:
         pid = re.search(r"^Profile-ID:\s*([a-z0-9-]+)\s*$", block, re.MULTILINE)
         assert pid, f"Missing or malformed Profile-ID in {source}"
     assert "Profile-ID: software-general" in embedded_block, "Default embedded profile must be software-general"
     assert "Profile-ID: domain-science" in science_profile_content, "domain-science profile must declare its Profile-ID"
 
-    assert "sole customization point" in signoff_content, "Missing 'sole customization point' marker in skills/signoff/SKILL.md"
-    assert "sole customization point" in harnesses_content, "Missing 'sole customization point' documentation in skills/signoff/HARNESSES.md"
+    assert "sole customization point" in signoff_content, "Missing 'sole customization point' marker in skills/git-signoff/SKILL.md"
+    assert "sole customization point" in harnesses_content, "Missing 'sole customization point' documentation in skills/git-signoff/HARNESSES.md"
     assert "profiles/software-general.md" in harnesses_content, "Missing software-general profile reference in HARNESSES.md"
     assert "profiles/domain-science.md" in harnesses_content, "Missing domain-science profile reference in HARNESSES.md"
 
@@ -352,46 +414,46 @@ def test_signoff_phase3d_research_accessibility_contract():
     """Verify Phase 3d: repo-local profile resolution, science-detection guard, profile provenance digest, and expanded science profile."""
     root_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "../.."))
     paths = {
-        "skills/signoff/SKILL.md": None,
-        "skills/signoff/specs/gsa-core.md": None,
-        "skills/signoff/HARNESSES.md": None,
-        "skills/signoff/profiles/domain-science.md": None,
+        "skills/git-signoff/SKILL.md": None,
+        "skills/git-signoff/specs/gsa-core.md": None,
+        "skills/git-signoff/HARNESSES.md": None,
+        "skills/git-signoff/profiles/domain-science.md": None,
     }
     for rel in paths:
         path = os.path.join(root_dir, rel)
         assert os.path.exists(path), f"{rel} does not exist"
         with open(path, "r", encoding="utf-8") as f:
             paths[rel] = f.read()
-    signoff_content = paths["skills/signoff/SKILL.md"]
-    spec_content = paths["skills/signoff/specs/gsa-core.md"]
-    harnesses_content = paths["skills/signoff/HARNESSES.md"]
-    science_profile_content = paths["skills/signoff/profiles/domain-science.md"]
+    signoff_content = paths["skills/git-signoff/SKILL.md"]
+    spec_content = paths["skills/git-signoff/specs/gsa-core.md"]
+    harnesses_content = paths["skills/git-signoff/HARNESSES.md"]
+    science_profile_content = paths["skills/git-signoff/profiles/domain-science.md"]
 
     # (1) Repo-local profile resolution: env override -> repo-local file -> embedded default
-    for needle in ["SIGNOFF_PROFILE_FILE", ".signoff/profile.md"]:
+    for needle in ["GIT_SIGNOFF_PROFILE_FILE", ".git-signoff/profile.md"]:
         for content, source in [
-            (signoff_content, "skills/signoff/SKILL.md"),
-            (spec_content, "skills/signoff/specs/gsa-core.md"),
-            (harnesses_content, "skills/signoff/HARNESSES.md"),
+            (signoff_content, "skills/git-signoff/SKILL.md"),
+            (spec_content, "skills/git-signoff/specs/gsa-core.md"),
+            (harnesses_content, "skills/git-signoff/HARNESSES.md"),
         ]:
             assert needle in content, f"Missing '{needle}' in {source}"
     assert "fall back to the embedded default" in signoff_content, (
-        "Missing malformed-profile fallback rule in skills/signoff/SKILL.md"
+        "Missing malformed-profile fallback rule in skills/git-signoff/SKILL.md"
     )
     # Resolution must not introduce a second literal block in SKILL.md
-    _extract_profile_block(signoff_content, "skills/signoff/SKILL.md")
+    _extract_profile_block(signoff_content, "skills/git-signoff/SKILL.md")
 
     # (2) Science-detection guard: additive, default-on, wired into cursory eligibility
-    assert "Science-detection escalation" in signoff_content, "Missing science-detection guard in skills/signoff/SKILL.md"
+    assert "Science-detection escalation" in signoff_content, "Missing science-detection guard in skills/git-signoff/SKILL.md"
     assert "profiles/domain-science.md" in signoff_content, "Science guard must reference profiles/domain-science.md"
     for signal in ["numpy", "ipynb", "netCDF"]:
-        assert signal in signoff_content, f"Missing science-detection signal '{signal}' in skills/signoff/SKILL.md"
-    assert "Additive only" in signoff_content, "Science guard must be additive-only in skills/signoff/SKILL.md"
-    assert "cursory MUST be refused" in signoff_content, "Science-flagged diffs must refuse cursory in skills/signoff/SKILL.md"
+        assert signal in signoff_content, f"Missing science-detection signal '{signal}' in skills/git-signoff/SKILL.md"
+    assert "Additive only" in signoff_content, "Science guard must be additive-only in skills/git-signoff/SKILL.md"
+    assert "cursory MUST be refused" in signoff_content, "Science-flagged diffs must refuse cursory in skills/git-signoff/SKILL.md"
 
-    # (3) Profile provenance: digest-extended interview= token
-    assert "PROFILE_DIGEST" in signoff_content, "Missing PROFILE_DIGEST computation in skills/signoff/SKILL.md"
-    assert "/sha256:" in signoff_content, "Missing /sha256: digest segment in skills/signoff/SKILL.md"
+    # (3) Profile provenance: digest-extended interview= token (computed by attest.py)
+    assert "digest" in signoff_content, "Missing profile digest announcement in skills/git-signoff/SKILL.md"
+    assert "/sha256:" in signoff_content, "Missing /sha256: digest segment in skills/git-signoff/SKILL.md"
     assert "[/sha256:<profile-digest-prefix>]" in spec_content, (
         "Missing optional profile-digest segment in gsa-core.md Signoff-Agent grammar"
     )
@@ -402,7 +464,7 @@ def test_signoff_phase3d_research_accessibility_contract():
     # (4) Expanded science emphases (numerical stability, uncertainty quantification)
     for term in ["Numerical stability", "cancellation", "Uncertainty quantification"]:
         assert term in science_profile_content, (
-            f"Missing '{term}' emphasis in skills/signoff/profiles/domain-science.md"
+            f"Missing '{term}' emphasis in skills/git-signoff/profiles/domain-science.md"
         )
 
 
@@ -410,9 +472,9 @@ def test_signoff_phase3f_adaptive_intensity_contract():
     """Verify Phase 3f: Adaptive signoff interview intensity based on semantic impact and code churn."""
     root_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "../.."))
     paths = {
-        "skills/signoff/SKILL.md": None,
-        "skills/signoff/specs/gsa-core.md": None,
-        "skills/signoff/HARNESSES.md": None,
+        "skills/git-signoff/SKILL.md": None,
+        "skills/git-signoff/specs/gsa-core.md": None,
+        "skills/git-signoff/HARNESSES.md": None,
         "README.md": None,
         "site/index.html": None,
         "docs/roadmap.md": None,
@@ -422,9 +484,9 @@ def test_signoff_phase3f_adaptive_intensity_contract():
         assert os.path.exists(path), f"{rel} does not exist"
         with open(path, "r", encoding="utf-8") as f:
             paths[rel] = f.read()
-    signoff_content = paths["skills/signoff/SKILL.md"]
-    spec_content = paths["skills/signoff/specs/gsa-core.md"]
-    harnesses_content = paths["skills/signoff/HARNESSES.md"]
+    signoff_content = paths["skills/git-signoff/SKILL.md"]
+    spec_content = paths["skills/git-signoff/specs/gsa-core.md"]
+    harnesses_content = paths["skills/git-signoff/HARNESSES.md"]
     readme_content = paths["README.md"]
     site_content = paths["site/index.html"]
     roadmap_content = paths["docs/roadmap.md"]
@@ -461,13 +523,13 @@ def test_signoff_phase3f_adaptive_intensity_contract():
 
     # (2) Adaptive classification matrix & naming
     assert "Interview Intensity Levels & Adaptive Classification Matrix" in signoff_content, (
-        "Missing intensity matrix heading in skills/signoff/SKILL.md"
+        "Missing intensity matrix heading in skills/git-signoff/SKILL.md"
     )
     assert "governs auto-classification for bare" in signoff_content, (
-        "Missing bare /signoff auto-classification scoping sentence in SKILL.md"
+        "Missing bare /git-signoff auto-classification scoping sentence in SKILL.md"
     )
     for tier in ["Tier 0", "Tier 1", "Tier 2"]:
-        assert tier in signoff_content, f"Missing '{tier}' classification in skills/signoff/SKILL.md"
+        assert tier in signoff_content, f"Missing '{tier}' classification in skills/git-signoff/SKILL.md"
 
     # (3) Probe count floors (no silent lowering of rigor)
     assert "2 (one turn)" in signoff_content, "Tier 0 / cursory probe count must be 2"
@@ -483,28 +545,28 @@ def test_signoff_phase3f_adaptive_intensity_contract():
 
     # (5) Canonical High-Impact Tier 2 triggers
     assert "Canonical High-Impact Tier 2 Heuristic Triggers" in signoff_content, (
-        "Missing Canonical Tier 2 triggers block in skills/signoff/SKILL.md"
+        "Missing Canonical Tier 2 triggers block in skills/git-signoff/SKILL.md"
     )
     for trigger_signal in [
         "auth/", "crypto/", "permissions/", "migrations/", "schema.sql", "ALTER TABLE",
         "proto", "OpenAPI", "numpy", "scipy", "jax", "torch", "astropy", "pandas", "xarray",
         ".ipynb", "netCDF", "GRIB", "zarr"
     ]:
-        assert trigger_signal in signoff_content, f"Missing Tier 2 trigger '{trigger_signal}' in skills/signoff/SKILL.md"
-    assert ">5 files or >200 lines" in signoff_content, "Missing blast radius threshold in skills/signoff/SKILL.md"
+        assert trigger_signal in signoff_content, f"Missing Tier 2 trigger '{trigger_signal}' in skills/git-signoff/SKILL.md"
+    assert ">5 files or >200 lines" in signoff_content, "Missing blast radius threshold in skills/git-signoff/SKILL.md"
 
     # (6) Evaluation order & documentation capping
     assert "Classification Precedence & Evaluation Order" in signoff_content, (
-        "Missing evaluation order in skills/signoff/SKILL.md"
+        "Missing evaluation order in skills/git-signoff/SKILL.md"
     )
-    assert "<50" in signoff_content, "Missing Tier 0 LoC threshold in skills/signoff/SKILL.md"
+    assert "<50" in signoff_content, "Missing Tier 0 LoC threshold in skills/git-signoff/SKILL.md"
     assert "capped at max Tier 1" in signoff_content or "capped at Tier 1" in signoff_content, (
-        "Missing pure docs Tier 1 capping rule in skills/signoff/SKILL.md"
+        "Missing pure docs Tier 1 capping rule in skills/git-signoff/SKILL.md"
     )
 
     # (7) Modifier precedence, safety clamps, and graduated escalation
     assert "4-row safety clamp" in signoff_content or "4-row" in signoff_content, (
-        "Missing 4-row safety clamp definition in skills/signoff/SKILL.md"
+        "Missing 4-row safety clamp definition in skills/git-signoff/SKILL.md"
     )
     assert "rows are evaluated in order; the first matching row governs" in signoff_content, (
         "Missing clamp row evaluation order declaration in SKILL.md"
@@ -519,7 +581,7 @@ def test_signoff_phase3f_adaptive_intensity_contract():
     assert "do not trigger Tier 2 on diffs consisting solely of" in signoff_content, (
         "Missing docs carve-out in clamp row 3 in SKILL.md"
     )
-    assert "--deep" in signoff_content, "Missing --deep mapping in skills/signoff/SKILL.md"
+    assert "--deep" in signoff_content, "Missing --deep mapping in skills/git-signoff/SKILL.md"
     assert "Graduated One-Way Escalation" in signoff_content, "Missing graduated escalation heading in SKILL.md"
     assert "Never de-escalate within a session" in signoff_content, "Missing no de-escalation rule in SKILL.md"
 
@@ -545,288 +607,11 @@ def test_signoff_phase3f_adaptive_intensity_contract():
     assert "adaptive default auto-selects intensity" in site_content.lower(), "Missing adaptive default in site/index.html"
 
 
-def test_embedded_transcript_helper_parity(tmp_path):
-    """Verify Step 3 Python helper extracted from skills/signoff/SKILL.md."""
-    root_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "../.."))
-    signoff_md = os.path.join(root_dir, "skills", "signoff", "SKILL.md")
-    with open(signoff_md, "r", encoding="utf-8") as f:
-        content = f.read()
-
-    m = re.search(r"python3 - <<'PY' > \"\$TMP_DIGEST_FILE\"\n(.*?)\n\s*PY\n", content, re.DOTALL)
-    assert m, "Could not find python heredoc in skills/signoff/SKILL.md"
-    import textwrap
-    script = textwrap.dedent(m.group(1))
-
-    clean_env = {
-        "PATH": os.environ.get("PATH", "/usr/bin:/bin"),
-        "HOME": str(tmp_path / "home"),
-    }
-
-    # Case 1: No harness detected -> unknown, 7 lines, unavailable
-    proc = subprocess.run(
-        [sys.executable, "-c", script],
-        env=clean_env,
-        capture_output=True,
-        text=True,
-        cwd=str(tmp_path),
-    )
-    assert proc.returncode == 0
-    lines = proc.stdout.splitlines()
-    assert len(lines) == 7
-    assert lines[0] == "unknown"
-    assert lines[1] == "unavailable"
-    assert lines[2] == "unavailable"
-    assert lines[3] == "unavailable"
-
-    # Case 2: Codex session ID set, rollout present
-    codex_home = tmp_path / "codex_home"
-    sess_dir = codex_home / "sessions" / "2026" / "09" / "02"
-    sess_dir.mkdir(parents=True, exist_ok=True)
-    test_data = b"line1\nline2\n"
-    (sess_dir / "rollout-2026-09-02T12-00-00-test-codex-sid.jsonl").write_bytes(test_data)
-
-    codex_env = dict(clean_env)
-    codex_env["CODEX_SESSION_ID"] = "test-codex-sid"
-    codex_env["CODEX_HOME"] = str(codex_home)
-
-    proc = subprocess.run(
-        [sys.executable, "-c", script],
-        env=codex_env,
-        capture_output=True,
-        text=True,
-        cwd=str(tmp_path),
-    )
-    assert proc.returncode == 0
-    lines = proc.stdout.splitlines()
-    assert len(lines) == 7
-    assert lines[0] == "codex-cli"
-    assert lines[1] == "test-codex-sid"
-    assert lines[2] == hashlib.sha256(test_data).hexdigest()
-    assert lines[3] == str(len(test_data))
-
-    # Case 3: Codex session ID set, rollout missing -> unavailable digest
-    missing_env = dict(clean_env)
-    missing_env["CODEX_SESSION_ID"] = "missing-codex-sid"
-    missing_env["CODEX_HOME"] = str(codex_home)
-
-    proc = subprocess.run(
-        [sys.executable, "-c", script],
-        env=missing_env,
-        capture_output=True,
-        text=True,
-        cwd=str(tmp_path),
-    )
-    assert proc.returncode == 0
-    lines = proc.stdout.splitlines()
-    assert len(lines) == 7
-    assert lines[0] == "codex-cli"
-    assert lines[1] == "missing-codex-sid"
-    assert lines[2] == "unavailable"
-    assert lines[3] == "unavailable"
-
-    # Case 4: Codex session ID with metacharacters
-    meta_env = dict(clean_env)
-    meta_env["CODEX_SESSION_ID"] = "meta[123]"
-    meta_env["CODEX_HOME"] = str(codex_home)
-    meta_data = b"meta-content\n"
-    (sess_dir / "rollout-2026-09-02T12-00-00-meta[123].jsonl").write_bytes(meta_data)
-    (sess_dir / "rollout-2026-09-02T12-00-00-meta1.jsonl").write_bytes(b"glob-content\n")
-
-    proc = subprocess.run(
-        [sys.executable, "-c", script],
-        env=meta_env,
-        capture_output=True,
-        text=True,
-        cwd=str(tmp_path),
-    )
-    assert proc.returncode == 0
-    lines = proc.stdout.splitlines()
-    assert len(lines) == 7
-    assert lines[0] == "codex-cli"
-    assert lines[1] == "meta[123]"
-    assert lines[2] == hashlib.sha256(meta_data).hexdigest()
-    assert lines[3] == str(len(meta_data))
-
-    # Case 5: Deterministic (mtime, path) tie-breaking on equal timestamps
-    tie_env = dict(clean_env)
-    tie_env["CODEX_SESSION_ID"] = "tie-sid"
-    tie_env["CODEX_HOME"] = str(codex_home)
-    f_a = sess_dir / "rollout-2026-09-02T12-00-00-a-tie-sid.jsonl"
-    f_b = sess_dir / "rollout-2026-09-02T12-00-00-b-tie-sid.jsonl"
-    f_a.write_bytes(b"content-a\n")
-    f_b.write_bytes(b"content-b\n")
-    os.utime(f_a, (100, 100))
-    os.utime(f_b, (100, 100))
-
-    proc = subprocess.run(
-        [sys.executable, "-c", script],
-        env=tie_env,
-        capture_output=True,
-        text=True,
-        cwd=str(tmp_path),
-    )
-    assert proc.returncode == 0
-    lines = proc.stdout.splitlines()
-    assert len(lines) == 7
-    assert lines[0] == "codex-cli"
-    assert lines[1] == "tie-sid"
-    assert lines[2] == hashlib.sha256(b"content-b\n").hexdigest()
-    assert lines[3] == str(len(b"content-b\n"))
-
-    # Case 6: Default CODEX_HOME (~/.codex/sessions) fallback when CODEX_HOME is unset
-    default_home = tmp_path / "home"
-    default_sess_dir = default_home / ".codex" / "sessions" / "2026" / "09" / "02"
-    default_sess_dir.mkdir(parents=True, exist_ok=True)
-    def_data = b"default-home-data\n"
-    (default_sess_dir / "rollout-2026-09-02T12-00-00-def-sid.jsonl").write_bytes(def_data)
-    def_env = dict(clean_env)
-    def_env["CODEX_SESSION_ID"] = "def-sid"
-
-    proc = subprocess.run(
-        [sys.executable, "-c", script],
-        env=def_env,
-        capture_output=True,
-        text=True,
-        cwd=str(tmp_path),
-    )
-    assert proc.returncode == 0
-    lines = proc.stdout.splitlines()
-    assert len(lines) == 7
-    assert lines[0] == "codex-cli"
-    assert lines[1] == "def-sid"
-    assert lines[2] == hashlib.sha256(def_data).hexdigest()
-    assert lines[3] == str(len(def_data))
-
-    # Case 7: Full precedence hierarchy
-    # 7.1: All four env vars set -> generic-file
-    all_override = tmp_path / "all_override.log"
-    all_override.write_bytes(b"all-override-data\n")
-    all_env = dict(clean_env)
-    all_env["SIGNOFF_TRANSCRIPT_FILE"] = str(all_override)
-    all_env["ANTIGRAVITY_CONVERSATION_ID"] = "ag-id"
-    all_env["CLAUDE_CODE_SESSION_ID"] = "cc-id"
-    all_env["CODEX_SESSION_ID"] = "codex-id"
-    proc = subprocess.run(
-        [sys.executable, "-c", script],
-        env=all_env,
-        capture_output=True,
-        text=True,
-        cwd=str(tmp_path),
-    )
-    assert proc.returncode == 0
-    lines = proc.stdout.splitlines()
-    assert len(lines) == 7
-    assert lines[0] == "generic-file"
-    assert lines[2] == hashlib.sha256(b"all-override-data\n").hexdigest()
-
-    # 7.2: Antigravity + Claude + Codex -> antigravity-cli
-    ag_cc_cx_env = dict(clean_env)
-    ag_cc_cx_env["ANTIGRAVITY_CONVERSATION_ID"] = "ag-id"
-    ag_cc_cx_env["CLAUDE_CODE_SESSION_ID"] = "cc-id"
-    ag_cc_cx_env["CODEX_SESSION_ID"] = "codex-id"
-    proc = subprocess.run(
-        [sys.executable, "-c", script],
-        env=ag_cc_cx_env,
-        capture_output=True,
-        text=True,
-        cwd=str(tmp_path),
-    )
-    assert proc.returncode == 0
-    lines = proc.stdout.splitlines()
-    assert len(lines) == 7
-    assert lines[0] == "antigravity-cli"
-    assert lines[1] == "ag-id"
-
-    # 7.3: Claude + Codex -> claude-code
-    cc_cx_env = dict(clean_env)
-    cc_cx_env["CLAUDE_CODE_SESSION_ID"] = "cc-id"
-    cc_cx_env["CODEX_SESSION_ID"] = "codex-id"
-    proc = subprocess.run(
-        [sys.executable, "-c", script],
-        env=cc_cx_env,
-        capture_output=True,
-        text=True,
-        cwd=str(tmp_path),
-    )
-    assert proc.returncode == 0
-    lines = proc.stdout.splitlines()
-    assert len(lines) == 7
-    assert lines[0] == "claude-code"
-    assert lines[1] == "cc-id"
-
-    # Case 8: Similar-suffix rejection for Codex
-    similar_home = tmp_path / "similar_home"
-    similar_sess = similar_home / ".codex" / "sessions" / "2026" / "09" / "02"
-    similar_sess.mkdir(parents=True, exist_ok=True)
-    (similar_sess / "rollout-2026-09-02T12-00-00-target-sid-extra.jsonl").write_bytes(b"extra\n")
-    (similar_sess / "2026-09-02T12-00-00-target-sid.jsonl").write_bytes(b"noprefix\n")
-    similar_env = dict(clean_env)
-    similar_env["CODEX_SESSION_ID"] = "target-sid"
-    similar_env["CODEX_HOME"] = str(similar_home / ".codex")
-    proc = subprocess.run(
-        [sys.executable, "-c", script],
-        env=similar_env,
-        capture_output=True,
-        text=True,
-        cwd=str(tmp_path),
-    )
-    assert proc.returncode == 0
-    lines = proc.stdout.splitlines()
-    assert len(lines) == 7
-    assert lines[0] == "codex-cli"
-    assert lines[1] == "target-sid"
-    assert lines[2] == "unavailable"
-    assert lines[3] == "unavailable"
-
-    # Case 9: Shell derivation verification from SKILL.md Step 4
-    with open(signoff_md, encoding="utf-8") as f:
-        skill_content = f.read()
-
-    section_match = re.search(
-        r"4\.\s+\*\*Construct Flat Git Trailers & Determine Status:\*\*.*?```bash\n(.*?)\n\s*fi",
-        skill_content,
-        re.DOTALL,
-    )
-    assert section_match, "Failed to extract shell derivation bash snippet from SKILL.md"
-    shell_snippet = section_match.group(1) + "\nfi"
-
-    # 9.1: Digest unavailable -> VERIFIED_BY_HUMAN_NO_TRANSCRIPT_DIGEST
-    test_sh_1 = f"""
-    DIGEST_STATUS=0
-    DIGEST="unavailable"
-    T_BYTES="unavailable"
-    AGENT_HVER="N/A"
-    AGENT_MODEL="N/A"
-    AGENT_REASONING="N/A"
-    {shell_snippet}
-    echo "$STATUS"
-    """
-    proc = subprocess.run(["bash", "-c", test_sh_1], capture_output=True, text=True)
-    assert proc.returncode == 0, f"Shell derivation failed: {proc.stderr}"
-    assert proc.stdout.strip() == "VERIFIED_BY_HUMAN_NO_TRANSCRIPT_DIGEST"
-
-    # 9.2: Valid 64-hex digest + byte count -> VERIFIED_BY_HUMAN
-    valid_hex = "a" * 64
-    test_sh_2 = f"""
-    DIGEST_STATUS=0
-    DIGEST="{valid_hex}"
-    T_BYTES="4096"
-    AGENT_HVER="N/A"
-    AGENT_MODEL="N/A"
-    AGENT_REASONING="N/A"
-    {shell_snippet}
-    echo "$STATUS"
-    """
-    proc = subprocess.run(["bash", "-c", test_sh_2], capture_output=True, text=True)
-    assert proc.returncode == 0, f"Shell derivation failed: {proc.stderr}"
-    assert proc.stdout.strip() == "VERIFIED_BY_HUMAN"
-
-
 def test_cross_harness_matrix_coverage():
     """Verify that HARNESSES.md contains the cross-harness test matrix
     covering all required harnesses and destination channels."""
     root_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "../.."))
-    harnesses_path = os.path.join(root_dir, "skills", "signoff", "HARNESSES.md")
+    harnesses_path = os.path.join(root_dir, "skills", "git-signoff", "HARNESSES.md")
     with open(harnesses_path, encoding="utf-8") as f:
         content = f.read()
 
@@ -843,8 +628,8 @@ def test_cross_harness_matrix_coverage():
         assert h in content, f"Missing harness {h} in HARNESSES.md"
 
     # Verify both skill destinations
-    assert ".claude/skills/signoff" in content, "Missing .claude/skills/signoff in HARNESSES.md"
-    assert ".agents/skills/signoff" in content, "Missing .agents/skills/signoff in HARNESSES.md"
+    assert ".claude/skills/git-signoff" in content, "Missing .claude/skills/git-signoff in HARNESSES.md"
+    assert ".agents/skills/git-signoff" in content, "Missing .agents/skills/git-signoff in HARNESSES.md"
 
     # Verify selector documentation
     assert "--skill-target" in content, "Missing --skill-target documentation in HARNESSES.md"
@@ -858,8 +643,8 @@ def test_cross_harness_matrix_coverage():
 def test_domain_science_profile_block_parity():
     """Verify domain-science profile block is byte-identical across domain-science.md, init.py, and profiles/README.md."""
     root_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "../.."))
-    science_md = os.path.join(root_dir, "skills/signoff/profiles/domain-science.md")
-    readme_md = os.path.join(root_dir, "skills/signoff/profiles/README.md")
+    science_md = os.path.join(root_dir, "skills/git-signoff/profiles/domain-science.md")
+    readme_md = os.path.join(root_dir, "skills/git-signoff/profiles/README.md")
     init_py = os.path.join(root_dir, "init.py")
 
     with open(science_md, "r", encoding="utf-8") as f:

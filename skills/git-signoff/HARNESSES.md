@@ -1,15 +1,21 @@
 # Harness Setup & Portability Guide
 
-How to install and run `/signoff` on each agent harness. The skill is
-prompt-driven and self-contained; nothing is installed by name and no
-Python package is required — the initializer and the verifier are
-standard-library scripts. Canonical protocol:
-[specs/gsa-core.md](specs/gsa-core.md).
+How to install and run `/git-signoff` on each agent harness. The skill is
+one self-contained folder: the interview prompt (`SKILL.md`), the
+deterministic producer (`attest.py`), and the verifier (`verify_signoff.py`).
+Nothing is installed by name and no Python package is required — the
+initializer, the producer, and the verifier are standard-library scripts
+(Python 3.10+). Canonical protocol: [specs/gsa-core.md](specs/gsa-core.md).
 
 ## Portability Rules
 
-1. **Copy the entire `signoff/` folder**, including `specs/`, so relative links
-   (e.g. `specs/gsa-core.md`) keep resolving. Never copy `SKILL.md` alone.
+1. **Copy the entire `git-signoff/` folder**, including `specs/`, `attest.py`,
+   and `verify_signoff.py`, so relative links (e.g. `specs/gsa-core.md`) keep
+   resolving and the helper finds its sibling verifier. Never copy `SKILL.md`
+   alone. Licensing inside the folder: `attest.py`, `verify_signoff.py`, and
+   the Markdown guidance are MIT like the rest of the repository's code; the
+   documents under `specs/` are under the Community Specification License 1.0
+   (stated in each file). Neither license covers the other's files.
 2. **All links are relative** — enforced by `scripts/tests/test_skill_references.py`
    (no `file://` links).
 3. **Cross-skill references degrade gracefully outside Antigravity.** On
@@ -17,19 +23,19 @@ standard-library scripts. Canonical protocol:
    during remediation instead of delegating. The make-feature scratchpad step
    already self-skips when the scratchpad file does not exist.
 4. **Transcript digests need the harness adapter env vars below.** When none
-   apply, set `SIGNOFF_TRANSCRIPT_FILE` explicitly or accept the downgraded
+   apply, set `GIT_SIGNOFF_TRANSCRIPT_FILE` explicitly or accept the downgraded
    `VERIFIED_BY_HUMAN_NO_TRANSCRIPT_DIGEST` status (second confirmation
    required).
 
 ## Cross-Harness Test Matrix & Agent Skills Conventions
 
-The `init.py` zero-touch initializer installs `/signoff` as a committed repository skill. Git Signoff Attestation (GSA v1.0) is entirely protocol-neutral: the commit trailers, git notes mirror, and verification logic are implemented using standard library Python (stdlib) invoking the `git` CLI, requiring zero external dependencies.
+The `init.py` zero-touch initializer installs `/git-signoff` as a committed repository skill. Git Signoff Attestation (GSA v1.0) is entirely protocol-neutral: the commit trailers, git notes mirror, and verification logic are implemented using standard library Python (stdlib) invoking the `git` CLI, requiring zero external dependencies.
 
-Repositories can vendor `/signoff` into one or both candidate locations using `--skill-target`:
-- `.claude/skills/signoff`: Canonical destination for Claude Code (web, CLI, desktop).
-- `.agents/skills/signoff`: Cross-client convention for Antigravity CLI, Codex CLI, Cursor, and OpenCode (the Agent Skills specification defines the skill format; `.agents/skills` is client convention and implementation guidance, not a normative location).
+Repositories can vendor `/git-signoff` into one or both candidate locations using `--skill-target`:
+- `.claude/skills/git-signoff`: Canonical destination for Claude Code (web, CLI, desktop).
+- `.agents/skills/git-signoff`: Cross-client convention for Antigravity CLI, Codex CLI, Cursor, and OpenCode (the Agent Skills specification defines the skill format; `.agents/skills` is client convention and implementation guidance, not a normative location).
 
-When invoked with `--skill-target auto` (the default), `init.py` inspects the repository for signals (`.claude` or `CLAUDE.md` for the Claude destination; `.agents`, `.cursor`, `.gemini`, `.codex`, `.opencode`, `AGENTS.md`, or `GEMINI.md` for the cross-client destination) and automatically selects the appropriate destination. In interactive greenfield setups without existing markers, it prompts the user; in non-interactive greenfield setups, it defaults to both destinations. Explicit choices (`--skill-target claude`, `--skill-target agents`, `--skill-target both`) are unioned with existing installations so re-running `init.py` always updates all configured harnesses together without version drift. A recognized existing install (a candidate path whose target contains `SKILL.md`, symlink or not) is always unioned into the destination set and cannot be excluded by any `--skill-target` value; a symlinked one is then refused by Policy A and must be replaced with a real copy first. A broken symlink is not recognized and is not unioned.
+When invoked with `--skill-target auto` (the default), `init.py` inspects the repository for signals (`.claude` or `CLAUDE.md` for the Claude destination; `.agents`, `.cursor`, `.gemini`, `.codex`, `.opencode`, `AGENTS.md`, or `GEMINI.md` for the cross-client destination) and automatically selects the appropriate destination. Each cross-client directory marker is a canonical repository-local configuration path of its harness: `.opencode/` per OpenCode's configuration documentation, `.gemini/` for Antigravity CLI and `.codex/` for Codex CLI as confirmed by the maintainer against each product's documentation on 2026-09-09 (issue #16). In interactive greenfield setups without existing markers, it prompts the user; in non-interactive greenfield setups, it defaults to both destinations. Explicit choices (`--skill-target claude`, `--skill-target agents`, `--skill-target both`) are unioned with existing installations so re-running `init.py` always updates all configured harnesses together without version drift. A recognized existing install (a candidate path whose target contains `SKILL.md`, symlink or not) is always unioned into the destination set and cannot be excluded by any `--skill-target` value; a symlinked one is then refused by Policy A and must be replaced with a real copy first. A broken symlink is not recognized and is not unioned.
 
 Re-running the initializer requires a clean working tree by default. `--allow-dirty` permits unrelated unstaged/untracked work only: pre-staged changes and any uncommitted or ignored state under managed scaffold paths are refused before branch creation, and the index is checked again before the scaffold commit.
 
@@ -37,16 +43,16 @@ Re-running the initializer requires a clean working tree by default. `--allow-di
 
 | Harness | Skill Destination | Invocation Syntax | Transcript Discovery | Zero-Dependency stdlib |
 |---|---|---|---|---|
-| **Claude Code** | `.claude/skills/signoff` | `/signoff` | `CLAUDE_CODE_SESSION_ID` -> `~/.claude/projects/<slug>/<id>.jsonl` | Yes (standard library Python + git) |
-| **Antigravity CLI** | `.agents/skills/signoff` | `/signoff` | `ANTIGRAVITY_CONVERSATION_ID` -> `~/.gemini/antigravity-cli/brain/<cid>/...` | Yes (standard library Python + git) |
-| **Codex CLI** | `.agents/skills/signoff` | `$signoff` | `CODEX_SESSION_ID` -> `$CODEX_HOME/sessions/**/rollout-*-<id>.jsonl` | Yes (standard library Python + git) |
-| **Cursor** | `.agents/skills/signoff` | `/signoff` (or auto) | `SIGNOFF_TRANSCRIPT_FILE` generic override | Yes (standard library Python + git) |
-| **OpenCode** | `.agents/skills/signoff` | Automatic / tool-selected (native skill tool) | `SIGNOFF_TRANSCRIPT_FILE` generic override | Yes (standard library Python + git) |
+| **Claude Code** | `.claude/skills/git-signoff` | `/git-signoff` | `CLAUDE_CODE_SESSION_ID` -> `~/.claude/projects/<slug>/<id>.jsonl` | Yes (standard library Python + git) |
+| **Antigravity CLI** | `.agents/skills/git-signoff` | `/git-signoff` | `ANTIGRAVITY_CONVERSATION_ID` -> `~/.gemini/antigravity-cli/brain/<cid>/...` | Yes (standard library Python + git) |
+| **Codex CLI** | `.agents/skills/git-signoff` | `$git-signoff` | `CODEX_SESSION_ID` -> `$CODEX_HOME/sessions/**/rollout-*-<id>.jsonl` | Yes (standard library Python + git) |
+| **Cursor** | `.agents/skills/git-signoff` | `/git-signoff` (or auto) | `GIT_SIGNOFF_TRANSCRIPT_FILE` generic override | Yes (standard library Python + git) |
+| **OpenCode** | `.agents/skills/git-signoff` | Automatic / tool-selected (native skill tool) | `GIT_SIGNOFF_TRANSCRIPT_FILE` generic override | Yes (standard library Python + git) |
 
 ## Antigravity CLI (native)
 
 In the [dotgemini](https://github.com/jerrylin96/dotgemini) Antigravity global
-config this skill is indexed natively in `AGENTS.md` and maps to `/signoff`;
+config this skill is indexed natively in `AGENTS.md` and maps to `/git-signoff`;
 on other Antigravity setups, copy the folder per the Portability Rules.
 
 - Transcript env: `ANTIGRAVITY_CONVERSATION_ID`
@@ -56,7 +62,7 @@ on other Antigravity setups, copy the folder per the Portability Rules.
 
 One mechanism covers every Claude Code surface: a **project skill** — the
 self-contained folder committed to the repository under review at
-`<repo>/.claude/skills/signoff/`. Local sessions load it from the working
+`<repo>/.claude/skills/git-signoff/`. Local sessions load it from the working
 tree; cloud sessions load it from the clone at session start. Vendor it with
 the zero-touch initializer (README Quickstart) or copy the folder per the
 Portability Rules. `git pull` is the whole update mechanism for
@@ -68,16 +74,30 @@ initializer vendors the skill at the same pinned tag the
 install snippet serves the script from, and stamps source, ref, and commit
 into a `VENDORED-FROM` file inside the copy — so any vendored folder tells
 you exactly which version it holds. Offline installs pass
-`--skill-source <path-to-skills/signoff>` (stamped `ref: local (--skill-source)`). Commit a
+`--skill-source <path-to-skills/git-signoff>` (stamped `ref: local (--skill-source)`). Commit a
 real copy, not a symlink — re-running the initializer over a destination
 containing a symlink at the destination or in any parent path component aborts
 per Policy A, refusing to mutate or traverse symlinked paths. This repository
-dogfoods via symlinks at both `.claude/skills/signoff` and
-`.agents/skills/signoff` to its own `skills/signoff/`; that symlink pattern is
+dogfoods via symlinks at both `.claude/skills/git-signoff` and
+`.agents/skills/git-signoff` to its own `skills/git-signoff/`; that symlink pattern is
 for this repo only.
 
+**Migration note (2026-09, `init-v7`):** the skill folder, command, config
+directory, workflow file, and environment variables were renamed from
+`signoff` to `git-signoff` (`.claude/skills/git-signoff`,
+`/git-signoff`, `.git-signoff/profile.md`, `.github/workflows/git-signoff.yml`,
+`GIT_SIGNOFF_TRANSCRIPT_FILE`, `GIT_SIGNOFF_PROFILE_FILE`,
+`GIT_SIGNOFF_VERIFIED_BY`). Protocol identifiers — `Signoff-*` trailers,
+`refs/notes/signoff`, the `[SIGNOFF <sha>]` subject — did not change, so
+existing attestations verify unchanged. The only install that existed under
+the old names was this repository's own pair of symlinks, which were moved;
+an adopter upgrading a hypothetical `.claude/skills/signoff` copy would re-run
+the initializer (which vendors to the new path), delete the old folder,
+rename `.signoff/` to `.git-signoff/`, and re-export any `SIGNOFF_*` variables
+under the new names.
+
 A machine-local install also works for local CLI/desktop sessions: copy the
-folder to `~/.claude/skills/signoff` (user-level, all projects). Linked git
+folder to `~/.claude/skills/git-signoff` (user-level, all projects). Linked git
 worktrees are handled by the `--git-common-dir` fallback: the transcript is
 keyed to the primary repository root, and the adapter resolves it
 automatically.
@@ -99,11 +119,13 @@ Web-specific caveats:
 - **`refs/notes/signoff` cannot be pushed from a web session** (verified
   2026-08-05): the cloud GitHub proxy restricts pushes to the session's
   working branch and returns HTTP 403 for notes refs (misreported by git as
-  "Everything up-to-date" — verify with `git ls-remote`). The attestation
-  commit still pushes with the branch, so verification falls back to the
-  git-log lookup (GSA §5.1). Recover the notes mirror afterward from any
-  unrestricted clone — the note body is byte-identical to the attestation
-  commit message:
+  "Everything up-to-date" — verify with `git ls-remote`). `attest.py commit`
+  reports this as `notes_pushed: false` with the reason and still exits 0:
+  the attestation commit pushes with the branch, so verification falls back
+  to the git-log lookup (GSA §5.1), and this repository's notes-recovery
+  workflow rebuilds the ref on merge. Recover the notes mirror by hand from
+  any unrestricted clone if needed — the note body is byte-identical to the
+  attestation commit message:
   ```bash
   NOTE_BODY=$(git log -1 --format=%B <attestation-sha>)
   git notes --ref=signoff append -m "$NOTE_BODY" <reviewed-commit-sha>
@@ -119,7 +141,7 @@ Web-specific caveats:
 human's explicit confirmation of the proposed value remains the
 accountability step. Resolution order:
 
-1. `SIGNOFF_VERIFIED_BY` env override — export once (e.g. shell profile) to
+1. `GIT_SIGNOFF_VERIFIED_BY` env override — export once (e.g. shell profile) to
    pin a canonical identity across harnesses
 2. Harness-authenticated account email (`CLAUDE_CODE_USER_EMAIL` on Claude
    Code web)
@@ -132,7 +154,7 @@ standard `.mailmap`, not the capture side's.
 ### Distribution to end users
 
 One channel: the vendored project skill above, committed to each repository
-that wants `/signoff`. Users never clone or link this repo, and there is
+that wants `/git-signoff`. Users never clone or link this repo, and there is
 nothing account-scoped to install or keep updated. The earlier account-scoped
 channels — a Claude Code plugin marketplace and a CI-built release-zip skill
 upload — were retired in v0.4.0: both demanded per-account setup, and the
@@ -154,7 +176,7 @@ session-id env var. Two options:
    ```
 2. Or point the generic override at the rollout file directly:
    ```bash
-   export SIGNOFF_TRANSCRIPT_FILE=~/.codex/sessions/<yyyy>/<mm>/<dd>/rollout-<ts>-<uuid>.jsonl
+   export GIT_SIGNOFF_TRANSCRIPT_FILE=~/.codex/sessions/<yyyy>/<mm>/<dd>/rollout-<ts>-<uuid>.jsonl
    ```
 
 ## Other harnesses (Goose, etc.)
@@ -162,10 +184,10 @@ session-id env var. Two options:
 Use the generic override — it takes precedence over every harness adapter:
 
 ```bash
-export SIGNOFF_TRANSCRIPT_FILE=/path/to/transcript.log
+export GIT_SIGNOFF_TRANSCRIPT_FILE=/path/to/transcript.log
 ```
 
-Adapter resolution order (fixed): `SIGNOFF_TRANSCRIPT_FILE` →
+Adapter resolution order (fixed): `GIT_SIGNOFF_TRANSCRIPT_FILE` →
 `ANTIGRAVITY_CONVERSATION_ID` → `CLAUDE_CODE_SESSION_ID` → `CODEX_SESSION_ID`.
 
 ## Interviewer provenance (`Signoff-Agent`)
@@ -177,9 +199,11 @@ trailer (grammar: [specs/gsa-core.md](specs/gsa-core.md) §2.3):
 Signoff-Agent: harness=<id>/<version|N/A> model=<model-id|N/A> reasoning=<level|N/A> interview=<intensity-level>/<profile-id>
 ```
 
-Fields are deterministically sourced where the harness exposes them; the
-digest helper emits harness version, model, and reasoning from the same
-transcript snapshot bytes as the digest. Per-harness sources:
+Fields are deterministically sourced where the harness exposes them;
+`attest.py` derives harness version, model, and reasoning from the environment
+and from the same transcript snapshot bytes as the digest, and accepts the
+agent's self-reported model (`--model`) only when no deterministic source has
+one. Per-harness sources:
 
 | Harness | harness version | model | reasoning |
 |---|---|---|---|
@@ -190,7 +214,7 @@ transcript snapshot bytes as the digest. Per-harness sources:
 
 `interview=` records the intensity level actually run (cursory / standard /
 skeptical, post-escalation) and the active profile's `Profile-ID`. When no
-explicit modifier (`--quick` / `--deep`) is supplied, `/signoff` uses
+explicit modifier (`--quick` / `--deep`) is supplied, `/git-signoff` uses
 **adaptive intensity by default** — dynamically evaluating range diff semantics
 and blast radius per SKILL.md's classification precedence: Tier 0 (`cursory`
 for tiny pure docs/types <50 LoC AND ≤2 files), Tier 1 (`standard` for default
@@ -215,11 +239,11 @@ lower pass criteria.
 
 The active profile is resolved per run, in fixed order:
 
-1. **`SIGNOFF_PROFILE_FILE`** — explicit path to a profile file. Highest
+1. **`GIT_SIGNOFF_PROFILE_FILE`** — explicit path to a profile file. Highest
    precedence; if set but unreadable, signoff aborts rather than silently
    falling back.
-2. **`<repo>/.signoff/profile.md`** — repo-local profile. Commit one file to
-   the repository under review and every `/signoff` run there uses it — for
+2. **`<repo>/.git-signoff/profile.md`** — repo-local profile. Commit one file to
+   the repository under review and every `/git-signoff` run there uses it — for
    every collaborator, on every harness, surviving skill updates. This is
    the recommended path for labs and teams.
 3. **Embedded block in `SKILL.md`** — the shipped default

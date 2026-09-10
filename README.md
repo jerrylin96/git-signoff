@@ -1,6 +1,6 @@
 # git-signoff — Git Signoff Attestation (GSA)
 
-[![attested by humans](https://github.com/jerrylin96/git-signoff/actions/workflows/signoff.yml/badge.svg)](https://github.com/jerrylin96/git-signoff/actions/workflows/signoff.yml)
+[![attested by humans](https://github.com/jerrylin96/git-signoff/actions/workflows/git-signoff.yml/badge.svg)](https://github.com/jerrylin96/git-signoff/actions/workflows/git-signoff.yml)
 
 **Verify that a human actually understands an AI-assisted diff before it merges.**
 
@@ -9,7 +9,7 @@ not an approval button: a sign-off button records that someone clicked, a GSA
 attestation records that someone understood — and it lives in your git
 history, not in a hosted dashboard.
 
-`/signoff` flips the usual review direction: instead of you interrogating the
+`/git-signoff` flips the usual review direction: instead of you interrogating the
 AI's code, the AI interviews **you** — then records the outcome as a
 machine-parsable, tamper-evident **Git Signoff Attestation** inside your
 repository.
@@ -17,7 +17,7 @@ repository.
 ## What it does, in plain language
 
 You (or your AI assistant) changed some code. Before that change merges — or
-before its output goes into a paper, a report, or a decision — run `/signoff`.
+before its output goes into a paper, a report, or a decision — run `/git-signoff`.
 The agent reads the full diff, then asks you a short series of pointed
 questions across four fixed axes:
 
@@ -48,7 +48,7 @@ dimensional validity, surrogate-vs-ground-truth boundaries, numerical
 stability, statistical validity (leakage, multiple comparisons), uncertainty
 quantification, and reproducibility (seeds, environments, data provenance).
 And at the research frontier there is no oracle to check against —
-`/signoff` deliberately does not claim to verify that the science is *right*;
+`/git-signoff` deliberately does not claim to verify that the science is *right*;
 it verifies that **you** know the assumptions, the validity regimes, and how
 you'd notice drift outside them. That is exactly the part a human must own.
 
@@ -58,19 +58,19 @@ Inside your repository root, run the zero-touch initializer (Python 3.10+ stdlib
 
 ```bash
 # Standard software engineering profile:
-curl -fsSL https://raw.githubusercontent.com/jerrylin96/git-signoff/init-v6/init.py -o /tmp/signoff-init.py && python3 /tmp/signoff-init.py
+curl -fsSL https://raw.githubusercontent.com/jerrylin96/git-signoff/init-v7/init.py -o /tmp/signoff-init.py && python3 /tmp/signoff-init.py
 
 # Scientific & research computing profile (math, physics, bio, climate, ML):
-curl -fsSL https://raw.githubusercontent.com/jerrylin96/git-signoff/init-v6/init.py -o /tmp/signoff-init.py && python3 /tmp/signoff-init.py --profile domain-science
+curl -fsSL https://raw.githubusercontent.com/jerrylin96/git-signoff/init-v7/init.py -o /tmp/signoff-init.py && python3 /tmp/signoff-init.py --profile domain-science
 ```
 
 The script automatically:
 1. Detects your repo, branch, and stack (suggests science or general software profile).
-2. Vendors the `/signoff` skill into `.claude/skills/signoff/` and/or `.agents/skills/signoff` (cross-client convention, auto-detected from repository markers, or explicitly chosen via `--skill-target {auto,claude,agents,both}`) — committed with your repo, it loads for every collaborator, across Claude Code, Antigravity, Codex, Cursor, and other agent harnesses alike, with nothing account-scoped to install.
-3. Scaffolds `.github/workflows/signoff.yml` and `.signoff/profile.md`.
+2. Vendors the `/git-signoff` skill into `.claude/skills/git-signoff/` and/or `.agents/skills/git-signoff` (cross-client convention, auto-detected from repository markers, or explicitly chosen via `--skill-target {auto,claude,agents,both}`) — committed with your repo, it loads for every collaborator, across Claude Code, Antigravity, Codex, Cursor, and other agent harnesses alike, with nothing account-scoped to install.
+3. Scaffolds `.github/workflows/git-signoff.yml` and `.git-signoff/profile.md`.
 4. Injects the **attested by humans** badge into your `README.md`.
 5. Automates GitHub Ruleset protection (via `gh` CLI or a 1-click settings link).
-6. Creates feature branch `signoff/init` with your scaffolded setup ready for you to run `/signoff` and merge.
+6. Creates feature branch `git-signoff/init` with your scaffolded setup ready for you to run `/git-signoff` and merge.
 
 ---
 
@@ -92,8 +92,8 @@ AI: ✅ Attestation commit [SIGNOFF a1b2c3d] created! Your badge is green.
 ## How to use it: four steps
 
 1. **Install** — run the 60-second initializer above, or pick the one row for your harness below.
-2. **Open the PR** — review the diff as usual (when the branch's commits are well-structured, reading them one at a time shows what changed when and why far better than one squashed diff); the `verify-signoff` check runs red until the branch ends in a valid attestation. Attest *after* the diff is final: the attestation must be the last commit on the branch, so pushing anything after it turns the check red again (just re-run `/signoff`).
-3. **Run** — from the branch you want to merge, type `/signoff` (adaptive default auto-selects intensity from diff; `--deep` for skeptical rigor, `--quick` for low-risk diffs subject to safety clamps).
+2. **Open the PR** — review the diff as usual (when the branch's commits are well-structured, reading them one at a time shows what changed when and why far better than one squashed diff); the `verify-signoff` check runs red until the branch ends in a valid attestation. Attest *after* the diff is final: the attestation must be the last commit on the branch, so pushing anything after it turns the check red again (just re-run `/git-signoff`).
+3. **Run** — from the branch you want to merge, type `/git-signoff` (adaptive default auto-selects intensity from diff; `--deep` for skeptical rigor, `--quick` for low-risk diffs subject to safety clamps).
 4. **Answer, confirm, merge** — respond in your own words, acknowledge the named trade-offs and risks, confirm your email. The attestation commit and note are created and pushed with your branch; when `verify-signoff` turns green, merge as usual.
 
 ---
@@ -117,7 +117,7 @@ Auditor (Lead / Compliance)                  Reviewer (Employee)
            │<─────────────────────────────────────────┤
            │                                          │
            │  4. Verify against git trailers:         │
-           │     SIGNOFF_TRANSCRIPT_FILE=transcript.jsonl
+           │     GIT_SIGNOFF_TRANSCRIPT_FILE=transcript.jsonl
            │     python3 verify_signoff.py --audit HEAD
            │                                          │
            │  Output: ✅ VALID MATCH                   │
@@ -129,7 +129,7 @@ The auditor identifies the attestation on the commit or PR (e.g. `[SIGNOFF 979cb
 #### Step 2: Reviewer exports transcript
 On the machine where the signoff interview occurred, the reviewer runs the verifier CLI with `--audit` and `--export`:
 ```bash
-python3 verify/verify_signoff.py --audit HEAD --export /tmp/transcript.jsonl
+python3 .claude/skills/git-signoff/verify_signoff.py --audit HEAD --export /tmp/transcript.jsonl
 ```
 The verifier resolves the local transcript for the harness (`claude-code`, `antigravity-cli`, `codex-cli`, etc.), checks that the first $N$ bytes match the `Signoff-Transcript-Digest` trailer, and writes the snapshot to the specified path:
 ```text
@@ -142,9 +142,9 @@ The verifier resolves the local transcript for the harness (`claude-code`, `anti
 The reviewer sends `/tmp/transcript.jsonl` to the auditor.
 
 #### Step 3: Auditor verifies snapshot against git trailers
-The auditor points `SIGNOFF_TRANSCRIPT_FILE` at the received file and audits the target commit:
+The auditor points `GIT_SIGNOFF_TRANSCRIPT_FILE` at the received file and audits the target commit:
 ```bash
-SIGNOFF_TRANSCRIPT_FILE=/tmp/transcript.jsonl python3 verify/verify_signoff.py --audit HEAD
+GIT_SIGNOFF_TRANSCRIPT_FILE=/tmp/transcript.jsonl python3 .claude/skills/git-signoff/verify_signoff.py --audit HEAD
 ```
 The verifier recomputes the SHA-256 digest and confirms it matches the git attestation byte-for-byte.
 
@@ -152,16 +152,18 @@ The verifier recomputes the SHA-256 digest and confirms it matches the git attes
 
 ## Installation
 
-One channel, everywhere: the skill is a self-contained folder of Markdown
-that lives *in the repository under review*. Committed once, `/signoff`
-works for every collaborator — no plugins, no marketplaces, no downloads,
-nothing account-scoped.
+One channel, everywhere: the skill is a self-contained folder — the
+interview prompt (`SKILL.md`), the deterministic producer (`attest.py`) and
+the verifier (`verify_signoff.py`), both standard-library Python — that lives
+*in the repository under review*. Committed once, `/git-signoff` works for
+every collaborator — no plugins, no marketplaces, no downloads, nothing
+account-scoped, nothing to pip-install.
 
 | Where you work | One-time action |
 |---|---|
-| **Any repository (Zero-touch)** | `curl -fsSL https://raw.githubusercontent.com/jerrylin96/git-signoff/init-v6/init.py -o /tmp/signoff-init.py && python3 /tmp/signoff-init.py` (use `--skill-target {auto,claude,agents,both}` to control destinations) |
-| **Any repository (manual)** | Copy this repo's `skills/signoff/` folder to `<your-repo>/.claude/skills/signoff/` (Claude Code) or `<your-repo>/.agents/skills/signoff/` (Antigravity, Codex, Cursor, etc.) and commit before running the initializer; an untracked skill destination now aborts as an unrelated working-tree change. Update by re-copying (or re-running the initializer) on new releases. |
-| **Other harnesses (Antigravity, Codex, Cursor, …)** | Same folder, cross-client convention: copy `skills/signoff/` into `.agents/skills/signoff` (or `.claude/skills/signoff`) and set the transcript adapter env vars — full matrix in [HARNESSES.md](skills/signoff/HARNESSES.md). |
+| **Any repository (Zero-touch)** | `curl -fsSL https://raw.githubusercontent.com/jerrylin96/git-signoff/init-v7/init.py -o /tmp/signoff-init.py && python3 /tmp/signoff-init.py` (use `--skill-target {auto,claude,agents,both}` to control destinations) |
+| **Any repository (manual)** | Copy this repo's `skills/git-signoff/` folder to `<your-repo>/.claude/skills/git-signoff/` (Claude Code) or `<your-repo>/.agents/skills/git-signoff/` (Antigravity, Codex, Cursor, etc.) and commit before running the initializer; an untracked skill destination now aborts as an unrelated working-tree change. Update by re-copying (or re-running the initializer) on new releases. |
+| **Other harnesses (Antigravity, Codex, Cursor, …)** | Same folder, cross-client convention: copy `skills/git-signoff/` into `.agents/skills/git-signoff` (or `.claude/skills/git-signoff`) and set the transcript adapter env vars — full matrix in [HARNESSES.md](skills/git-signoff/HARNESSES.md). |
 
 > [!NOTE]
 > **Initializer Flags & Policy A:**
@@ -186,7 +188,7 @@ Generic software engineering questions ($O(N \log N)$ complexity, API contracts,
 - **Surrogate Boundaries & Validity Regimes:** Out-of-distribution neural network surrogates used outside their training domain, unquantified epistemic uncertainty, lack of physics-informed fallback.
 - **Provenance & Reproducibility:** Floating-point non-determinism across GPU architectures, unseeded RNG streams, dataset version drift.
 
-See [**skills/signoff/profiles/README.md**](skills/signoff/profiles/README.md) for the complete authoring guide and ready-to-use templates for:
+See [**skills/git-signoff/profiles/README.md**](skills/git-signoff/profiles/README.md) for the complete authoring guide and ready-to-use templates for:
 1. **Fluid Dynamics & Climate Simulation** (CFL stability, discrete conservation laws, grid interpolation)
 2. **Bioinformatics & Computational Genomics** (multiple testing correction, reference genome versions, batch effects)
 3. **AI for Science & Neural Operators** (PDE surrogates, spectral bias, physical boundary condition compliance)
@@ -196,16 +198,16 @@ See [**skills/signoff/profiles/README.md**](skills/signoff/profiles/README.md) f
 
 ### The dead-simple path — commit a profile to your own repository:
 
-1. In the repo you want reviewed, scaffold or create `.signoff/profile.md`:
+1. In the repo you want reviewed, scaffold or create `.git-signoff/profile.md`:
    ```bash
    python3 /tmp/signoff-init.py --profile domain-science
    ```
 2. Or paste in a shipped profile block —
-   [`domain-science`](skills/signoff/profiles/domain-science.md) for research
-   code, [`software-general`](skills/signoff/profiles/software-general.md)
+   [`domain-science`](skills/git-signoff/profiles/domain-science.md) for research
+   code, [`software-general`](skills/git-signoff/profiles/software-general.md)
    for classic engineering — or adapt a discipline template from
-   [`skills/signoff/profiles/README.md`](skills/signoff/profiles/README.md).
-3. Done. Every `/signoff` run on that repository now uses your profile — for
+   [`skills/git-signoff/profiles/README.md`](skills/git-signoff/profiles/README.md).
+3. Done. Every `/git-signoff` run on that repository now uses your profile — for
    every collaborator, on every install channel, surviving skill updates.
 
 **Write your own profile for your lab or team:** copy a shipped profile as a
@@ -227,11 +229,11 @@ plus, for repo-supplied profiles, a content digest
 so downstream readers can always see which questions the human was held to —
 and a diluted profile is distinguishable from a shipped one.
 
-Other knobs: `SIGNOFF_PROFILE_FILE=<path>` overrides everything for one
+Other knobs: `GIT_SIGNOFF_PROFILE_FILE=<path>` overrides everything for one
 machine; editing the block inside the vendored `SKILL.md` also works, but
 re-vendoring on update overwrites such edits — prefer the repo-local
-`.signoff/profile.md`. Full details:
-[HARNESSES.md](skills/signoff/HARNESSES.md).
+`.git-signoff/profile.md`. Full details:
+[HARNESSES.md](skills/git-signoff/HARNESSES.md).
 
 ## What an attestation looks like
 
@@ -252,12 +254,12 @@ Signoff-Agent: harness=claude-code/2.x model=... reasoning=... interview=standar
 ```
 
 Verification survives squash merges via the reviewed **tree SHA** and the
-notes mirror — lookup order in [gsa-core.md §5](skills/signoff/specs/gsa-core.md).
+notes mirror — lookup order in [gsa-core.md §5](skills/git-signoff/specs/gsa-core.md).
 
 **Show it: the badge & CI gate.** A two-minute GitHub Actions check turns attestations into a visible, enforceable claim — PRs fail until the branch ends in a valid attestation, and your README carries an **attested by humans** badge (the one at the top of this file):
 
 ```yaml
-# .github/workflows/signoff.yml
+# .github/workflows/git-signoff.yml
 name: attested by humans
 on:
   pull_request:
@@ -270,24 +272,32 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0   # full history — attestations live in it
-      - uses: jerrylin96/git-signoff/verify@verify-v1.3
+      - uses: jerrylin96/git-signoff/verify@verify-v1.4
 ```
 
-Supports standard merge strategies: **2-parent PR merges** (verifies clean merge tree & attested PR head in `head` mode), **fast-forward merges** (`head` mode), **squash merges** (`history` mode; in `head` mode when base is unchanged), and **rebase merges** (`history` mode; in `head` mode, re-run `/signoff` after rebase). Enforce strictly with preconfigured [`ruleset.json`](verify/ruleset.json). Full setup & badge markdown: [`verify/`](verify/README.md).
+Supports standard merge strategies: **2-parent PR merges** (verifies clean merge tree & attested PR head in `head` mode), **fast-forward merges** (`head` mode), **squash merges** (`history` mode; in `head` mode when base is unchanged), and **rebase merges** (`history` mode; in `head` mode, re-run `/git-signoff` after rebase). Enforce strictly with preconfigured [`ruleset.json`](verify/ruleset.json). Full setup & badge markdown: [`verify/`](verify/README.md).
 
-The protocol is harness-, model-, and vendor-neutral. The skill is
-prompt-driven and self-contained, and nothing is installed by name: the
-initializer is a curl-run script and the verifier is a single file, both
-standard-library Python. A Python reference implementation of the producer
-mechanics lives in [`git_signoff/`](git_signoff/) as an executable,
-unit-tested specification; it is not distributed.
+The protocol is harness-, model-, and vendor-neutral, and nothing is
+installed by name: the initializer is a curl-run script, and the skill folder
+carries the interview prompt plus two standard-library Python files. The
+agent conducts the interview; **`attest.py`** does every mechanical step
+deterministically — it resolves the SHAs, snapshots the transcript once,
+requires an approval marker naming the reviewed commit to be present in that
+snapshot (so a stale or wrong session file is refused instead of hashed),
+derives the status from the bytes, writes the commit and the notes, and runs
+the verifier on its own output before reporting success. What this does
+*not* close is a malicious agent or human with push rights writing a false
+attestation; that needs an identity the agent does not hold and stays
+deferred (see [docs/roadmap.md](docs/roadmap.md)).
 
-- **Protocol spec:** [`skills/signoff/specs/gsa-core.md`](skills/signoff/specs/gsa-core.md)
+- **Protocol spec:** [`skills/git-signoff/specs/gsa-core.md`](skills/git-signoff/specs/gsa-core.md)
+- **Producer and verifier reference (flags, exit codes, env vars):** [`docs/reference.md`](docs/reference.md)
+- **Reproducible walkthrough:** [`docs/walkthrough.md`](docs/walkthrough.md)
 - **Project roadmap:** [`docs/roadmap.md`](docs/roadmap.md)
-- **Per-harness install & portability guide:** [`skills/signoff/HARNESSES.md`](skills/signoff/HARNESSES.md)
-- **Skill entry point:** [`skills/signoff/SKILL.md`](skills/signoff/SKILL.md)
+- **Per-harness install & portability guide:** [`skills/git-signoff/HARNESSES.md`](skills/git-signoff/HARNESSES.md)
+- **Skill entry point:** [`skills/git-signoff/SKILL.md`](skills/git-signoff/SKILL.md)
 
-Distribution is deliberately boring: a folder of Markdown committed to the
+Distribution is deliberately boring: one folder committed to the
 repository under review, loaded by the harness from disk. Earlier
 account-scoped channels (a Claude Code plugin marketplace and a release-zip
 skill upload) were retired in v0.4.0 — the vendored folder replaced them on
@@ -295,9 +305,10 @@ every surface; [docs/roadmap.md#phase-4-amendment-2026-08-30](docs/roadmap.md#ph
 
 ## Status & roadmap
 
-**v0.4.0** ships the researcher-facing feature set described above —
+**v0.5.0** ships the researcher-facing feature set described above —
 repo-local profiles, the default-on science guard, and profile provenance
-digests — on a single distribution channel (the vendored skill folder),
+digests — plus the deterministic producer `attest.py` with approval-marker
+binding, on a single distribution channel (the vendored skill folder),
 verified end-to-end by scripted mechanics checks plus live interview runs:
 this repository signs off its own branches, and the resulting attestations
 are in its history (`git log --grep='SIGNOFF'`).
@@ -307,19 +318,20 @@ the [attested-by-humans badge + CI verifier](verify/README.md),
 automated `refs/notes/signoff` recovery, an open
 [spec license](LICENSE-SPEC) with [conformance vectors](conformance/README.md)
 for third-party implementations, and a reviewed
-[transcript-escrow spec](skills/signoff/specs/gsa-escrow.md) whose
+[transcript-escrow spec](skills/git-signoff/specs/gsa-escrow.md) whose
 privacy baseline is user-owned storage with client-side encryption.
 Cloud escrow implementation remains next.
 
 ## Development
 
 ```bash
-pip install -e . pytest ruff   # installs the in-repo reference library for the tests; no dependencies
+pip install pytest ruff   # the only development dependencies; nothing from this repo is installed
 ruff check . && pytest
 ```
 
-Contract tests live in `scripts/tests/` (skill contracts), `tests/` (repo
-initializer), and `git_signoff/tests/` (server mechanics).
+Tests live in `scripts/tests/` (the producer `attest.py`, the verifier, skill
+contracts, conformance vectors, notes recovery, the site) and `tests/` (the
+repository initializer). See [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ## License
 

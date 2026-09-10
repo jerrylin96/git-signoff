@@ -1,7 +1,7 @@
 # GSA v1.0 conformance test vectors
 
 A small, executable seed suite for third-party implementations of the
-[Git Signoff Attestation core spec](../skills/signoff/specs/gsa-core.md)
+[Git Signoff Attestation core spec](../skills/git-signoff/specs/gsa-core.md)
 (licensed under the [Community Specification License 1.0](../LICENSE-SPEC)).
 If your verifier reaches the verdicts in [`expected.json`](expected.json)
 on every payload in [`vectors/`](vectors/), it agrees with the reference
@@ -44,7 +44,7 @@ Scope notes:
 - Per gsa-core §2.3, `Signoff-Agent` values that don't match the token
   grammar remain valid opaque strings; no vector may require rejecting on
   `Signoff-Agent` format.
-- The reference verifier ([`verify/verify_signoff.py`](../verify/verify_signoff.py))
+- The reference verifier ([`skills/git-signoff/verify_signoff.py`](../skills/git-signoff/verify_signoff.py))
   is pinned against this suite in CI
   (`scripts/tests/test_conformance_vectors.py`), so the suite and the
   implementation cannot drift apart silently.
