@@ -72,3 +72,20 @@ def test_readme_carries_the_concept_doi():
     assert concept != _cff_field("doi"), "concept DOI must differ from the version DOI"
     readme = _read("README.md")
     assert f"https://doi.org/{concept}" in readme and f"`{concept}`" in readme
+
+
+def test_citation_date_matches_changelog_release_date():
+    """Once CHANGELOG.md carries a dated heading for the current version (the
+    release-ready tree), CITATION.cff's date-released must be that date; a
+    version bump that forgets the date would otherwise archive a wrong date
+    on Zenodo. Before the heading is dated ("Unreleased"), there is nothing to
+    compare against and the heading test above governs."""
+    version = _pyproject_version()
+    match = re.search(
+        rf"^## v{re.escape(version)} — (\d{{4}}-\d{{2}}-\d{{2}})", _read("CHANGELOG.md"), re.M
+    )
+    if not match:
+        return
+    assert _cff_field("date-released") == match.group(1), (
+        f"CITATION.cff date-released {_cff_field('date-released')} != CHANGELOG date {match.group(1)} for v{version}"
+    )
