@@ -9,11 +9,7 @@ authors:
     orcid: "https://orcid.org/0000-0003-1778-9426"
     email: jerrylin247365@gmail.com
 version: 0.5.0
-doi: 10.5281/zenodo.22683017
-identifiers:
-  - type: doi
-    value: 10.5281/zenodo.22683016
-    description: Concept DOI for all versions; resolves to the newest release.
+doi: 10.5281/zenodo.22683016
 date-released: 2026-09-10
 license: MIT
 repository-code: "https://github.com/jerrylin96/git-signoff"
