@@ -104,3 +104,16 @@ def test_citation_file_shape_is_yaml_safe():
         assert indent % 2 == 0, f"CITATION.cff line {number}: indentation of {indent} is not a multiple of two"
         if indent == 0:
             assert re.match(r"^[a-z][a-z-]*:( |$)", line), f"CITATION.cff line {number}: not a top-level key: {line!r}"
+
+
+def test_vendored_license_texts():
+    """The skill folder is what adopters copy, so it carries its own license
+    texts. The MIT copy must stay byte-identical to the root LICENSE (a name
+    or year edit in one place only would ship two different notices), and
+    the specification license must be the canonical Apache-2.0 text as
+    published at https://www.apache.org/licenses/LICENSE-2.0.txt."""
+    import hashlib
+
+    assert _read("skills/git-signoff/LICENSE") == _read("LICENSE")
+    digest = hashlib.sha256(_read("skills/git-signoff/specs/LICENSE").encode("utf-8")).hexdigest()
+    assert digest == "cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30"
