@@ -410,12 +410,12 @@ Recorded so they never need re-derivation; each names its future fix.
 - Purchase custom domain; DNS to Pages.
 - Enable GitHub Pages in repo settings.
 - GitHub About sidebar text.
-- Dispatch the `release` workflow to cut the `v0.5.0` tag once the
-  deterministic-producer branch has merged and `tag.yml` has created
-  `verify-v1.4` / `init-v7` on `main`. (`v0.4.0` was released from `49187c4`
-  on 2026-09-09 00:02 UTC, before this branch; it predates the deterministic
-  producer, so the paper cites `v0.5.0`.) Then set up Zenodo archiving for the
-  DOI at acceptance.
+- ~~Cut `v0.5.0` and set up Zenodo archiving~~ — done 2026-09-10: `tag.yml`
+  created `verify-v1.4` / `init-v7` at `c6143d5`, the `release` workflow cut
+  `v0.5.0` from `0861610`, and Zenodo archives every release under concept
+  DOI `10.5281/zenodo.22683016` (recorded in `CITATION.cff`). `v0.5.0` is
+  the release the paper cites; `v0.4.0` (2026-09-09) predates the
+  deterministic producer.
 - PyPI, for the record: publication remains dropped; nothing in the
   adoption path is installed by name. Should a distribution ever be needed,
   `git-attest` was free on 2026-09-08 (`git-signoff` is rejected by PyPI as

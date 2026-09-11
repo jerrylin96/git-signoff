@@ -35,7 +35,7 @@ which state of the code — a record that survives squash merges and branch
 deletion. The goal is preventing *cognitive surrender*: rubber-stamping AI
 output nobody actually understands.
 
-## Who it's for
+## Statement of need
 
 **Software engineers** — the default interview profile emphasizes algorithmic
 complexity, data-structure invariants, and API contract changes.
@@ -352,6 +352,12 @@ Lin, J. (2026). git-signoff: Git Signoff Attestation (GSA) (v0.5.0) [Computer so
 
 ## License
 
-Code is MIT licensed; the GSA specifications are licensed under the
-[Community Specification License 1.0](LICENSE-SPEC), so anyone can implement,
-verify, or extend the protocol.
+All software in this repository — `init.py`, the vendored skill folder
+(`attest.py`, `verify_signoff.py`, `SKILL.md`, profiles), the composite
+action under `verify/`, the conformance vectors, tests, and site — is
+[MIT](LICENSE) licensed. Only the three protocol documents under
+`skills/git-signoff/specs/` are licensed under the
+[Community Specification License 1.0](LICENSE-SPEC) (SPDX
+`Community-Spec-1.0`), a license written for specification text rather
+than code: it lets anyone implement, verify, or extend the protocol, and
+implementations of the specification carry no attribution obligation.
