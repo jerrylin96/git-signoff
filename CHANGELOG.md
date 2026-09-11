@@ -5,6 +5,20 @@ the composite action (`verify-vX.Y`) and the initializer (`init-vN`) never
 move and are listed with the release that introduced them. Dates are the tag
 dates on `origin`.
 
+## Unreleased
+
+- **Changed** the license of the three specification documents under
+  `skills/git-signoff/specs/` from the Community Specification License 1.0
+  to the Apache License 2.0 (`gsa-core.md` 3.7.1, `gsa-escrow.md` 1.0.1,
+  `gsa-in-toto-predicate.md` 0.1.1; no normative change). `LICENSE-SPEC` is
+  removed; the Apache text lives at `skills/git-signoff/specs/LICENSE` and a
+  copy of the MIT `LICENSE` at `skills/git-signoff/LICENSE`, so the vendored
+  folder carries both notices. Code was and remains MIT.
+- **Changed** `LICENSE` copyright holder to the author's name; `CITATION.cff`
+  gains the author's affiliation and lists both licenses.
+- **Changed** README: "Who it's for" is now "Statement of need"; the
+  License section names which files fall under which license.
+
 ## v0.5.0 — 2026-09-10 (`verify-v1.4`, `init-v7`, spec 3.7.0)
 
 The deterministic-producer release: the agent conducts the interview, a

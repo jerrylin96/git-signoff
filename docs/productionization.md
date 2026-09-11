@@ -150,7 +150,15 @@ donation vehicle. Milestones, in order:
    (MUST/SHOULD) and separating normative from informative sections.
 2. **Spec licensing** — ✅ 2026-08-06: Community Specification License 1.0
    in `LICENSE-SPEC`, declared by `gsa-core.md` and `gsa-escrow.md`; code
-   stays MIT.
+   stays MIT. **Revised 2026-09-11:** the three spec documents relicensed
+   to Apache-2.0 (`skills/git-signoff/specs/LICENSE`), `LICENSE-SPEC`
+   removed. Reasons: the Community Specification License presumes a
+   working group, a Scope, and a `Notices.md` this repository never had,
+   so its patent and withdrawal terms referred to nothing; it is not
+   OSI-approved, which a JOSS review would question; and the vendored
+   folder shipped with no license text at all. Apache-2.0 keeps the
+   patent grant, is OSI-approved, and both license texts now travel with
+   the vendored folder. Sole-author copyright made the change unilateral.
 3. **Independent implementations**: the skill's `attest.py` producer and the verifier are
    same-author implementations; the milestone is one *third-party* verifier
    or producer. The enabler shipped 2026-08-06 — `conformance/` publishes

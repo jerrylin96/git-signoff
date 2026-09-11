@@ -1,10 +1,10 @@
 # Specification: Portable Git Signoff Attestation (GSA) Protocol Core
 
-**Document Version:** 3.7.0 (approval-marker binding: a producer SHOULD require a marker naming the reviewed commit to appear in the transcript snapshot it hashes, §2.3, with an informative note in §3.1; the skill-layer environment variables are renamed `GIT_SIGNOFF_*` in §2.3 and §3.2; §4 updated for the removal of the Python reference library — the shipped producer is `attest.py` in the skill folder. Previous: 3.6.0, single-valued trailer rule and merged-note anchoring scope.)  
+**Document Version:** 3.7.1 (license only: the specification text is relicensed from the Community Specification License 1.0 to the Apache License 2.0; no normative change. Previous: 3.7.0, approval-marker binding: a producer SHOULD require a marker naming the reviewed commit to appear in the transcript snapshot it hashes, §2.3, with an informative note in §3.1; the skill-layer environment variables are renamed `GIT_SIGNOFF_*` in §2.3 and §3.2; §4 updated for the removal of the Python reference library — the shipped producer is `attest.py` in the skill folder. Previous: 3.6.0, single-valued trailer rule and merged-note anchoring scope.)  
 **Status:** Draft / Pending Review  
 **Target Scope:** `git-signoff` skill portability, producer implementations (the skill folder's `attest.py`; optionally an MCP server), Harness Adapters, Git Notes Attestation, and Open Commit Protocol Core  
 **Canonical Spec Location:** `skills/git-signoff/specs/gsa-core.md`  
-**License:** This specification is licensed under the [Community Specification License 1.0](https://github.com/jerrylin96/git-signoff/blob/main/LICENSE-SPEC) (SPDX: `Community-Spec-1.0`); the reference implementations in this repository remain MIT.  
+**License:** Copyright 2026 Jerry Lin. This specification is licensed under the [Apache License, Version 2.0](LICENSE) (SPDX: `Apache-2.0`); the reference implementations in this repository are [MIT](../LICENSE).  
 
 ---
 

@@ -39,7 +39,7 @@ Take signoff from a local experimental tool to production-ready for a growing us
   - ~~*MCP wrapper over `git_signoff/`*~~ — **closed 2026-09-09:** `git_signoff/` no longer exists; the mechanics live in `attest.py`, which any harness with a shell runs. An MCP wrapper would now wrap `attest.py` (its `prepare`/`commit` map onto §4's informative tool surface); reopen only on an adopter whose harness has no shell, or one who asks for the §4 tool surface by name.
   - *Authenticity beyond structure* (mandatory reviewer signing, or a service-created attestation per the escrow spec) — **remains open.** `attest.py` closes agent *mistakes* (wrong file, mis-derived status, skipped merge), not forgery: a malicious agent or human with push rights can still write a false attestation. Evidence: a threat model in which forgery by a compromised or prompt-injected agent matters to an adopter, i.e. someone who needs the gate to prove more than "a person with push rights asserted this".
   - *Distribution name* (only if any of the above ships a pip-installable component): `git-signoff` is rejected by PyPI as too similar to `git-sign-off`; `git-attest` was free on 2026-09-08.
-- [x] **Standardization Track**: Badge and CI verifier (`verify/`), specification licensing (`LICENSE-SPEC`), conformance vectors (`conformance/`), and in-toto predicate draft (`skills/git-signoff/specs/gsa-in-toto-predicate.md`).
+- [x] **Standardization Track**: Badge and CI verifier (`verify/`), specification licensing (Apache-2.0, `skills/git-signoff/specs/LICENSE`; CSL 1.0 from 2026-08-06 to 2026-09-11), conformance vectors (`conformance/`), and in-toto predicate draft (`skills/git-signoff/specs/gsa-in-toto-predicate.md`).
 
 ---
 

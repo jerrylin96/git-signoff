@@ -1,9 +1,9 @@
 # Draft: GSA as an in-toto Attestation Predicate Type
 
-**Document Version:** 0.1.0  
+**Document Version:** 0.1.1 (license only: relicensed from the Community Specification License 1.0 to the Apache License 2.0; no normative change. Previous: 0.1.0.)  
 **Status:** Draft / Informative (open-standard milestone 4, ecosystem interop) — not yet submitted to the in-toto attestation registry.  
 **Canonical Location:** `skills/git-signoff/specs/gsa-in-toto-predicate.md`  
-**License:** [Community Specification License 1.0](https://github.com/jerrylin96/git-signoff/blob/main/LICENSE-SPEC)  
+**License:** Copyright 2026 Jerry Lin. [Apache License, Version 2.0](LICENSE) (SPDX: `Apache-2.0`)  
 
 ## Purpose
 

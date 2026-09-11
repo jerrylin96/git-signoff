@@ -316,9 +316,9 @@ are in its history (`git log --grep='SIGNOFF'`).
 Phase 5 (tracked in [docs/roadmap.md](docs/roadmap.md))
 adds the production surface: a [project website](https://jerrylin96.github.io/git-signoff/),
 the [attested-by-humans badge + CI verifier](verify/README.md),
-automated `refs/notes/signoff` recovery, an open
-[spec license](LICENSE-SPEC) with [conformance vectors](conformance/README.md)
-for third-party implementations, and a reviewed
+automated `refs/notes/signoff` recovery, an openly licensed
+[protocol specification](skills/git-signoff/specs/gsa-core.md) with
+[conformance vectors](conformance/README.md) for third-party implementations, and a reviewed
 [transcript-escrow spec](skills/git-signoff/specs/gsa-escrow.md) whose
 privacy baseline is user-owned storage with client-side encryption.
 Cloud escrow implementation remains next.
@@ -355,9 +355,9 @@ Lin, J. (2026). git-signoff: Git Signoff Attestation (GSA) (v0.5.0) [Computer so
 All software in this repository — `init.py`, the vendored skill folder
 (`attest.py`, `verify_signoff.py`, `SKILL.md`, profiles), the composite
 action under `verify/`, the conformance vectors, tests, and site — is
-[MIT](LICENSE) licensed. Only the three protocol documents under
+[MIT](LICENSE) licensed. The three protocol documents under
 `skills/git-signoff/specs/` are licensed under the
-[Community Specification License 1.0](LICENSE-SPEC) (SPDX
-`Community-Spec-1.0`), a license written for specification text rather
-than code: it lets anyone implement, verify, or extend the protocol, and
-implementations of the specification carry no attribution obligation.
+[Apache License 2.0](skills/git-signoff/specs/LICENSE), which adds an
+explicit patent grant for anyone implementing the protocol. Both licenses
+are OSI-approved, and both texts ship inside the vendored skill folder so
+every adopter's copy carries its notices.

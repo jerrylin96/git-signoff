@@ -13,9 +13,10 @@ initializer, the producer, and the verifier are standard-library scripts
    and `verify_signoff.py`, so relative links (e.g. `specs/gsa-core.md`) keep
    resolving and the helper finds its sibling verifier. Never copy `SKILL.md`
    alone. Licensing inside the folder: `attest.py`, `verify_signoff.py`, and
-   the Markdown guidance are MIT like the rest of the repository's code; the
-   documents under `specs/` are under the Community Specification License 1.0
-   (stated in each file). Neither license covers the other's files.
+   the Markdown guidance are MIT like the rest of the repository's code
+   (`LICENSE` in this folder); the documents under `specs/` are under the
+   Apache License 2.0 (`specs/LICENSE`, stated in each file). Neither license
+   covers the other's files.
 2. **All links are relative** — enforced by `scripts/tests/test_skill_references.py`
    (no `file://` links).
 3. **Cross-skill references degrade gracefully outside Antigravity.** On

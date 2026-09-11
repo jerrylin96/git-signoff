@@ -12,7 +12,9 @@ authors:
 version: 0.5.0
 doi: 10.5281/zenodo.22683016
 date-released: 2026-09-10
-license: MIT
+license:
+  - MIT
+  - Apache-2.0
 repository-code: "https://github.com/jerrylin96/git-signoff"
 url: "https://jerrylin96.github.io/git-signoff/"
 keywords:
