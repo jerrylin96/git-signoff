@@ -11,6 +11,9 @@ This document tracks development milestones, retrospective phase gate logs, and 
 
 ## 1. Active Backlog & Ongoing Phases
 
+### Attest any target, from anywhere (design, not started)
+A reviewer working from the integration branch could not use `/git-signoff`, and three code paths decide what the integration branch is. Draft design with settled positions and open trade-offs: [`docs/attest-any-target.md`](attest-any-target.md). Ships as `init-v8` and gsa-core 3.8.0 once the open items are decided.
+
 ### Phase 3f (Adaptive Signoff Interview Intensity)
 - [x] **Prompt-Level Implementation**: Dynamic auto-classification of interview intensity based on diff semantics and blast radius when bare `/git-signoff` is invoked without explicit modifiers: Tier 0 (`cursory` for pure docs/types <50 LoC), Tier 1 (`standard` for default feature work, with pure docs of any size capped at Tier 1), and Tier 2 (`skeptical` for high-impact changes: security/auth, schema/migrations, public APIs, numerical/science invariants, or >200 LoC / >5 files). Safety clamps strictly block `--quick` on high-impact diffs and enforce graduated one-way escalation.
 - [x] **Contract Test**: Enforced by `scripts/tests/test_skill_references.py::test_signoff_phase3f_adaptive_intensity_contract`.
