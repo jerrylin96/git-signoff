@@ -469,7 +469,7 @@ def detect_science_signals(diff: str) -> list[str]:
 
 
 DOC_SUFFIXES = {".md", ".markdown", ".rst", ".txt", ".adoc"}
-DOC_BASENAMES = {"LICENSE", "LICENSE-SPEC", "NOTICE", "CHANGELOG", "AUTHORS", "CODEOWNERS"}
+DOC_BASENAMES = {"LICENSE", "NOTICE", "CHANGELOG", "AUTHORS", "CODEOWNERS"}
 LOCKFILE_RE = re.compile(r"(^|/)(package-lock\.json|yarn\.lock|pnpm-lock\.yaml|poetry\.lock|Cargo\.lock|uv\.lock|Pipfile\.lock)$")
 TEST_PATH_RE = re.compile(r"(^|/)(tests?|__tests__|spec)/|(^|/)test_[^/]*$|(_test|\.test|_spec|\.spec)\.[A-Za-z0-9]+$")
 
