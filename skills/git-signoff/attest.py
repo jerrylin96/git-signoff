@@ -518,8 +518,9 @@ def detect_science_signals(diff: str) -> list[str]:
     return sorted(name for name, pattern in SCIENCE_SIGNAL_PATTERNS.items() if pattern.search(diff))
 
 
-DOC_SUFFIXES = {".md", ".markdown", ".rst", ".txt", ".adoc"}
+DOC_SUFFIXES = {".md", ".markdown", ".rst", ".txt", ".adoc", ".cff", ".html", ".css", ".svg"}
 DOC_BASENAMES = {"LICENSE", "NOTICE", "CHANGELOG", "AUTHORS", "CODEOWNERS"}
+DOC_BASENAME_PREFIXES = ("LICENSE", "NOTICE", "COPYING")  # LICENSE-APACHE, NOTICE.txt, COPYING.LESSER, ...
 LOCKFILE_RE = re.compile(r"(^|/)(package-lock\.json|yarn\.lock|pnpm-lock\.yaml|poetry\.lock|Cargo\.lock|uv\.lock|Pipfile\.lock)$")
 TEST_PATH_RE = re.compile(r"(^|/)(tests?|__tests__|spec)/|(^|/)test_[^/]*$|(_test|\.test|_spec|\.spec)\.[A-Za-z0-9]+$")
 
@@ -536,7 +537,11 @@ TIER2_CONTENT_TRIGGERS: tuple[tuple[str, re.Pattern], ...] = (
 
 def _is_doc_path(path: str) -> bool:
     name = os.path.basename(path)
-    return name in DOC_BASENAMES or os.path.splitext(name)[1].lower() in DOC_SUFFIXES
+    return (
+        name in DOC_BASENAMES
+        or name.startswith(DOC_BASENAME_PREFIXES)
+        or os.path.splitext(name)[1].lower() in DOC_SUFFIXES
+    )
 
 
 def _is_test_path(path: str) -> bool:

@@ -363,6 +363,9 @@ def test_intensity_hints_components_scale_the_skeptical_floor():
         "2\t2\t.github/workflows/tag.yml\n"
         "100\t0\tscripts/tests/test_attest.py\n"
         "200\t0\tdocs/attest-any-target.md\n"
+        "0\t293\tLICENSE-SPEC\n"          # a license file, whatever its suffix, is not a component
+        "4\t1\tCITATION.cff\n"
+        "3\t3\tsite/index.html\n"
     )
     hints = attest.intensity_hints(numstat, "", [])
     assert hints["components"] == [".github/workflows", "init.py", "scripts", "skills/git-signoff", "verify"]
