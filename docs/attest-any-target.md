@@ -1,6 +1,6 @@
 # Design: attest any target, from anywhere
 
-**Status:** Draft for discussion. Nothing here is implemented. Sections marked
+**Status:** Draft for discussion, revised 2026-09-16 after a second review pass. Nothing here is implemented. Sections marked
 *settled* are positions we are confident in; sections marked *open* list the
 alternatives and what each costs. Decide the open items, then this document
 becomes the change list for `gsa-core.md` (a minor version), `SKILL.md`,
@@ -87,14 +87,31 @@ the producer already resolves this reference today. `SKILL.md`'s
 "Worktree Target Mandate" is rewritten to say exactly this instead of
 "strictly prohibited".
 
-### 2.5 Stale-state check, translated
+### 2.5 Stale-state check and commit ordering, translated
 
 Today's circuit breaker protects one property: the interview covered the
 committed state. In target mode the equivalent is a fetch immediately
-before commit, then `local <target> == origin/<target> == reviewed SHA`.
-The reviewer's own working tree is irrelevant and is not checked. The push
-is a plain fast-forward, so a concurrent push by the author rejects it and
-the producer rolls back, which is the same failure shape as today's exit 3.
+before commit, then `origin/<target> == reviewed SHA`. The reviewer's own
+working tree is irrelevant and is not checked.
+
+The producer then works in an order that makes rollback of a pushed
+attestation unnecessary:
+
+1. Build the attestation commit object with `git commit-tree` (`-S` when a
+   signing key is configured). No ref points at it yet.
+2. Run the verifier self-check against that object.
+3. Push it to `refs/heads/<target>` with
+   `--force-with-lease=refs/heads/<target>:<reviewed SHA>`, last. The
+   lease is a compare-and-swap against the tip the interview covered: a
+   concurrent push by the author, or a rewind of the branch, rejects it.
+4. Write the notes, merge with `cat_sort_uniq`, push them. A refused notes
+   push is reported and tolerated, as today.
+
+If anything before step 3 fails, nothing has to be undone: an unreferenced
+object is garbage. Only a failed notes push after a successful branch push
+leaves partial state, and that is the state the recovery workflow already
+handles. This is the same failure shape as today's exit 3 for the race and
+strictly less to clean up than today's local rollback path.
 
 ### 2.6 Enforcement strength is a GitHub fact, not a design choice
 
@@ -118,10 +135,39 @@ inside this constraint.
 
 ### 2.8 Release shape
 
-`init.py` changes ship as `init-v8`. If the verifier and composite action
-are untouched, `verify-v1.4` stands; §3.3 is the one open item that would
-force `verify-v1.5`. `gsa-core.md` goes to 3.8.0: producer behaviour is
-generalised, no trailer changes.
+`init.py` changes ship as `init-v8`. `gsa-core.md` goes to 3.8.0: producer
+behaviour is generalised, no trailer changes. If §3.3 resolves as
+recommended, the composite action's default changes and ships as
+`verify-v1.5`.
+
+### 2.9 Target parsing
+
+`<target>` accepts `feature`, `origin/feature`, or `refs/heads/feature`
+and resolves to `refs/remotes/origin/feature` after a fetch. The remote is
+`origin`, as it is for notes today. A target that does not exist on the
+remote is an error, not a local fallback: the PR check reads the remote.
+
+### 2.10 Reference precedence
+
+For the bare command (target is HEAD), in order: `--reference`; a usable
+upstream (`HEAD@{upstream}` when it is behind HEAD, which is the
+direct-push case of §2.4 and what makes a stacked branch diff against its
+own base); `integration_branch` from `.git-signoff/config.json`;
+`origin/HEAD`; `main`, then `master`. For an explicit target the upstream
+step is skipped, because a feature branch's upstream is its own remote
+counterpart. The first two steps are today's behaviour; the config file
+and `origin/HEAD` are new, and a repository without a config file resolves
+exactly as it does now.
+
+### 2.11 Local state is untouched in target mode
+
+The producer never updates `refs/heads/<target>` locally. The reviewer's
+local copy of that branch, if any, fast-forwards on their next pull.
+Reason: the branch may be checked out in another worktree, and moving its
+HEAD from outside is what `git branch -f` refuses to do. The empty commit
+would not corrupt files there, but it would move a HEAD nobody asked to
+move. The bare command with HEAD as the target keeps updating the local
+branch, since that is today's behaviour and the reviewer is on it.
 
 ---
 
@@ -173,6 +219,15 @@ the badge green forever.
 Head mode on push is the only option under which §3.2's bypass path means
 anything. If §3.2 chooses plain Enforce, this item matters less.
 
+**Recommendation:** head mode as the new default, shipped as `verify-v1.5`.
+For a strictly enforced repository every push to the integration branch
+is an attested PR merge, so head mode is always green and costs nothing.
+For an advisory or bypass repository it is the entire point. History mode
+wins only during migration, when an adopter with unattested history is red
+until the first attestation lands; the verifier's failure line should name
+the command to run. History mode stays available as an explicit input;
+`require` applies only to it.
+
 ### 3.4 What the base is in target mode
 
 Proposed: the configured integration branch. Alternative: the pull
@@ -194,13 +249,10 @@ human email. Options: leave as is; or set author from the confirmed email
 when the harness is a cloud session. The second is small but touches
 provenance semantics and belongs in the spec if done.
 
-### 3.6 Local state of the target branch
+### 3.6 Local state of the target branch — settled, see §2.11
 
-The reviewer may have no local branch for the target, or a stale one.
-Proposed: operate on `refs/remotes/origin/<target>` after a fetch, push,
-and then fast-forward the local branch only if it exists and pointed at
-the old tip. Alternative: require a local branch. The first is
-friendlier; the second is simpler to reason about and test. Lean first.
+Resolved 2026-09-16 as remote-only. Kept here so the numbering of earlier
+discussion still resolves.
 
 ### 3.7 Config file schema and growth
 
@@ -211,13 +263,21 @@ the same change as its first reader. Also decide the file's relationship
 to `.git-signoff/profile.md` (sibling, not merged) and whether
 `init.py` rewrites it on re-run (proposed: yes, after confirming).
 
-### 3.8 The listing when nothing qualifies
+### 3.8 Listing heuristic, and the empty list
 
-If the candidate list is empty (all branches merged or unattestable), the
-skill needs a next step for the human. Options: say so and stop; or fall
-back to asking for a branch name; or offer `--reference` for the
-direct-push case. Small, but it is the first thing a confused new user
-sees.
+How many candidates, and chosen how?
+
+| Option | Behaviour | Costs |
+|---|---|---|
+| **Count cap** (recommended) | The ten most recent by commit date, each shown with its date; `--all` lists every candidate. | A very active repository may push the wanted branch off the list; the date column and `--all` cover it. |
+| **Time window** | Branches touched in the last N days. | Fails in the setting this feature is for: a lab branch last touched six weeks ago is often the one the lead reviews late, and it would be hidden with no hint that anything was hidden. |
+
+If the list is empty (everything merged, or nothing has a remote
+counterpart), the skill needs a next step for the human. Options: say so
+and stop; fall back to asking for a branch name; offer `--reference` for
+the direct-push case of §2.4. Small, but it is the first thing a confused
+new user sees. Lean: state the reason the list is empty, then ask for a
+name.
 
 ---
 
@@ -244,11 +304,11 @@ or §5 (lookup order) unless §3.1 chooses B.
 - `attest.py`: `prepare`/`commit`/`marker` gain `--target <branch>`;
   `prepare` gains `--list-targets`; a `TargetRef` abstraction replaces
   the HEAD assumptions (`_check_clean_tree` becomes
-  `_check_target_unmoved`); commit path uses `commit-tree` + `update-ref`
-  + `push`; rollback deletes the pushed commit by pushing the old tip
-  (fast-forward is impossible, so rollback of a *pushed* attestation is a
-  `--force-with-lease` to the previous SHA, which needs its own decision:
-  do we ever force-push someone else's branch, even back to where it was?).
+  `_check_target_unmoved`); commit path uses `commit-tree`, verifier
+  self-check, then a lease push of the object to the remote branch, in
+  the order of §2.5, with no local ref update (§2.11), so a pushed
+  attestation never needs rolling back; `--list-targets` implements
+  §2.2 and §3.8.
 - `init.py`: integration-branch confirmation, config write, ruleset
   `ref_name` from config, `init-v8`.
 - `SKILL.md`: Section 1 gains the on-integration-branch listing step;
