@@ -1,7 +1,8 @@
 # Design: attest any target, from anywhere
 
-**Status:** Decided; revised 2026-09-16 a fifth time after three external
-review passes that reproduced failures against the current code. The
+**Status:** Ready for implementation (external review, 2026-09-16, no
+remaining design blockers). Revised five times after three review passes
+that reproduced failures against the current code. The
 producer bug and its follow-up (§2.12) and the recovery hardening (§2.13)
 are fixed on this branch; the rest of this document is not implemented,
 and the verifier pin is held until §2.13's boundaries are implemented and
@@ -543,8 +544,10 @@ The target-mode deltas below build on that wording.
   Still read-only; the MUST NOT mutate rule stands.
 - **SKILL.md Worktree Target Mandate** → the rule in §2.4 above.
 
-No change to §2.1–§2.4 (schema, status, field rules, identity binding)
-or §5 (lookup order) unless §3.1 chooses B.
+No change to §2.1–§2.4 (schema, status, field rules, identity binding).
+§5.1's lookup order is amended only as stated above: the same three
+steps, with the integrity and eligibility conditions on what steps 2 and 3
+may consult, and the sentence on what a cross-history match establishes.
 
 ## 5. Implementation sketch
 
