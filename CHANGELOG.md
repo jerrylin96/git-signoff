@@ -7,9 +7,22 @@ dates on `origin`.
 
 ## Unreleased
 
+- **Fixed** `attest.py commit` attesting a commit the interview never covered
+  when no transcript was available. `commit` re-ran `prepare` and took
+  whatever HEAD was; only the transcript's approval marker tied it to the
+  reviewed commit, so with `--ack-no-transcript` a commit added after the
+  interview was attested with exit 0 (reproduced; found in external review
+  2026-09-16). `prepare` now writes `.git/git-signoff/prepared.json`
+  (reviewed, base and tree SHAs, reference, timestamp, resolved profile) and
+  `commit` attests exactly that record: no record, a moved HEAD or tree, or a
+  changed interview profile is exit 3, with or without a transcript; a
+  `--reference` at commit must resolve to the recorded one (else exit 2); the
+  base in the trailers is the recorded one even if the reference moved during
+  the interview. A successful commit removes the record; `marker` reprints the
+  recorded marker. Spec `gsa-core.md` 3.7.2 (informative §4.1).
 - **Changed** the license of the three specification documents under
   `skills/git-signoff/specs/` from the Community Specification License 1.0
-  to the Apache License 2.0 (`gsa-core.md` 3.7.1, `gsa-escrow.md` 1.0.1,
+  to the Apache License 2.0 (`gsa-core.md` 3.7.1, since superseded by 3.7.2 above, `gsa-escrow.md` 1.0.1,
   `gsa-in-toto-predicate.md` 0.1.1; no normative change). `LICENSE-SPEC` is
   removed; the Apache text lives at `skills/git-signoff/specs/LICENSE` and a
   copy of the MIT `LICENSE` at `skills/git-signoff/LICENSE`, so the vendored

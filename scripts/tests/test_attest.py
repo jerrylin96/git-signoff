@@ -32,6 +32,15 @@ def _tree(repo):
     return git(repo, "rev-parse", "HEAD^{tree}").stdout.strip()
 
 
+def _prepared(repo, reference="main", **kwargs):
+    """Run prepare in-process so the preparation record `commit` requires exists."""
+    return attest.prepare(str(repo), reference, **kwargs)
+
+
+def _record(repo):
+    return repo / ".git" / "git-signoff" / "prepared.json"
+
+
 def _transcript(tmp_path, repo, extra=b"", name="transcript.jsonl", with_marker=True, sha=None):
     """Transcript file whose tail carries the approval marker for HEAD (or `sha`)."""
     body = b'{"role":"user","content":"hi"}\n{"role":"assistant","model":"model-from-transcript","content":"ok"}\n'
@@ -236,6 +245,7 @@ def test_prepare_refuses_when_head_is_already_an_attestation(scratch_repo, tmp_p
     attestation at HEAD), re-running prepare must stop rather than set up an
     attestation of the attestation, which the verifier would pass."""
     reviewed = _head(scratch_repo)
+    _prepared(scratch_repo)
     t = _transcript(tmp_path, scratch_repo)
     code, _, err = run(
         monkeypatch, capsys, scratch_repo, "commit", "--email", "dev@example.com", "--level", "standard",
@@ -342,6 +352,7 @@ def test_intensity_hints_blast_radius_and_renames():
 
 
 def test_commit_happy_path_with_marker(scratch_repo, tmp_path, monkeypatch, capsys):
+    _prepared(scratch_repo)
     reviewed, tree = _head(scratch_repo), _tree(scratch_repo)
     t = _transcript(tmp_path, scratch_repo)
     data_bytes = t.read_bytes()
@@ -385,6 +396,7 @@ def test_commit_happy_path_with_marker(scratch_repo, tmp_path, monkeypatch, caps
 
 
 def test_commit_human_output(scratch_repo, tmp_path, monkeypatch, capsys):
+    _prepared(scratch_repo)
     t = _transcript(tmp_path, scratch_repo)
     code, out, _ = run(
         monkeypatch, capsys, scratch_repo, "commit", "--email", "dev@example.com", "--level", "cursory",
@@ -399,6 +411,7 @@ def test_commit_human_output(scratch_repo, tmp_path, monkeypatch, capsys):
 
 
 def test_commit_none_rules_for_empty_tradeoffs_and_risks(scratch_repo, tmp_path, monkeypatch, capsys):
+    _prepared(scratch_repo)
     t = _transcript(tmp_path, scratch_repo)
     code, data, _ = run_json(
         monkeypatch, capsys, scratch_repo, "commit", "--email", "dev@example.com", "--level", "standard",
@@ -410,6 +423,7 @@ def test_commit_none_rules_for_empty_tradeoffs_and_risks(scratch_repo, tmp_path,
 
 
 def test_commit_provenance_from_claude_code_env(scratch_repo, tmp_path, monkeypatch, capsys):
+    _prepared(scratch_repo)
     t = _transcript(tmp_path, scratch_repo)
     code, data, _ = run_json(
         monkeypatch, capsys, scratch_repo, "commit", "--email", "dev@example.com", "--level", "skeptical",
@@ -431,6 +445,7 @@ def test_commit_provenance_from_claude_code_env(scratch_repo, tmp_path, monkeypa
 
 
 def test_commit_version_and_reasoning_are_scoped_to_claude_code(scratch_repo, tmp_path, monkeypatch, capsys):
+    _prepared(scratch_repo)
     t = _transcript(tmp_path, scratch_repo)
     code, data, _ = run_json(
         monkeypatch, capsys, scratch_repo, "commit", "--email", "dev@example.com", "--level", "standard",
@@ -442,6 +457,7 @@ def test_commit_version_and_reasoning_are_scoped_to_claude_code(scratch_repo, tm
 
 
 def test_commit_model_self_report_is_last_resort(scratch_repo, tmp_path, monkeypatch, capsys):
+    _prepared(scratch_repo)
     t = tmp_path / "t.jsonl"
     t.write_bytes(b"no model field here\n" + f"GSA-APPROVAL {_head(scratch_repo)} 2026-09-09T00:00:00Z\n".encode())
     code, data, _ = run_json(
@@ -450,6 +466,7 @@ def test_commit_model_self_report_is_last_resort(scratch_repo, tmp_path, monkeyp
     )
     assert code == 0 and "model=self-reported-model" in data["message"]
     git(scratch_repo, "reset", "-q", "--hard", "HEAD~1")
+    _prepared(scratch_repo)
     t2 = _transcript(tmp_path, scratch_repo)  # transcript carries a model field: it beats the self-report
     code, data, _ = run_json(
         monkeypatch, capsys, scratch_repo, "commit", "--email", "dev@example.com", "--level", "standard",
@@ -466,6 +483,7 @@ def test_commit_repo_local_profile_digest_in_agent_token(scratch_repo, tmp_path,
     )
     git(scratch_repo, "add", ".")
     git(scratch_repo, "commit", "-q", "-m", "profile")
+    _prepared(scratch_repo)
     t = _transcript(tmp_path, scratch_repo)
     code, data, _ = run_json(
         monkeypatch, capsys, scratch_repo, "commit", "--email", "dev@example.com", "--level", "standard",
@@ -480,6 +498,7 @@ def test_commit_repo_local_profile_digest_in_agent_token(scratch_repo, tmp_path,
 
 
 def test_commit_refuses_transcript_without_marker(scratch_repo, tmp_path, monkeypatch, capsys):
+    _prepared(scratch_repo)
     head = _head(scratch_repo)
     t = _transcript(tmp_path, scratch_repo, with_marker=False)
     code, data, err = run_json(
@@ -495,6 +514,7 @@ def test_commit_refuses_transcript_without_marker(scratch_repo, tmp_path, monkey
 
 
 def test_commit_refuses_marker_for_an_unrelated_commit(scratch_repo, tmp_path, monkeypatch, capsys):
+    _prepared(scratch_repo)
     head = _head(scratch_repo)
     other = "f" * 40
     t = _transcript(tmp_path, scratch_repo, sha=other)
@@ -510,6 +530,7 @@ def test_commit_refuses_marker_for_an_unrelated_commit(scratch_repo, tmp_path, m
 def test_commit_stale_when_marker_names_an_earlier_commit_on_this_branch(scratch_repo, tmp_path, monkeypatch, capsys):
     """prepare ran, the human approved, then the branch moved: the marker names
     an ancestor of HEAD — stale (exit 3), not a wrong file (exit 4)."""
+    _prepared(scratch_repo)
     prepared = _head(scratch_repo)
     t = _transcript(tmp_path, scratch_repo, sha=prepared)
     commit_file(scratch_repo, "later.txt", "x\n", "moves HEAD after prepare")
@@ -523,6 +544,7 @@ def test_commit_stale_when_marker_names_an_earlier_commit_on_this_branch(scratch
 
 
 def test_commit_last_marker_governs(scratch_repo, tmp_path, monkeypatch, capsys):
+    _prepared(scratch_repo)
     head = _head(scratch_repo)
     t = tmp_path / "t.jsonl"
     t.write_bytes(
@@ -536,6 +558,7 @@ def test_commit_last_marker_governs(scratch_repo, tmp_path, monkeypatch, capsys)
 
 
 def test_commit_marker_outside_last_64kib_is_not_found(scratch_repo, tmp_path, monkeypatch, capsys):
+    _prepared(scratch_repo)
     head = _head(scratch_repo)
     marker = f"GSA-APPROVAL {head} 2026-09-09T00:00:00Z\n".encode()
     t = tmp_path / "t.jsonl"
@@ -581,6 +604,7 @@ def test_commit_retries_once_for_a_late_flush(scratch_repo, tmp_path, monkeypatc
             return b"first read\n" if self.reads <= 2 else f"first read\nGSA-APPROVAL {head} 2026-09-09T00:00:00Z\n".encode()
 
     adapter = LateAdapter()
+    _prepared(scratch_repo, env={}, adapter=adapter)
     opts = attest.CommitOptions(email="dev@example.com", level="standard", reference="main", push=False)
     result = attest.commit(str(scratch_repo), opts, env={}, adapter=adapter)
     assert result.marker_found and adapter.reads == 3 and sleeps == [0.25]
@@ -597,10 +621,146 @@ def test_marker_survives_json_encoding_in_a_jsonl_transcript(scratch_repo):
     assert check.found and check.sha == head
 
 
+# --- commit: the preparation record --------------------------------------------------
+
+
+def test_prepare_writes_record_and_commit_clears_it(scratch_repo, tmp_path, monkeypatch, capsys):
+    code, data, _ = run_json(monkeypatch, capsys, scratch_repo, "prepare", "--reference", "main")
+    assert code == 0
+    rec_path = _record(scratch_repo)
+    assert data["record"] == str(rec_path) and rec_path.is_file()
+    rec = json.loads(rec_path.read_text())
+    assert rec["record_version"] == 1
+    assert rec["reviewed_commit_sha"] == _head(scratch_repo) and rec["tree_sha"] == _tree(scratch_repo)
+    assert rec["base_sha"] == git(scratch_repo, "rev-parse", "main").stdout.strip()
+    assert rec["reference"] == "main" and rec["profile"]["id"] == "software-general"
+    assert f"GSA-APPROVAL {rec['reviewed_commit_sha']} {rec['prepared_at']}" == data["marker"]
+    code, out, _ = run(monkeypatch, capsys, scratch_repo, "prepare", "--reference", "main")
+    assert f"prepared state recorded: {rec_path}" in out
+    t = _transcript(tmp_path, scratch_repo)
+    code, _, err = run(
+        monkeypatch, capsys, scratch_repo, "commit", "--email", "dev@example.com", "--level", "standard",
+        "--reference", "main", "--no-push", env={"GIT_SIGNOFF_TRANSCRIPT_FILE": str(t)},
+    )
+    assert code == 0, err
+    assert not rec_path.exists()  # attested: the next interview starts from prepare
+
+
+def test_commit_without_record_is_stale_and_writes_nothing(scratch_repo, tmp_path, monkeypatch, capsys):
+    head = _head(scratch_repo)
+    t = _transcript(tmp_path, scratch_repo)
+    code, _, err = run(
+        monkeypatch, capsys, scratch_repo, "commit", "--email", "dev@example.com", "--level", "standard",
+        "--reference", "main", "--no-push", env={"GIT_SIGNOFF_TRANSCRIPT_FILE": str(t)},
+    )
+    assert code == 3 and "no preparation record" in err and "attest.py prepare" in err
+    assert _head(scratch_repo) == head
+    assert git(scratch_repo, "notes", "--ref=signoff", "list", check=False).stdout.strip() == ""
+
+
+def test_commit_without_transcript_refuses_a_head_that_moved_after_prepare(scratch_repo, monkeypatch, capsys):
+    """External review 2026-09-16: prepare on A, add B, commit --ack-no-transcript
+    attested B — with no transcript there was no marker to tie commit to A.
+    The record ties it regardless of transcript availability."""
+    prepared = _head(scratch_repo)
+    _prepared(scratch_repo)
+    later = commit_file(scratch_repo, "later.txt", "x\n", "never reviewed")
+    code, _, err = run(
+        monkeypatch, capsys, scratch_repo, "commit", "--email", "dev@example.com", "--level", "standard",
+        "--reference", "main", "--no-push", "--ack-no-transcript",
+    )
+    assert code == 3
+    assert "stale" in err and prepared in err and later in err
+    assert _head(scratch_repo) == later  # no attestation commit
+    assert git(scratch_repo, "notes", "--ref=signoff", "list", check=False).stdout.strip() == ""
+    assert _record(scratch_repo).is_file()  # a refusal keeps the record; prepare overwrites it
+
+
+def test_commit_refuses_when_the_profile_changed_after_prepare(scratch_repo, tmp_path, monkeypatch, capsys):
+    """An untracked .git-signoff/profile.md dropped in mid-interview is not a
+    dirty tree, but it changes which questions the attestation claims were
+    asked: refused until prepare runs again against the new profile."""
+    _prepared(scratch_repo)
+    t = _transcript(tmp_path, scratch_repo)
+    d = scratch_repo / ".git-signoff"
+    d.mkdir()
+    (d / "profile.md").write_text(
+        "<!-- INTERVIEW-PROFILE:BEGIN -->\nProfile-ID: swapped-in\n<!-- INTERVIEW-PROFILE:END -->\n", encoding="utf-8"
+    )
+    code, _, err = run(
+        monkeypatch, capsys, scratch_repo, "commit", "--email", "dev@example.com", "--level", "standard",
+        "--reference", "main", "--no-push", env={"GIT_SIGNOFF_TRANSCRIPT_FILE": str(t)},
+    )
+    assert code == 3 and "profile changed" in err and "software-general from embedded-default" in err
+    assert "swapped-in from repo-local" in err
+    assert git(scratch_repo, "notes", "--ref=signoff", "list", check=False).stdout.strip() == ""
+    _prepared(scratch_repo)  # re-prepared against the new profile: accepted, and recorded in the agent token
+    code, data, err = run_json(
+        monkeypatch, capsys, scratch_repo, "commit", "--email", "dev@example.com", "--level", "standard",
+        "--reference", "main", "--no-push", env={"GIT_SIGNOFF_TRANSCRIPT_FILE": str(t)},
+    )
+    assert code == 0, err
+    assert "interview=standard/swapped-in/sha256:" in data["message"]
+
+
+def test_commit_reference_must_agree_with_the_prepared_reference(scratch_repo, tmp_path, monkeypatch, capsys):
+    _prepared(scratch_repo, "main")
+    t = _transcript(tmp_path, scratch_repo)
+    code, _, err = run(
+        monkeypatch, capsys, scratch_repo, "commit", "--email", "dev@example.com", "--level", "standard",
+        "--reference", "feature", "--no-push", env={"GIT_SIGNOFF_TRANSCRIPT_FILE": str(t)},
+    )
+    assert code == 2 and "differs from the prepared reference 'main'" in err
+    # an equivalent spelling of the same commit is fine
+    code, _, err = run(
+        monkeypatch, capsys, scratch_repo, "commit", "--email", "dev@example.com", "--level", "standard",
+        "--reference", "HEAD~1", "--no-push", env={"GIT_SIGNOFF_TRANSCRIPT_FILE": str(t)},
+    )
+    assert code == 0, err
+
+
+def test_commit_attests_the_recorded_base_not_a_moved_reference(scratch_repo, tmp_path, monkeypatch, capsys):
+    """If main advances during the interview, the attestation still carries the
+    base the interview was conducted against; the trailers describe the range
+    the human actually saw."""
+    _prepared(scratch_repo, "main")
+    base = git(scratch_repo, "rev-parse", "main").stdout.strip()
+    git(scratch_repo, "branch", "-f", "main", "feature")  # main now contains HEAD
+    t = _transcript(tmp_path, scratch_repo)
+    code, data, err = run_json(
+        monkeypatch, capsys, scratch_repo, "commit", "--email", "dev@example.com", "--level", "standard",
+        "--no-push", env={"GIT_SIGNOFF_TRANSCRIPT_FILE": str(t)},
+    )
+    assert code == 0, err
+    assert attest.parse_trailers(data["message"])["Signoff-Base-SHA"] == [base]
+
+
+def test_marker_command_reprints_the_recorded_marker(scratch_repo, monkeypatch, capsys):
+    code, data, _ = run_json(monkeypatch, capsys, scratch_repo, "prepare", "--reference", "main")
+    assert code == 0
+    code, out, _ = run(monkeypatch, capsys, scratch_repo, "marker")
+    assert code == 0 and out.strip() == data["marker"]  # same timestamp: the recorded one, not a fresh prepare
+    commit_file(scratch_repo, "later.txt", "x\n", "moves HEAD")
+    code, out, _ = run(monkeypatch, capsys, scratch_repo, "marker", "--reference", "main")
+    assert code == 0 and out.strip().split()[1] == _head(scratch_repo)  # stale record: re-prepared for the new HEAD
+    assert json.loads(_record(scratch_repo).read_text())["reviewed_commit_sha"] == _head(scratch_repo)
+
+
+def test_record_lives_in_the_worktree_git_dir(scratch_repo, tmp_path, monkeypatch, capsys):
+    wt = tmp_path / "wt"
+    git(scratch_repo, "worktree", "add", "-q", str(wt), "-b", "wt-branch", "feature")
+    commit_file(wt, "wt.txt", "w\n", "worktree commit")
+    code, data, _ = run_json(monkeypatch, capsys, wt, "prepare", "--reference", "main")
+    assert code == 0
+    assert data["record"].startswith(str((scratch_repo / ".git" / "worktrees").resolve())) or "worktrees" in data["record"]
+    assert not _record(scratch_repo).exists()  # the primary checkout's record is untouched
+
+
 # --- commit: no-transcript path ---------------------------------------------------
 
 
 def test_commit_without_transcript_requires_ack(scratch_repo, tmp_path, monkeypatch, capsys):
+    _prepared(scratch_repo)
     head = _head(scratch_repo)
     code, _, err = run(
         monkeypatch, capsys, scratch_repo, "commit", "--email", "dev@example.com", "--level", "standard",
@@ -611,6 +771,7 @@ def test_commit_without_transcript_requires_ack(scratch_repo, tmp_path, monkeypa
 
 
 def test_commit_without_transcript_downgrades_with_ack_and_skips_marker(scratch_repo, tmp_path, monkeypatch, capsys):
+    _prepared(scratch_repo)
     code, data, err = run_json(
         monkeypatch, capsys, scratch_repo, "commit", "--email", "dev@example.com", "--level", "standard",
         "--reference", "main", "--no-push", "--ack-no-transcript",
@@ -673,6 +834,7 @@ def test_commit_requires_level_and_email(scratch_repo, monkeypatch, capsys):
 
 
 def test_commit_allows_multiline_summary_without_trailer_lines(scratch_repo, tmp_path, monkeypatch, capsys):
+    _prepared(scratch_repo)
     t = _transcript(tmp_path, scratch_repo)
     code, data, _ = run_json(
         monkeypatch, capsys, scratch_repo, "commit", "--email", "dev@example.com", "--level", "standard",
@@ -685,6 +847,7 @@ def test_commit_allows_multiline_summary_without_trailer_lines(scratch_repo, tmp
 
 
 def test_commit_refuses_dirty_tree(scratch_repo, tmp_path, monkeypatch, capsys):
+    _prepared(scratch_repo)
     t = _transcript(tmp_path, scratch_repo)
     (scratch_repo / "feat.txt").write_text("dirty\n")
     code, _, err = run(
@@ -695,6 +858,7 @@ def test_commit_refuses_dirty_tree(scratch_repo, tmp_path, monkeypatch, capsys):
 
 
 def test_commit_dry_run_prints_message_and_creates_nothing(scratch_repo, tmp_path, monkeypatch, capsys):
+    _prepared(scratch_repo)
     head = _head(scratch_repo)
     t = _transcript(tmp_path, scratch_repo, with_marker=False)  # dry run precedes approval: no marker yet
     code, out, err = run(
@@ -721,6 +885,7 @@ def test_commit_dry_run_prints_message_and_creates_nothing(scratch_repo, tmp_pat
 
 
 def test_commit_post_commit_self_check_failure_rolls_back(scratch_repo, tmp_path, monkeypatch):
+    _prepared(scratch_repo)
     head, tree = _head(scratch_repo), _tree(scratch_repo)
     git(scratch_repo, "notes", "--ref=signoff", "add", "-m", "pre-existing note on tree", tree)
     prior_tree_note = git(scratch_repo, "notes", "--ref=signoff", "show", tree).stdout
@@ -746,6 +911,7 @@ def test_commit_post_commit_self_check_failure_rolls_back(scratch_repo, tmp_path
 
 
 def test_commit_pre_commit_structural_self_check_failure_writes_nothing(scratch_repo, tmp_path, monkeypatch):
+    _prepared(scratch_repo)
     head = _head(scratch_repo)
     t = _transcript(tmp_path, scratch_repo)
     adapter = attest.GenericFileAdapter(str(t))
@@ -770,6 +936,7 @@ def test_commit_pre_commit_structural_self_check_failure_writes_nothing(scratch_
 def test_commit_integrity_failure_rolls_back(scratch_repo, tmp_path, monkeypatch):
     """If the commit lands with a different tree (simulated by a post-commit
     hook amending it), the helper removes it and exits 7."""
+    _prepared(scratch_repo)
     head = _head(scratch_repo)
     hook = scratch_repo / ".git" / "hooks" / "post-commit"
     hook.write_text("#!/bin/sh\nif [ -z \"$GSA_IN_HOOK\" ]; then echo smuggled > smuggled.txt; git add smuggled.txt; GSA_IN_HOOK=1 git commit -q --amend --no-edit; fi\n")
@@ -787,6 +954,7 @@ def test_commit_integrity_failure_rolls_back(scratch_repo, tmp_path, monkeypatch
 def test_rollback_failure_is_reported_not_claimed(scratch_repo, tmp_path, monkeypatch):
     """If `git reset --soft HEAD~1` fails inside the rollback, the exit-7 message
     must say ROLLBACK INCOMPLETE and name the step, never "commit removed"."""
+    _prepared(scratch_repo)
     head = _head(scratch_repo)
     t = _transcript(tmp_path, scratch_repo)
     adapter = attest.GenericFileAdapter(str(t))
@@ -822,6 +990,7 @@ def test_rollback_failure_is_reported_not_claimed(scratch_repo, tmp_path, monkey
 
 
 def test_rollback_success_message_is_unqualified(scratch_repo, tmp_path, monkeypatch):
+    _prepared(scratch_repo)
     t = _transcript(tmp_path, scratch_repo)
     adapter = attest.GenericFileAdapter(str(t))
 
@@ -873,6 +1042,7 @@ def repo_with_origin(tmp_path):
 
 def test_commit_pushes_notes_by_default(repo_with_origin, tmp_path, monkeypatch, capsys):
     work, origin = repo_with_origin
+    _prepared(work, None)
     t = _transcript(tmp_path, work)
     code, data, err = run_json(
         monkeypatch, capsys, work, "commit", "--email", "dev@example.com", "--level", "standard",
@@ -889,6 +1059,7 @@ def test_commit_pushes_notes_by_default(repo_with_origin, tmp_path, monkeypatch,
 
 def test_commit_reports_refused_notes_push_and_exits_zero(repo_with_origin, tmp_path, monkeypatch, capsys):
     work, origin = repo_with_origin
+    _prepared(work, None)
     hook = origin / "hooks" / "pre-receive"
     hook.write_text("#!/bin/sh\necho 'remote: notes refs are not accepted here (403)' >&2\nexit 1\n")
     hook.chmod(0o755)
@@ -906,6 +1077,7 @@ def test_commit_reports_refused_notes_push_and_exits_zero(repo_with_origin, tmp_
 
 def test_commit_merges_diverged_remote_notes_before_push(repo_with_origin, tmp_path, monkeypatch, capsys):
     work, origin = repo_with_origin
+    _prepared(work, None)
     reviewed = _head(work)
     # a colleague already pushed a note on the same reviewed commit
     other = tmp_path / "other"
@@ -933,6 +1105,7 @@ def test_commit_merges_diverged_remote_notes_before_push(repo_with_origin, tmp_p
 
 
 def test_commit_without_origin_reports_push_failure(scratch_repo, tmp_path, monkeypatch, capsys):
+    _prepared(scratch_repo)
     t = _transcript(tmp_path, scratch_repo)
     code, data, err = run_json(
         monkeypatch, capsys, scratch_repo, "commit", "--email", "dev@example.com", "--level", "standard",
@@ -946,6 +1119,7 @@ def test_commit_without_origin_reports_push_failure(scratch_repo, tmp_path, monk
 
 
 def test_commit_no_sign_flag_suppresses_signing(scratch_repo, tmp_path, monkeypatch, capsys):
+    _prepared(scratch_repo)
     git(scratch_repo, "config", "user.signingkey", "DEADBEEF")
     git(scratch_repo, "config", "gpg.program", "/nonexistent/gpg")
     t = _transcript(tmp_path, scratch_repo)
@@ -958,6 +1132,7 @@ def test_commit_no_sign_flag_suppresses_signing(scratch_repo, tmp_path, monkeypa
 
 
 def test_commit_signing_failure_is_a_git_failure_with_nothing_written(scratch_repo, tmp_path, monkeypatch, capsys):
+    _prepared(scratch_repo)
     head = _head(scratch_repo)
     git(scratch_repo, "config", "user.signingkey", "DEADBEEF")
     git(scratch_repo, "config", "gpg.program", "/nonexistent/gpg")

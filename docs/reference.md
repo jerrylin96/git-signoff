@@ -89,7 +89,9 @@ counterpart and is skipped with a warning — else `main`/`master`/`origin/main`
 `origin/master` with a warning; an explicit reference that already contains
 HEAD is honored with an empty-range warning; on `main`/`master` itself with no
 usable base, exit 2), the merge-base,
-and the tree. Prints:
+and the tree. Writes the preparation record `.git/git-signoff/prepared.json`
+(per worktree: reviewed, base and tree SHAs, reference, timestamp, resolved
+profile), which is the only state `commit` will attest. Prints:
 
 | Field | Meaning |
 |---|---|
@@ -100,6 +102,7 @@ and the tree. Prints:
 | `transcript` | `harness_id`, `conversation_id`, `available`, `path` — informative; the binding snapshot happens in `commit`. |
 | `hints` | `changed_files`, `executable_files`, `executable_lines_changed` (excludes docs, tests, lockfiles, binaries), `tier2_triggers` (path/content matches: `security-auth`, `schemas-migrations`, `public-api-contracts`, `scientific-computation`, `executable-blast-radius`). Informative; the agent classifies. |
 | `marker` | `GSA-APPROVAL <reviewed-sha> <utc-timestamp>` — the line the agent emits after approval. |
+| `record` | Path of the preparation record just written. |
 | `warnings` | Also printed to stderr. |
 
 ### `commit`
@@ -107,9 +110,16 @@ and the tree. Prints:
 Validates arguments (exit 2): `--email` contains `@`; every `--tradeoff`,
 `--risk`, `--email`, and `--model` is one line with no carriage return;
 `--summary` may span lines but none may match `^Signoff-[A-Za-z0-9-]+:`;
-`--model` matches `[A-Za-z0-9._:/-]+`. Re-runs `prepare`. Resolves the
-transcript adapter and reads the bytes **once**; every later check uses that
-snapshot.
+`--model` matches `[A-Za-z0-9._:/-]+`. Reads the preparation record (none →
+exit 3: run `prepare` first) and re-verifies it: HEAD is the recorded reviewed
+commit and its tree matches (else exit 3, naming both SHAs), the tree is clean
+(exit 3), a `--reference` given here resolves to the same commit as the
+recorded one (else exit 2), and the interview profile resolves to the recorded
+source, id, and digest (else exit 3). The base, reference, and tree in the
+trailers come from the record, never re-derived, so the attestation describes
+the range the human saw even if the reference moved during the interview.
+Then resolves the transcript adapter and reads the bytes **once**; every later
+check uses that snapshot.
 
 Then, in order: requires the approval marker in the last 64 KiB of the
 snapshot with a SHA equal to HEAD (missing or for an unrelated commit → exit 4;
@@ -137,7 +147,8 @@ verifier on HEAD (failure → notes restored, commit removed, exit 7), and
 unless `--no-push` fetches `origin`'s notes into `refs/notes/signoff-remote`,
 merges with `cat_sort_uniq`, and pushes `refs/notes/signoff`. A refused push
 is reported (`notes_pushed: false`, reason) and the exit is still 0. The
-branch is never pushed by the helper.
+branch is never pushed by the helper. A successful commit removes the preparation
+record; a refusal keeps it, and the next `prepare` overwrites it.
 
 Output (`--json`: one object; otherwise labeled lines): `attestation_sha`,
 `status`, `transcript_digest`, `transcript_bytes`, `transcript_path`,
@@ -152,7 +163,7 @@ Output (`--json`: one object; otherwise labeled lines): `attestation_sha`,
 |---|---|
 | 0 | Success. A refused notes push is reported, not fatal. |
 | 2 | Usage or argument error, including unsafe free text; `--reference` that does not resolve; no default reference; missing sibling `verify_signoff.py`. |
-| 3 | Stale or dirty: unstaged or staged changes; HEAD moved since prepare (marker names an ancestor); HEAD is already an attestation commit (nothing new to attest, or a failed rollback left one behind). |
+| 3 | Stale or dirty: no preparation record (`prepare` has not run); HEAD or its tree differs from the record; the interview profile changed since `prepare`; unstaged or staged changes; the marker names an ancestor of HEAD; HEAD is already an attestation commit (nothing new to attest, or a failed rollback left one behind). |
 | 4 | Transcript problem: unavailable without `--ack-no-transcript`; marker not found; marker for an unrelated commit. |
 | 5 | `GIT_SIGNOFF_PROFILE_FILE` set but unreadable. A malformed repo-local profile is *not* an error (falls back, reported). |
 | 6 | git failure (rev-parse, commit, notes append). |

@@ -143,10 +143,13 @@ git checkout -q git-signoff/init
 
 **Wrong transcript file.** Point the override at a file that is not this
 conversation's (no marker for this commit): the helper exits 4 naming the
-file, its size, and the expected marker, and creates nothing.
+file, its size, and the expected marker, and creates nothing. (Without the
+`prepare` line it would exit 3 instead: a successful commit consumes the
+preparation record, and `commit` attests nothing it has no record for.)
 
 ```bash
 git reset -q --hard HEAD~1                   # drop the attestation to try again
+python3 .claude/skills/git-signoff/attest.py prepare --reference main >/dev/null   # the record was consumed by the commit
 printf 'some other session\n' > "$WORK/stale.jsonl"
 GIT_SIGNOFF_TRANSCRIPT_FILE="$WORK/stale.jsonl" python3 .claude/skills/git-signoff/attest.py commit \
   --email you@example.com --level standard; echo "exit=$?"     # exit=4

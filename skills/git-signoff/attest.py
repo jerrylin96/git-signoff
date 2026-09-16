@@ -11,16 +11,19 @@ Commands:
   attest.py prepare  [--reference REF] [--json]
       Resolve reviewed/base/tree SHAs, the range diff summary, the active
       interview profile, science-guard signals, transcript availability,
-      intensity hints, and the approval marker the agent must emit.
+      intensity hints, and the approval marker the agent must emit; record
+      the prepared state under .git/git-signoff/prepared.json.
   attest.py commit   --email EMAIL --level {cursory,standard,skeptical}
                      [--tradeoff T]... [--risk R]... [--summary TEXT]
                      [--model ID] [--reference REF] [--ack-no-transcript]
                      [--no-sign] [--dry-run] [--no-push] [--json]
-      Snapshot the transcript, require the approval marker, derive the status,
-      write the empty attestation commit and the refs/notes/signoff mirror,
-      self-check with the sibling verifier, and push the notes.
+      Attest exactly the state prepare recorded (refusing if HEAD, the tree,
+      or the profile changed since), snapshot the transcript, require the
+      approval marker, derive the status, write the empty attestation commit
+      and the refs/notes/signoff mirror, self-check with the sibling
+      verifier, and push the notes.
   attest.py marker   [--reference REF]
-      Reprint the approval marker line for the current HEAD.
+      Reprint the recorded approval marker (re-running prepare if none).
   attest.py --version
 
 Exit codes:
@@ -29,8 +32,10 @@ Exit codes:
      commit and local notes stand; the recovery workflow rebuilds notes)
   2  usage or argument error, including a line break or a `Signoff-` line in
      free text, or a missing sibling verify_signoff.py
-  3  stale or dirty: HEAD moved since prepare, unstaged / staged changes, or
-     HEAD is already an attestation commit (nothing new to attest)
+  3  stale or dirty: no preparation record (prepare has not run), HEAD or its
+     tree moved since prepare, the interview profile changed since prepare,
+     unstaged / staged changes, or HEAD is already an attestation commit
+     (nothing new to attest)
   4  transcript problem: unresolvable without --ack-no-transcript, or the
      approval marker for this reviewed commit is not in the resolved transcript
   5  profile problem: GIT_SIGNOFF_PROFILE_FILE is set but unreadable (a
@@ -52,6 +57,16 @@ Environment:
   CLAUDE_CODE_VERSION, CLAUDE_EFFORT, ANTHROPIC_MODEL
                                Signoff-Agent provenance (Claude Code only for
                                version and reasoning)
+
+Preparation record:
+
+  `prepare` writes .git/git-signoff/prepared.json (per worktree): reviewed,
+  base and tree SHAs, reference, timestamp, and the resolved profile. `commit`
+  attests that record and nothing else: it re-verifies HEAD, the tree, and the
+  profile against it and refuses (exit 3) on any drift, whether or not a
+  transcript is available. Without it, `--ack-no-transcript` would let a
+  commit made after the interview be attested as if it had been reviewed. A
+  successful commit removes the record.
 
 Approval marker (gsa-core §2.3, SHOULD for producers):
 
@@ -95,6 +110,8 @@ VERSION = "0.5.0"
 SPEC_VERSION = "1.0"
 NOTES_REF = "refs/notes/signoff"
 NOTES_TRACKING_REF = "refs/notes/signoff-remote"
+RECORD_RELPATH = os.path.join("git-signoff", "prepared.json")  # under the (per-worktree) git dir
+RECORD_VERSION = 1
 STATUS_VERIFIED = "VERIFIED_BY_HUMAN"
 STATUS_NO_DIGEST = "VERIFIED_BY_HUMAN_NO_TRANSCRIPT_DIGEST"
 UNAVAILABLE = "unavailable"
@@ -559,10 +576,50 @@ class PrepareState:
     hints: dict
     prepared_at: str
     warnings: list[str] = field(default_factory=list)
+    record_path: str | None = None
 
     @property
     def marker(self) -> str:
         return f"{MARKER_PREFIX} {self.reviewed_commit_sha} {self.prepared_at}"
+
+    def to_record(self) -> dict:
+        p = self.profile
+        return {
+            "record_version": RECORD_VERSION,
+            "attest_version": VERSION,
+            "reviewed_commit_sha": self.reviewed_commit_sha,
+            "base_sha": self.base_sha,
+            "tree_sha": self.tree_sha,
+            "reference": self.reference,
+            "prepared_at": self.prepared_at,
+            "profile": {"source": p.source, "path": p.path, "id": p.profile_id, "digest": p.digest},
+            "science_signals": self.science_signals,
+            "harness_id": self.harness_id,
+            "conversation_id": self.conversation_id,
+            "transcript_path": self.transcript_path,
+        }
+
+    @classmethod
+    def from_record(cls, rec: dict, profile: ProfileResolution, path: str) -> "PrepareState":
+        return cls(
+            reviewed_commit_sha=rec["reviewed_commit_sha"],
+            base_sha=rec["base_sha"],
+            tree_sha=rec["tree_sha"],
+            reference=rec["reference"],
+            name_status=[],
+            shortstat="",
+            numstat="",
+            diff="",
+            profile=profile,
+            science_signals=list(rec.get("science_signals", [])),
+            harness_id=rec.get("harness_id", "unknown"),
+            conversation_id=rec.get("conversation_id", UNAVAILABLE),
+            transcript_available=False,
+            transcript_path=rec.get("transcript_path"),
+            hints={},
+            prepared_at=rec["prepared_at"],
+            record_path=path,
+        )
 
     def to_json(self) -> dict:
         return {
@@ -592,6 +649,7 @@ class PrepareState:
             },
             "hints": self.hints,
             "marker": self.marker,
+            "record": self.record_path,
             "warnings": self.warnings,
         }
 
@@ -718,7 +776,7 @@ def prepare(
     elif not transcript_available:
         warnings.append(f"Transcript not readable at {transcript_path}; commit will need --ack-no-transcript.")
 
-    return PrepareState(
+    state = PrepareState(
         reviewed_commit_sha=reviewed,
         base_sha=base,
         tree_sha=tree,
@@ -737,6 +795,106 @@ def prepare(
         prepared_at=_utc_now(),
         warnings=warnings,
     )
+    state.record_path = write_record(repo, state)
+    return state
+
+
+# --- preparation record: the reviewed state is an explicit input to commit ---------
+
+
+def record_path(repo: GitRepo) -> str:
+    git_dir = repo.out("rev-parse", "--git-dir")
+    if not os.path.isabs(git_dir):
+        git_dir = os.path.join(repo.path, git_dir)
+    return os.path.join(git_dir, RECORD_RELPATH)
+
+
+def write_record(repo: GitRepo, state: PrepareState) -> str:
+    path = record_path(repo)
+    try:
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        with open(path, "w", encoding="utf-8") as fh:
+            json.dump(state.to_record(), fh, indent=2)
+            fh.write("\n")
+    except OSError as exc:
+        raise AttestError(EXIT_GIT, f"could not write the preparation record at {path}: {exc}") from exc
+    return path
+
+
+def clear_record(repo: GitRepo) -> None:
+    try:
+        os.remove(record_path(repo))
+    except (OSError, AttestError):
+        pass
+
+
+_RECORD_KEYS = ("reviewed_commit_sha", "base_sha", "tree_sha", "reference", "prepared_at", "profile")
+
+
+def load_prepared(root: str, reference: str | None = None, env: Mapping[str, str] | None = None) -> PrepareState:
+    """The state `commit` attests: what `prepare` recorded, re-verified against
+    the repository now. Nothing about the reviewed range is re-derived here.
+    The interview covered the recorded range, so the attestation must carry
+    exactly it; any drift is a refusal (exit 3), with or without a transcript.
+    (Before this record, `commit` re-ran `prepare` and took whatever HEAD was;
+    with `--ack-no-transcript` nothing tied that HEAD to the one reviewed.)"""
+    repo = GitRepo(root)
+    environ = os.environ if env is None else env
+    path = record_path(repo)
+    try:
+        with open(path, encoding="utf-8") as fh:
+            rec = json.load(fh)
+    except FileNotFoundError:
+        raise AttestError(
+            EXIT_STALE,
+            f"no preparation record at {path}: run `attest.py prepare` first. commit attests only the range "
+            "prepare resolved and the interview covered.",
+        ) from None
+    except (OSError, ValueError) as exc:
+        raise AttestError(EXIT_STALE, f"unreadable preparation record at {path} ({exc}); re-run `attest.py prepare`.") from exc
+    if not isinstance(rec, dict) or rec.get("record_version") != RECORD_VERSION or any(k not in rec for k in _RECORD_KEYS):
+        raise AttestError(EXIT_STALE, f"preparation record at {path} is not one this attest.py wrote; re-run `attest.py prepare`.")
+
+    reviewed = rec["reviewed_commit_sha"]
+    head = repo.git("rev-parse", "--verify", "-q", "HEAD^{commit}", check=False).stdout.strip()
+    if head != reviewed:
+        raise AttestError(
+            EXIT_STALE,
+            f"stale: prepare was run for {reviewed} but HEAD is now {head or 'unborn'}. The interview covered the "
+            "prepared range only; re-run `attest.py prepare` and cover the new state before attesting.",
+        )
+    check_clean_tree(repo)
+    tree = repo.out("rev-parse", f"{reviewed}^{{tree}}")
+    if tree != rec["tree_sha"]:
+        raise AttestError(
+            EXIT_STALE,
+            f"stale: the tree of {reviewed[:7]} is {tree[:7]} but prepare recorded {rec['tree_sha'][:7]}; re-run `attest.py prepare`.",
+        )
+    if reference:
+        want = repo.git("rev-parse", "--verify", "-q", f"{reference}^{{commit}}", check=False)
+        if want.returncode != 0:
+            raise AttestError(EXIT_USAGE, f"--reference {reference!r} does not resolve to a commit")
+        have = repo.git("rev-parse", "--verify", "-q", f"{rec['reference']}^{{commit}}", check=False).stdout.strip()
+        if want.stdout.strip() != have:
+            raise AttestError(
+                EXIT_USAGE,
+                f"--reference {reference!r} ({want.stdout.strip()[:7]}) differs from the prepared reference "
+                f"{rec['reference']!r} ({have[:7] or 'unresolvable'}); re-run `attest.py prepare --reference {reference}` "
+                "so the interview and the attestation agree on the base.",
+            )
+    profile = resolve_profile(root, environ)
+    recorded = rec["profile"] if isinstance(rec["profile"], dict) else {}
+    if (profile.source, profile.profile_id, profile.digest) != (recorded.get("source"), recorded.get("id"), recorded.get("digest")):
+        def _desc(source, pid, digest):
+            return f"{pid} from {source}" + (f" sha256:{digest}" if digest else "")
+        raise AttestError(
+            EXIT_STALE,
+            "stale: the interview profile changed since prepare (was "
+            f"{_desc(recorded.get('source'), recorded.get('id'), recorded.get('digest'))}; now "
+            f"{_desc(profile.source, profile.profile_id, profile.digest)}). Re-run `attest.py prepare` so the "
+            "attestation records the questions actually asked.",
+        )
+    return PrepareState.from_record(rec, profile, path)
 
 
 # --- message construction (gsa-core §2.1, §2.3) --------------------------------
@@ -1035,7 +1193,7 @@ def commit(root: str, opts: CommitOptions, env: Mapping[str, str] | None = None,
     verifier = verifier or load_verifier()
     repo = GitRepo(root)
 
-    state = prepare(root, opts.reference, environ, adapter=adapter)
+    state = load_prepared(root, opts.reference, environ)
     reviewed, tree = state.reviewed_commit_sha, state.tree_sha
     if adapter is None:
         adapter = resolve_adapter(environ, cwd=root)
@@ -1176,6 +1334,7 @@ def commit(root: str, opts: CommitOptions, env: Mapping[str, str] | None = None,
         result.notes_push_reason = reason
     else:
         result.notes_push_reason = "skipped (--no-push)"
+    clear_record(repo)  # the prepared state has been attested; the next interview starts from prepare
     return result
 
 
@@ -1209,6 +1368,8 @@ def _print_prepare(state: PrepareState) -> None:
         f"intensity hints (informative): changed_files={h['changed_files']} executable_files={h['executable_files']} "
         f"executable_lines_changed={h['executable_lines_changed']} tier2_triggers={triggers}"
     )
+    if state.record_path:
+        print(f"prepared state recorded: {state.record_path} (commit attests exactly this; drift is refused)")
     print("approval marker — after the human's explicit approval, emit this line verbatim as its own paragraph:")
     print(state.marker)
     for w in state.warnings:
@@ -1253,7 +1414,7 @@ def build_parser() -> argparse.ArgumentParser:
     prep.add_argument("--reference", help="base branch or commit (default: HEAD@{upstream}, else main/master)")
     prep.add_argument("--json", action="store_true", help="print one JSON object on stdout")
 
-    mark = sub.add_parser("marker", help="reprint the approval marker for HEAD")
+    mark = sub.add_parser("marker", help="reprint the recorded approval marker (re-preparing if none)")
     mark.add_argument("--reference", help=argparse.SUPPRESS)
 
     com = sub.add_parser("commit", help="write the attestation commit and notes")
@@ -1288,7 +1449,10 @@ def main(argv: list[str] | None = None) -> int:
                 _print_prepare(state)
             return EXIT_OK
         if args.command == "marker":
-            state = prepare(root, args.reference)
+            try:
+                state = load_prepared(root, args.reference)
+            except AttestError:
+                state = prepare(root, args.reference)
             print(state.marker)
             return EXIT_OK
         opts = CommitOptions(
