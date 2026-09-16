@@ -1,7 +1,9 @@
 # Design: attest any target, from anywhere
 
-**Status:** Decided, pending one external review before implementation.
-Revised 2026-09-16 after two review passes. Nothing here is implemented.
+**Status:** Decided; revised 2026-09-16 a third time after an external
+review that reproduced two failures against the current producer. One of
+them was a live bug and is fixed on this branch (§2.12); the rest of this
+document is not implemented.
 §2 holds positions settled in the first pass; §3 holds the items that were
 open, each now carrying a decision and the reasoning, with the rejected
 alternatives kept so a reviewer can disagree with something concrete.
@@ -53,8 +55,14 @@ attests HEAD, exactly as today. Nothing changes for current users.
 - **Interview range:** `merge-base(<integration>, <target>)..<target>`.
 - **Record:** the same empty attestation commit, parented on the target
   tip, plus the same notes on the reviewed commit and tree. Created with
-  plumbing (`git commit-tree`, which accepts `-S` for signing), so the
-  reviewer's working tree is never read or modified.
+  plumbing (`git commit-tree`, which accepts `-S` for signing).
+- **What the checkout is used for:** the reviewed code comes from the
+  target ref, never from the working tree. The checkout supplies only
+  the repository-level inputs: `.git-signoff/config.json` and
+  `.git-signoff/profile.md` (the integration branch's policy, which is
+  the right one to hold a feature branch to). Neither the worktree nor
+  the index is modified, and the preparation record (§2.12) lives under
+  the git dir, not in the tree.
 - **Verifier:** unchanged. The attestation is still the last commit of
   the branch under review; head mode passes as it does now.
 - **Trailers, notes, lookup order (gsa-core §2, §5):** unchanged. No new
@@ -63,12 +71,17 @@ attests HEAD, exactly as today. Nothing changes for current users.
 ### 2.2 On the integration branch with no argument: list
 
 When HEAD is the integration branch and no target is given, the producer
-does not refuse and does not guess. It lists candidate branches and the
-skill presents them for the human to pick. Candidates: branches with a
-remote counterpart, not merged into the integration branch, excluding the
-integration branch itself and branches whose tip is already an
-attestation, ordered by most recent commit. An empty list is reported as
-such.
+first applies §2.4: after a fetch, if the upstream is a strict ancestor of
+HEAD, the range is the reviewer's own unpushed commits and the bare command
+attests HEAD as today. If HEAD and its upstream have diverged, that is an
+error naming both SHAs (the reviewer must reconcile before anything is
+attested). Only when HEAD equals its upstream does the producer list: it
+does not refuse and does not guess. Candidates are **fetched remote
+branches** (`refs/remotes/origin/*`, including those with no local
+branch, or the original reviewer-location problem returns), not merged
+into the integration branch, excluding the integration branch itself and
+branches whose tip is already an attestation, ordered by most recent
+commit. An empty list is reported as such (§3.8).
 
 ### 2.3 One integration branch, chosen once, read everywhere
 
@@ -82,6 +95,18 @@ initializer is optional.
 
 JSON rather than TOML because the documented Python floor is 3.10 and
 `tomllib` arrived in 3.11.
+
+**Migrating an installed ruleset.** Writing the config and rendering
+`ruleset.json` does not touch a ruleset GitHub already has: today
+`setup_ruleset()` returns as soon as one named "Signoff Enforcement"
+exists. A team re-running the initializer to choose `dev` would get a
+`dev` workflow and producer while GitHub still protects `main`, which is
+the inconsistency this section exists to remove. First version: when the
+installed ruleset's `ref_name` include does not match the configured
+branch, the initializer reports the mismatch and prints the manual step
+(the settings URL and the rendered JSON). Reconciling in place via the
+API, preserving `bypass_actors` and any unrelated rules, is a later step
+once there is an adopter who needs it; it is easy to get wrong silently.
 
 ### 2.4 The integration branch is not a target, except for your own pushes
 
@@ -114,18 +139,51 @@ attestation unnecessary:
    push is reported and tolerated, as today.
 
 If anything before step 3 fails, nothing has to be undone: an unreferenced
-object is garbage. Only a failed notes push after a successful branch push
-leaves partial state, and that is the state the recovery workflow already
-handles. This is the same failure shape as today's exit 3 for the race and
-strictly less to clean up than today's local rollback path.
+object is garbage. The inputs to this sequence come from the preparation
+record (§2.12), never from a re-derived HEAD or target.
 
-### 2.6 Enforcement strength is a GitHub fact, not a design choice
+**A refused notes push is not "already handled".** An earlier revision
+said the recovery workflow covers it. It does not, for the case that
+matters: after a squash merge the attestation commit exists only on the
+PR branch, the squashed tip verifies only through the tree-SHA note, and
+the recovery workflow scans only the integration branch. If the notes
+push was refused (the cloud-session 403 this tolerates), nothing on the
+integration branch carries the attestation and recovery finds nothing.
+The contract that closes this, all of it in scope for this change:
+
+1. **Notes before branch in target mode.** Steps 3 and 4 swap: the note
+   is attached to the reviewed commit and tree, which already exist on
+   the remote, so it can be pushed before the branch moves. A refused
+   notes push is then known before the branch is touched; the producer
+   still pushes the branch (the PR check passes on the commit) and the
+   report names the squash-merge dependency on recovery explicitly.
+2. **Recovery scans pull-request heads.** `recover_notes.py` also walks
+   `refs/pull/*/head`, which GitHub retains after branch deletion, so a
+   merged PR's attestation commit is always reachable for reconstruction
+   of the tree note. The workflow also runs on `pull_request` for
+   same-repository PRs, so the tree note exists on `origin` before the
+   squash lands, not after.
+3. **Re-verification after recovery.** A recovery run that pushed new
+   notes re-dispatches the verify workflow on the integration branch, so
+   a badge that went red at push time turns green without a human
+   re-running anything.
+4. **Rebase merges.** The reviewer reports that GitHub drops empty commits
+   during rebase-and-merge. Not verified from here (the documentation
+   domain is blocked in this session); test on a scratch GitHub
+   repository before implementation. If true, the tree-note path is the
+   only one for rebase merges too, and item 2 is what makes it reliable.
+
+### 2.6 Enforcement strength follows the chosen workflow
 
 A pull request can be blocked: the ruleset makes `verify-signoff` required
-and the merge button stays grey. A direct push cannot be blocked by CI:
-GitHub exposes no pre-receive hook, so the most a direct pusher gets is a
-failed run and a red badge after the fact. Every option in §3.2 lives
-inside this constraint.
+and the merge button stays grey. A workflow that runs *after* a push is
+accepted cannot reject that push. GitHub can, however, reject a direct
+push whose tip commit lacks a passing required check, and that check may
+have run on another branch first. So a pre-checked direct-push workflow
+(push to a scratch branch, let CI pass, fast-forward the integration
+branch) is possible and stays out of scope here. The consequence for §3.2:
+advisory direct pushes are a property of the PR-only policy this project
+chooses and of any bypass list a team configures, not a platform limit.
 
 ### 2.7 Out of scope for this change
 
@@ -161,8 +219,12 @@ own base); `integration_branch` from `.git-signoff/config.json`;
 `origin/HEAD`; `main`, then `master`. For an explicit target the upstream
 step is skipped, because a feature branch's upstream is its own remote
 counterpart. The first two steps are today's behaviour; the config file
-and `origin/HEAD` are new, and a repository without a config file resolves
-exactly as it does now.
+and `origin/HEAD` are new. **`origin/HEAD` is a behaviour change** for a
+repository with no config file whose GitHub default branch is not `main`
+or `master`: today the producer falls through to `main`/`master` and
+either warns or fails; afterwards it uses the remote's default branch.
+That is the better default and it is documented in the changelog as a
+change, not hidden as a fallback.
 
 ### 2.11 Local state is untouched in target mode
 
@@ -173,6 +235,30 @@ HEAD from outside is what `git branch -f` refuses to do. The empty commit
 would not corrupt files there, but it would move a HEAD nobody asked to
 move. The bare command with HEAD as the target keeps updating the local
 branch, since that is today's behaviour and the reviewer is on it.
+
+### 2.12 The prepared state is an explicit input to commit — implemented
+
+Found by the external review and reproduced against the current producer:
+`commit` re-ran `prepare` and attested whatever HEAD was at that moment.
+The approval marker tied the transcript to the reviewed commit, but with
+`--ack-no-transcript` there was no transcript and therefore no tie. Prepare
+on A, add B, commit with no transcript: B was attested with exit 0 and the
+verifier's own PASS line.
+
+Fixed on this branch, independent of the target-mode feature: `prepare`
+writes `.git/git-signoff/prepared.json` (per worktree: reviewed, base and
+tree SHAs, reference, timestamp, resolved profile source/id/digest), and
+`commit` attests exactly that record. No record, a HEAD or tree that
+differs from it, or a profile that resolves differently is exit 3, with or
+without a transcript. A `--reference` given at commit must resolve to the
+recorded one (exit 2 otherwise). The base in the trailers is the recorded
+one even if the reference moved during the interview, so the attestation
+describes the range the human saw. A successful commit removes the record;
+`marker` reprints the recorded marker. No new trailers; `gsa-core.md`
+3.7.2 records it as an informative §4.1 change.
+
+Target mode builds on this: the record gains the target ref, and §2.5's
+lease uses the recorded reviewed SHA, never a fresh resolution.
 
 ---
 
@@ -237,14 +323,18 @@ the badge green forever.
 Head mode on push is the only option under which §3.2's bypass path means
 anything. If §3.2 chooses plain Enforce, this item matters less.
 
-**Decision: head mode as the new default, shipped as `verify-v1.5`.**
-For a strictly enforced repository every push to the integration branch
-is an attested PR merge, so head mode is always green and costs nothing.
-For an advisory or bypass repository it is the entire point. History mode
-wins only during migration, when an adopter with unattested history is red
-until the first attestation lands; the verifier's failure line should name
-the command to run. History mode stays available as an explicit input;
-`require` applies only to it.
+**Decision: head mode as the new default, shipped as `verify-v1.5`,
+contingent on the recovery contract in §2.5.** For a strictly enforced
+repository a push to the integration branch is an attested PR merge, which
+head mode passes directly for merge commits and via the tree note for
+squash and rebase merges. The tree note is exactly what a refused notes
+push can leave missing, so without §2.5's items 1–3 head mode would go red
+on a squash merge whose interview was conducted in a cloud session. With
+them it is honest for everyone, and for an advisory or bypass repository
+it is the entire point. History mode wins only during migration, when an
+adopter with unattested history is red until the first attestation lands;
+the verifier's failure line names the command to run. History mode stays
+available as an explicit input; `require` applies only to it.
 
 ### 3.4 What the base is in target mode
 
@@ -282,7 +372,9 @@ Minimal: `{"integration_branch": "dev"}`. Tempting additions
 honour or they become misleading. Rule proposed: a key is added only in
 the same change as its first reader. **Decision:** the minimal schema and
 that rule; the file is a sibling of `.git-signoff/profile.md`, not merged
-into it; `init.py` rewrites it on re-run after confirming the value.
+into it; `init.py` rewrites it on re-run after confirming the value, and
+reports (does not yet reconcile) an installed ruleset that disagrees
+with it (§2.3).
 
 ### 3.8 Listing heuristic, and the empty list
 
@@ -302,19 +394,23 @@ ask for a name.
 
 ---
 
-## 4. Spec deltas (gsa-core 3.7.1 → 3.8.0)
+## 4. Spec deltas (gsa-core 3.7.2 → 3.8.0)
+
+Already shipped on this branch as 3.7.2 (informative): §4.1's stale-state
+circuit breaker verifies against the recorded prepared state (§2.12).
+The target-mode deltas below build on that wording.
 
 - **§1** "recorded as empty Git commits on feature branches" → "recorded
   as empty Git commits on the branch whose tip is the reviewed commit".
 - **§4.1 `signoff_prepare(target_ref)`** already takes a target; make the
   description say the target may be any ref, not only HEAD, and describe
   the listing behaviour of §2.2 as informative.
-- **§4.1 `signoff_commit` stale-state circuit breaker** → "the target ref
-  still resolves to `reviewed_commit_sha`; when the target is HEAD, the
-  working tree is also clean (`git diff --quiet`, `git diff --cached
-  --quiet`)".
-- **§2.5** unchanged. If §3.1 chooses option B, add the reviewer-owned
-  ref as a second persistence location and extend §5.1 lookup accordingly.
+- **§4.1 `signoff_commit` stale-state circuit breaker** → "the recorded
+  target ref still resolves to the recorded `reviewed_commit_sha` (after a
+  fetch, for a remote target); when the target is HEAD, the working tree is
+  also clean (`git diff --quiet`, `git diff --cached --quiet`)".
+- **§2.5** gains the target-mode ordering: notes pushed before the branch,
+  and the producer's report on a refused notes push.
 - **SKILL.md Worktree Target Mandate** → the rule in §2.4 above.
 
 No change to §2.1–§2.4 (schema, status, field rules, identity binding)
@@ -334,7 +430,16 @@ or §5 (lookup order) unless §3.1 chooses B.
   `ref_name` from config, `init-v8`.
 - `SKILL.md`: Section 1 gains the on-integration-branch listing step;
   Section 3 mandate rewritten.
-- Verify action: only if §3.3 changes the default.
+- Verify action: head mode on push as the default (`verify-v1.5`), and a
+  fetch of `refs/pull/*/head` so the log lookup of §5.1 sees merged PRs'
+  attestation commits.
+- `recover_notes.py` and `notes-recovery.yml`: scan `refs/pull/*/head`;
+  run on `pull_request` (same-repository PRs); re-dispatch verify after a
+  push of new notes.
+- `init.py`: report an installed ruleset whose branch disagrees with the
+  configured one, with the manual step.
+- Pre-implementation check: GitHub's rebase-and-merge behaviour with empty
+  commits, on a scratch repository.
 - Tests: target mode end to end against scratch repos (reviewer on `dev`,
   target pushed by another clone); race (author pushes mid-interview);
   no-local-branch; integration-branch refusal and the own-push exception;
