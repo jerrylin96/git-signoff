@@ -142,9 +142,8 @@ inside this constraint.
 ### 2.8 Release shape
 
 `init.py` changes ship as `init-v8`. `gsa-core.md` goes to 3.8.0: producer
-behaviour is generalised, no trailer changes. If §3.3 resolves as
-decided in §3.3, the composite action's default changes and ships as
-`verify-v1.5`.
+behaviour is generalised, no trailer changes. Per §3.3, the composite
+action's default changes and ships as `verify-v1.5`.
 
 ### 2.9 Target parsing
 
