@@ -524,6 +524,7 @@ def intensity_hints(numstat: str, diff: str, science_signals: list[str]) -> dict
     changed_files = 0
     executable_files = 0
     executable_lines = 0
+    components: set[str] = set()
     tier2: dict[str, set[str]] = {}
     for line in numstat.splitlines():
         parts = line.split("\t")
@@ -541,6 +542,9 @@ def intensity_hints(numstat: str, diff: str, science_signals: list[str]) -> dict
         if _is_doc_path(path) or _is_test_path(path) or LOCKFILE_RE.search(path):
             continue
         executable_files += 1
+        # A component is a directory with executable changes (a root file is
+        # its own component): the unit that fails, and reverts, on its own.
+        components.add(os.path.dirname(path) or path)
         if added.isdigit() and deleted.isdigit():
             executable_lines += int(added) + int(deleted)
     for name, pattern in TIER2_CONTENT_TRIGGERS:
@@ -554,8 +558,18 @@ def intensity_hints(numstat: str, diff: str, science_signals: list[str]) -> dict
         "changed_files": changed_files,
         "executable_files": executable_files,
         "executable_lines_changed": executable_lines,
+        "components": sorted(components),
+        # Skeptical floor for expansive ranges (SKILL.md Section 2): eight
+        # probes, plus two for every component beyond the second, so a range
+        # that bundles several independently revertable changes is probed on
+        # each of their failure modes rather than on a sample of them.
+        "skeptical_min_probes": skeptical_min_probes(len(components)),
         "tier2_triggers": {name: sorted(paths) for name, paths in sorted(tier2.items())},
     }
+
+
+def skeptical_min_probes(components: int) -> int:
+    return max(8, 4 + 2 * components)
 
 
 # --- prepare -----------------------------------------------------------------
@@ -1371,6 +1385,10 @@ def _print_prepare(state: PrepareState) -> None:
     print(
         f"intensity hints (informative): changed_files={h['changed_files']} executable_files={h['executable_files']} "
         f"executable_lines_changed={h['executable_lines_changed']} tier2_triggers={triggers}"
+    )
+    print(
+        f"components with executable changes ({len(h['components'])}): {', '.join(h['components']) or 'none'}; "
+        f"skeptical minimum probes: {h['skeptical_min_probes']}"
     )
     if state.record_path:
         print(f"prepared state recorded: {state.record_path} (commit attests exactly this; drift is refused)")

@@ -100,7 +100,7 @@ profile), which is the only state `commit` will attest. Prints:
 | `profile` | `source` (`env-override`, `repo-local`, `embedded-default`), `path`, `id`, 12-hex `digest` (file-sourced only), `fallback_reason` when a file-sourced profile was malformed. |
 | `science_signals` | Categories from the science-detection guard found in the diff. |
 | `transcript` | `harness_id`, `conversation_id`, `available`, `path` — informative; the binding snapshot happens in `commit`. |
-| `hints` | `changed_files`, `executable_files`, `executable_lines_changed` (excludes docs, tests, lockfiles, binaries), `tier2_triggers` (path/content matches: `security-auth`, `schemas-migrations`, `public-api-contracts`, `scientific-computation`, `executable-blast-radius`). Informative; the agent classifies. |
+| `hints` | `changed_files`, `executable_files`, `executable_lines_changed` (excludes docs, tests, lockfiles, binaries), `components` (distinct directories with executable changes; a root file counts as its own), `skeptical_min_probes` (`max(8, 4 + 2 × components)`, the Tier 2 floor SKILL.md applies to expansive ranges), `tier2_triggers` (path/content matches: `security-auth`, `schemas-migrations`, `public-api-contracts`, `scientific-computation`, `executable-blast-radius`). Informative; the agent classifies. |
 | `marker` | `GSA-APPROVAL <reviewed-sha> <utc-timestamp>` — the line the agent emits after approval. |
 | `record` | Path of the preparation record just written. |
 | `warnings` | Also printed to stderr. |

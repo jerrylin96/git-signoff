@@ -347,6 +347,28 @@ def test_intensity_hints_blast_radius_and_renames():
     docs_only = attest.intensity_hints("500\t0\tREADME.md\n10\t0\tauth/README.md\n", "", [])
     assert docs_only["executable_lines_changed"] == 0
     assert docs_only["tier2_triggers"] == {}  # path tokens do not trigger on docs
+    assert docs_only["components"] == [] and docs_only["skeptical_min_probes"] == 8
+
+
+def test_intensity_hints_components_scale_the_skeptical_floor():
+    """A bundled range is interviewed as the sum of its changes: the floor is
+    max(8, 4 + 2 * components), a component being a directory with executable
+    changes (root files count as their own; docs, tests, lockfiles do not)."""
+    numstat = (
+        "1\t1\tinit.py\n"
+        "40\t2\tskills/git-signoff/attest.py\n"
+        "5\t5\tskills/git-signoff/verify_signoff.py\n"
+        "9\t0\tscripts/recover_notes.py\n"
+        "3\t3\tverify/action.yml\n"
+        "2\t2\t.github/workflows/tag.yml\n"
+        "100\t0\tscripts/tests/test_attest.py\n"
+        "200\t0\tdocs/attest-any-target.md\n"
+    )
+    hints = attest.intensity_hints(numstat, "", [])
+    assert hints["components"] == [".github/workflows", "init.py", "scripts", "skills/git-signoff", "verify"]
+    assert hints["skeptical_min_probes"] == 4 + 2 * 5
+    assert attest.skeptical_min_probes(0) == 8 and attest.skeptical_min_probes(2) == 8
+    assert attest.skeptical_min_probes(3) == 10
 
 
 # --- commit: happy path --------------------------------------------------------
