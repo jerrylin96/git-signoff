@@ -644,6 +644,131 @@ def test_marker_survives_json_encoding_in_a_jsonl_transcript(scratch_repo):
     assert check.found and check.sha == head
 
 
+# --- integration branch and reference precedence (docs/attest-any-target.md §2.10) ------
+
+
+def _repo_with_origin_default(tmp_path, default="dev"):
+    """A clone whose origin's default branch (origin/HEAD) is `default`."""
+    origin = tmp_path / "origin.git"
+    origin.mkdir()
+    git(origin, "init", "-q", "--bare", "-b", default)
+    work = init_repo(tmp_path / "work", branch=default)
+    commit_file(work, "base.txt", "base\n", "base commit")
+    git(work, "remote", "add", "origin", str(origin))
+    git(work, "push", "-q", "-u", "origin", default)
+    git(work, "remote", "set-head", "origin", default)
+    return work
+
+
+def _write_config(repo, branch):
+    d = repo / ".git-signoff"
+    d.mkdir(exist_ok=True)
+    (d / "config.json").write_text(json.dumps({"integration_branch": branch}) + "\n")
+
+
+def test_prepare_uses_the_configured_integration_branch_over_main(scratch_repo, monkeypatch, capsys):
+    """scratch_repo has main and feature. With `dev` configured and present, dev
+    wins over the main fallback; the warning names the config file."""
+    git(scratch_repo, "branch", "dev", "main")
+    commit_file(scratch_repo, "on-dev.txt", "d\n", "dev-only commit")  # on feature, but dev stays at main
+    git(scratch_repo, "checkout", "-q", "dev")
+    commit_file(scratch_repo, "dev.txt", "x\n", "dev advances")
+    dev = _head(scratch_repo)
+    git(scratch_repo, "checkout", "-q", "feature")
+    _write_config(scratch_repo, "dev")
+    code, data, err = run_json(monkeypatch, capsys, scratch_repo, "prepare")
+    assert code == 0, err
+    assert data["reference"] == "dev" and data["integration_branch"] == "dev"
+    assert data["base_sha"] == git(scratch_repo, "merge-base", "dev", "feature").stdout.strip()
+    assert any("integration branch 'dev'" in w and ".git-signoff" in w for w in data["warnings"])
+    assert dev != data["base_sha"]  # merge-base, not dev's tip
+
+
+def test_prepare_falls_back_to_origin_head_without_config(tmp_path, monkeypatch, capsys):
+    """No config: the remote's default branch (origin/HEAD → dev) is the base,
+    ahead of the main/master guess. This is the documented behaviour change."""
+    work = _repo_with_origin_default(tmp_path, "dev")
+    git(work, "checkout", "-q", "-b", "feature")
+    commit_file(work, "feat.txt", "f\n", "feature")
+    code, data, err = run_json(monkeypatch, capsys, work, "prepare")
+    assert code == 0, err
+    assert data["reference"] == "origin/dev" and data["integration_branch"] == "dev"
+    assert any("origin/HEAD" in w for w in data["warnings"])
+
+
+def test_prepare_explicit_reference_beats_config(scratch_repo, monkeypatch, capsys):
+    git(scratch_repo, "branch", "dev", "main")
+    _write_config(scratch_repo, "dev")
+    code, data, _ = run_json(monkeypatch, capsys, scratch_repo, "prepare", "--reference", "main")
+    assert code == 0 and data["reference"] == "main"
+
+
+def test_prepare_on_integration_branch_with_nothing_unpushed_has_no_range(tmp_path, monkeypatch, capsys):
+    work = _repo_with_origin_default(tmp_path, "dev")
+    _write_config(work, "dev")
+    code, data, err = run_json(monkeypatch, capsys, work, "prepare")
+    assert code == 2 and data["ok"] is False
+    assert "integration branch 'dev'" in err and "nothing unpushed" in err
+
+
+def test_prepare_on_integration_branch_attests_own_unpushed_commits(tmp_path, monkeypatch, capsys):
+    """The direct-push case (§2.4): on dev with origin/dev a strict ancestor of
+    HEAD, the range is the reviewer's own unpushed commits."""
+    work = _repo_with_origin_default(tmp_path, "dev")
+    _write_config(work, "dev")
+    commit_file(work, "local.txt", "l\n", "unpushed on dev")
+    code, data, err = run_json(monkeypatch, capsys, work, "prepare")
+    assert code == 0, err
+    assert data["reference"] == "origin/dev"
+    assert data["base_sha"] == git(work, "rev-parse", "origin/dev").stdout.strip()
+
+
+def test_prepare_on_integration_branch_refuses_a_diverged_upstream(tmp_path, monkeypatch, capsys):
+    work = _repo_with_origin_default(tmp_path, "dev")
+    _write_config(work, "dev")
+    other = tmp_path / "other"
+    git(tmp_path, "clone", "-q", str(tmp_path / "origin.git"), "other")
+    git(other, "config", "user.email", "o@example.com")
+    git(other, "config", "user.name", "O")
+    commit_file(other, "theirs.txt", "t\n", "someone else pushed to dev")
+    git(other, "push", "-q", "origin", "dev")
+    git(work, "fetch", "-q", "origin")
+    commit_file(work, "mine.txt", "m\n", "my local dev commit")
+    code, _, err = run(monkeypatch, capsys, work, "prepare")
+    assert code == 3 and "diverged" in err and "origin/dev" in err
+
+
+def test_prepare_on_a_feature_branch_is_unaffected_by_integration_rules(tmp_path, monkeypatch, capsys):
+    """Off the integration branch, an upstream that is the branch's own remote
+    counterpart is still skipped, and the configured branch is the base."""
+    work = _repo_with_origin_default(tmp_path, "dev")
+    _write_config(work, "dev")
+    git(work, "checkout", "-q", "-b", "feature")
+    commit_file(work, "feat.txt", "f\n", "feature")
+    git(work, "push", "-q", "-u", "origin", "feature")
+    code, data, err = run_json(monkeypatch, capsys, work, "prepare")
+    assert code == 0, err
+    assert data["reference"] == "origin/dev"
+
+
+def test_prepare_rejects_a_malformed_config(scratch_repo, monkeypatch, capsys):
+    d = scratch_repo / ".git-signoff"
+    d.mkdir()
+    (d / "config.json").write_text("{not json")
+    code, _, err = run(monkeypatch, capsys, scratch_repo, "prepare", "--reference", "main")
+    assert code == 2 and "config.json" in err
+    (d / "config.json").write_text(json.dumps({"integration_branch": "bad branch!"}))
+    code, _, err = run(monkeypatch, capsys, scratch_repo, "prepare", "--reference", "main")
+    assert code == 2 and "integration_branch must be a branch name" in err
+
+
+def test_record_carries_the_integration_branch(scratch_repo, monkeypatch, capsys):
+    git(scratch_repo, "branch", "dev", "main")
+    _write_config(scratch_repo, "dev")
+    assert run_json(monkeypatch, capsys, scratch_repo, "prepare")[0] == 0
+    assert json.loads(_record(scratch_repo).read_text())["integration_branch"] == "dev"
+
+
 # --- commit: the preparation record --------------------------------------------------
 
 

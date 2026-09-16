@@ -7,6 +7,21 @@ dates on `origin`.
 
 ## Unreleased
 
+- **Added** `.git-signoff/config.json` with `integration_branch`, written by
+  `init.py` (`--integration-branch`, else detected and confirmed). One
+  choice read by the workflow's push filter, the rendered ruleset
+  (`refs/heads/<name>` instead of `~DEFAULT_BRANCH`), the setup branch's
+  base, and `attest.py`. The producer's reference precedence is now
+  `--reference`, a usable upstream, the configured branch, `origin/HEAD`,
+  then `main`/`master`; the `origin/HEAD` step is a behaviour change for
+  repositories without a config whose default branch is neither. On the
+  integration branch, an unpushed range is attested as the reviewer's own
+  (direct-push case), a diverged upstream is exit 3, and nothing unpushed
+  is exit 2. An installed GitHub ruleset targeting a different branch is
+  reported with the manual step and never edited (`mismatch`).
+- **Added** interview scaling for expansive ranges: `prepare` reports
+  `components` and `skeptical_min_probes` (`max(8, 4 + 2 × components)`),
+  and SKILL.md's Tier 2 floor uses it, with one probe per component.
 - **Changed** `scripts/recover_notes.py` to attach a note only where the
   attestation commit object backs the trailer: one parent, empty commit,
   parent is the declared reviewed commit (else skipped), and the declared

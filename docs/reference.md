@@ -32,6 +32,7 @@ back to the state it found.
 |---|---|
 | `--profile {domain-science,software-general}` | Interview profile written to `.git-signoff/profile.md`. Default: recommended from the repository's manifests and notebooks, confirmed interactively. |
 | `--branch NAME` | Setup branch (default `git-signoff/init`; a timestamp suffix is added if it exists). |
+| `--integration-branch NAME` | The branch pull requests merge into. Written to `.git-signoff/config.json` and used for the workflow's push filter, the ruleset's target (`refs/heads/NAME`), the setup branch's base, and `attest.py`'s fallback reference. Default: detected (`origin/HEAD`, else a candidate list), confirmed interactively. An installed GitHub ruleset that targets a different branch is reported with the manual step, never edited. |
 | `--skill-target {auto,claude,agents,both}` | Where to vendor the skill: `.claude/skills/git-signoff`, `.agents/skills/git-signoff`, or both. `auto` reads repository markers; a greenfield repo prompts (non-interactive: both). Existing installs are always re-vendored. |
 | `--skill-source PATH` | Vendor from a local `skills/git-signoff/` folder instead of cloning the pin tag (offline installs). |
 | `--skip-ruleset` | Do not write `.git-signoff/ruleset.json` or try `gh` to create the GitHub ruleset. |
@@ -42,7 +43,9 @@ back to the state it found.
 | `--verbose` | On error, print the exception type and traceback. |
 
 Files written (all under the repository root): `.github/workflows/git-signoff.yml`,
-`.git-signoff/profile.md`, `.git-signoff/ruleset.json`, `README.md` (badge),
+`.git-signoff/profile.md`, `.git-signoff/config.json` (`{"integration_branch":
+NAME}`), `.git-signoff/ruleset.json` (rendered for that branch; the portable
+`verify/ruleset.json` template keeps `~DEFAULT_BRANCH`), `README.md` (badge),
 and the skill folder(s) with a `VENDORED-FROM` stamp (source, ref, commit).
 
 Exit status: `0` success, `1` any error (message on stderr; `--verbose` adds
@@ -82,13 +85,19 @@ attest.py --version
 
 ### `prepare`
 
-Refuses a dirty tree (exit 3). Resolves HEAD as the reviewed commit, the
-reference (`--reference`, else `HEAD@{upstream}` when it is behind HEAD — after
-`git push -u origin <feature>` the upstream is the branch's own remote
-counterpart and is skipped with a warning — else `main`/`master`/`origin/main`/
-`origin/master` with a warning; an explicit reference that already contains
-HEAD is honored with an empty-range warning; on `main`/`master` itself with no
-usable base, exit 2), the merge-base,
+Refuses a dirty tree (exit 3). Resolves HEAD as the reviewed commit and the
+reference, in this order: `--reference`; `HEAD@{upstream}` when it is a strict
+ancestor of HEAD (after `git push -u origin <feature>` the upstream is the
+branch's own remote counterpart and is skipped with a warning); the
+integration branch from `.git-signoff/config.json` (`origin/<name>`, then
+`<name>`); the branch `origin/HEAD` points at; `main`, `master`,
+`origin/main`, `origin/master` — each fallback with a warning. An explicit
+reference that already contains HEAD is honored with an empty-range warning.
+On the integration branch itself: an upstream that is a strict ancestor of
+HEAD is the reviewer's own unpushed range and is attested as such; a diverged
+upstream is exit 3 (reconcile first); nothing unpushed is exit 2 (there is no
+range here — attest the branch under review). A malformed `config.json` is
+exit 2, never a silent fallback. Then the merge-base
 and the tree. Writes the preparation record `.git/git-signoff/prepared.json`
 (per worktree: reviewed, base and tree SHAs, reference, timestamp, resolved
 profile), which is the only state `commit` will attest. Prints:
@@ -96,6 +105,7 @@ profile), which is the only state `commit` will attest. Prints:
 | Field | Meaning |
 |---|---|
 | `reviewed_commit_sha`, `base_sha`, `tree_sha`, `reference` | The SHAs the attestation will carry. |
+| `integration_branch` | From `.git-signoff/config.json`, else `origin/HEAD`, else null. |
 | `diff_command`, `name_status`, `shortstat` | How to read the range and its summary. |
 | `profile` | `source` (`env-override`, `repo-local`, `embedded-default`), `path`, `id`, 12-hex `digest` (file-sourced only), `fallback_reason` when a file-sourced profile was malformed. |
 | `science_signals` | Categories from the science-detection guard found in the diff. |

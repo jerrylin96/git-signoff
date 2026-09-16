@@ -60,6 +60,19 @@ Environment:
                                Signoff-Agent provenance (Claude Code only for
                                version and reasoning)
 
+Repository config (.git-signoff/config.json, committed, written by init.py):
+
+  {"integration_branch": "dev"}   the branch pull requests merge into. Read as
+  the fallback reference (below) and to recognise when HEAD *is* that branch.
+
+Reference precedence (the base the range is diffed against), in order:
+  --reference; HEAD's upstream when it is a strict ancestor of HEAD (your own
+  unpushed commits, also the direct-push case on the integration branch);
+  the configured integration branch (origin/<name>, then <name>);
+  origin/HEAD's branch; main, then master. On the integration branch itself
+  with nothing unpushed there is no range to attest (exit 2); with an upstream
+  that has diverged from HEAD the state must be reconciled first (exit 3).
+
 Preparation record:
 
   `prepare` writes .git/git-signoff/prepared.json (per worktree): reviewed,
@@ -115,6 +128,8 @@ SPEC_VERSION = "1.0"
 NOTES_REF = "refs/notes/signoff"
 NOTES_TRACKING_REF = "refs/notes/signoff-remote"
 RECORD_RELPATH = os.path.join("git-signoff", "prepared.json")  # under the (per-worktree) git dir
+CONFIG_RELPATH = os.path.join(".git-signoff", "config.json")  # committed, repository-level settings
+BRANCH_NAME_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._/-]*$")
 RECORD_VERSION = 1
 STATUS_VERIFIED = "VERIFIED_BY_HUMAN"
 STATUS_NO_DIGEST = "VERIFIED_BY_HUMAN_NO_TRANSCRIPT_DIGEST"
@@ -595,6 +610,7 @@ class PrepareState:
     prepared_at: str
     warnings: list[str] = field(default_factory=list)
     record_path: str | None = None
+    integration_branch: str | None = None
 
     @property
     def marker(self) -> str:
@@ -615,6 +631,7 @@ class PrepareState:
             "harness_id": self.harness_id,
             "conversation_id": self.conversation_id,
             "transcript_path": self.transcript_path,
+            "integration_branch": self.integration_branch,
         }
 
     @classmethod
@@ -637,6 +654,7 @@ class PrepareState:
             hints={},
             prepared_at=rec["prepared_at"],
             record_path=path,
+            integration_branch=rec.get("integration_branch"),
         )
 
     def to_json(self) -> dict:
@@ -668,8 +686,46 @@ class PrepareState:
             "hints": self.hints,
             "marker": self.marker,
             "record": self.record_path,
+            "integration_branch": self.integration_branch,
             "warnings": self.warnings,
         }
+
+
+def read_config(root: str) -> dict:
+    """`.git-signoff/config.json`, or {} when absent. Malformed is a usage error:
+    a setting that silently fell back would point the interview at the wrong base."""
+    path = os.path.join(root, CONFIG_RELPATH)
+    try:
+        with open(path, encoding="utf-8") as fh:
+            data = json.load(fh)
+    except FileNotFoundError:
+        return {}
+    except (OSError, ValueError) as exc:
+        raise AttestError(EXIT_USAGE, f"unreadable {CONFIG_RELPATH} ({exc}); fix or remove it.") from exc
+    if not isinstance(data, dict):
+        raise AttestError(EXIT_USAGE, f"{CONFIG_RELPATH} must be a JSON object.")
+    branch = data.get("integration_branch")
+    if branch is not None and (not isinstance(branch, str) or not BRANCH_NAME_RE.match(branch)):
+        raise AttestError(EXIT_USAGE, f"{CONFIG_RELPATH}: integration_branch must be a branch name, got {branch!r}.")
+    return data
+
+
+def integration_branch(repo: GitRepo, config: Mapping[str, object]) -> tuple[str | None, str]:
+    """(name, source): the configured integration branch, else the remote's
+    default branch (origin/HEAD), else None."""
+    name = config.get("integration_branch")
+    if isinstance(name, str) and name:
+        return name, CONFIG_RELPATH
+    proc = repo.git("symbolic-ref", "-q", "--short", "refs/remotes/origin/HEAD", check=False)
+    head = proc.stdout.strip()
+    if proc.returncode == 0 and "/" in head:
+        return head.split("/", 1)[1], "origin/HEAD"
+    return None, "none"
+
+
+def current_branch(repo: GitRepo) -> str | None:
+    proc = repo.git("symbolic-ref", "-q", "--short", "HEAD", check=False)
+    return proc.stdout.strip() or None if proc.returncode == 0 else None
 
 
 def _range_is_empty(repo: GitRepo, reference: str, reviewed: str) -> bool:
@@ -677,48 +733,76 @@ def _range_is_empty(repo: GitRepo, reference: str, reviewed: str) -> bool:
     return repo.git("merge-base", "--is-ancestor", reviewed, reference, check=False).returncode == 0
 
 
-def _resolve_reference(repo: GitRepo, reference: str | None, reviewed: str, warnings: list[str]) -> str:
+def _resolve_reference(
+    repo: GitRepo,
+    reference: str | None,
+    reviewed: str,
+    warnings: list[str],
+    integration: str | None = None,
+    integration_source: str = "none",
+) -> str:
     if reference:
         if repo.git("rev-parse", "--verify", "-q", f"{reference}^{{commit}}", check=False).returncode != 0:
             raise AttestError(EXIT_USAGE, f"--reference {reference!r} does not resolve to a commit")
         if _range_is_empty(repo, reference, reviewed):
-            # Explicit choice: honored (a post-hoc attestation of a merged
-            # commit has Base-SHA == Reviewed-Commit-SHA), but said out loud.
             warnings.append(
                 f"--reference {reference!r} already contains HEAD: the range to review is empty "
-                "(Base-SHA will equal the reviewed commit). If you meant the base branch, pass that instead."
+                "(nothing between the base and the reviewed commit)."
             )
         return reference
+
+    branch = current_branch(repo)
+    on_integration = bool(integration) and branch == integration
     proc = repo.git("rev-parse", "--abbrev-ref", "HEAD@{upstream}", check=False)
     upstream = proc.stdout.strip() if proc.returncode == 0 else ""
     # After `git push -u origin <feature>` the upstream is the branch's own
-    # remote counterpart, which contains HEAD — an empty range, not a base.
-    # Only an upstream that is *behind* HEAD (the base branch) is usable.
+    # remote counterpart: it contains HEAD, so the range would be empty.
+    # Only an upstream that is *behind* HEAD (the base branch, or the not-yet-
+    # pushed part of the integration branch) is usable.
     if upstream and not _range_is_empty(repo, upstream, reviewed):
+        upstream_sha = repo.out("rev-parse", f"{upstream}^{{commit}}")
+        if on_integration and repo.git("merge-base", "--is-ancestor", upstream_sha, reviewed, check=False).returncode != 0:
+            raise AttestError(
+                EXIT_STALE,
+                f"'{branch}' ({reviewed[:7]}) and its upstream '{upstream}' ({upstream_sha[:7]}) have diverged; "
+                "reconcile them (pull, rebase, or merge) before attesting anything on the integration branch.",
+            )
         return upstream
     if upstream:
         warnings.append(
             f"Upstream '{upstream}' already contains HEAD (it is this branch's own remote counterpart, "
             "not a base); falling back."
         )
-    head_full = repo.git("rev-parse", "--symbolic-full-name", "HEAD", check=False).stdout.strip()
-    # On main or master itself there is no sensible default base: never diff a
-    # default branch against the other one.
-    candidates = () if head_full in ("refs/heads/main", "refs/heads/master") else ("main", "master", "origin/main", "origin/master")
-    for candidate in candidates:
-        if repo.git("rev-parse", "--verify", "-q", f"{candidate}^{{commit}}", check=False).returncode != 0:
-            continue
-        if _range_is_empty(repo, candidate, reviewed):
-            continue
-        warnings.append(
-            f"No usable upstream for HEAD; assuming base branch '{candidate}'. "
-            "If this is incorrect, pass --reference explicitly."
+    if on_integration:
+        raise AttestError(
+            EXIT_USAGE,
+            f"HEAD is the integration branch '{integration}' with nothing unpushed: there is no range to attest "
+            "here. Attest the branch under review instead (SKILL.md Section 1), or pass --reference for a "
+            "different base.",
         )
-        return candidate
+    candidates: list[str] = []
+    if integration:
+        candidates += [f"origin/{integration}", integration]
+    head_full = repo.git("symbolic-ref", "-q", "HEAD", check=False).stdout.strip()
+    if head_full not in ("refs/heads/main", "refs/heads/master"):
+        candidates += ["main", "master", "origin/main", "origin/master"]
+    for candidate in candidates:
+        if candidate == branch or candidate == f"origin/{branch}":
+            continue
+        if repo.git("rev-parse", "--verify", "-q", f"{candidate}^{{commit}}", check=False).returncode == 0:
+            if integration and candidate.endswith(integration):
+                warnings.append(f"No usable upstream for HEAD; using the integration branch '{candidate}' ({integration_source}).")
+            else:
+                warnings.append(
+                    f"No usable upstream for HEAD; assuming base branch '{candidate}'. "
+                    "If this is incorrect, pass --reference explicitly."
+                )
+            return candidate
     raise AttestError(
         EXIT_USAGE,
-        "No base branch could be inferred for HEAD (no upstream behind it, and no main/master that does not "
-        "already contain it); pass --reference <branch-or-commit> (no hardcoded remote assumptions per GSA §2.3).",
+        "No base reference: HEAD has no usable upstream and none of "
+        + ", ".join(candidates or ["main", "master"])
+        + " resolve; pass --reference <branch>.",
     )
 
 
@@ -765,7 +849,9 @@ def prepare(
         )
     check_clean_tree(repo)
 
-    ref = _resolve_reference(repo, reference, reviewed, warnings)
+    config = read_config(root)
+    integration, integration_source = integration_branch(repo, config)
+    ref = _resolve_reference(repo, reference, reviewed, warnings, integration, integration_source)
     base = repo.out("merge-base", ref, reviewed)
     tree = repo.out("rev-parse", f"{reviewed}^{{tree}}")
     rng = f"{base}..{reviewed}"
@@ -812,6 +898,7 @@ def prepare(
         hints=intensity_hints(numstat, diff, signals),
         prepared_at=_utc_now(),
         warnings=warnings,
+        integration_branch=integration,
     )
     state.record_path = write_record(repo, state)
     return state
@@ -1363,6 +1450,8 @@ def _print_prepare(state: PrepareState) -> None:
     p = state.profile
     print(f"reviewed commit: {state.reviewed_commit_sha}")
     print(f"base (merge-base with {state.reference}): {state.base_sha}")
+    if state.integration_branch:
+        print(f"integration branch: {state.integration_branch}")
     print(f"tree: {state.tree_sha}")
     print(f"diff: git diff {state.base_sha}..{state.reviewed_commit_sha}")
     print(f"files ({len(state.name_status)}): {state.shortstat or 'no changes'}")

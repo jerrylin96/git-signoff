@@ -169,6 +169,7 @@ account-scoped, nothing to pip-install.
 > [!NOTE]
 > **Initializer Flags & Policy A:**
 > - `--skill-target {auto,claude,agents,both}`: Selects target client destinations (defaults to auto-detect based on repo markers).
+> - `--integration-branch NAME`: The branch pull requests merge into (default: detected, confirmed interactively). Written once to `.git-signoff/config.json` and read by the workflow, the ruleset, and `attest.py`, so a `dev`-based team never has three components disagreeing about the base.
 > - `--allow-dirty`: Permits unrelated unstaged/untracked work to remain in place. It still refuses any pre-staged change, any uncommitted or ignored state under paths the initializer manages, and all Policy A violations (symbolic links, parent-path collisions, unrelated non-empty directories, and destination-level `.gitignore` rules). This boundary prevents user work from being swept into the scaffold commit or overwritten during vendoring/rollback.
 
 ## Make it yours: changing what gets asked
