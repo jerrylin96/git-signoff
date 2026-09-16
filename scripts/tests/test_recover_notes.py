@@ -205,3 +205,129 @@ def test_payload_with_repeated_target_trailer_is_skipped_loudly(repo, capsys):
     assert "skip" in out and "Signoff-Reviewed-Tree-SHA" in out
     assert git(repo, "notes", "--ref=signoff", "show", "9" * 40, check=False).returncode != 0
     assert git(repo, "notes", "--ref=signoff", "show", tree, check=False).returncode != 0
+
+
+# --- evidence, not trailers (external review 2026-09-16) ---------------------------
+
+
+def _verify_module():
+    spec = importlib.util.spec_from_file_location(
+        "verify_signoff",
+        os.path.join(os.path.dirname(__file__), "..", "..", "skills", "git-signoff", "verify_signoff.py"),
+    )
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod
+
+
+def _forged_attestation_of(repo, target_commit, target_tree, on_branch="forge"):
+    """An empty [SIGNOFF] commit on an unrelated branch whose trailers name the
+    target's commit and tree. Structurally it attests its own parent, which is
+    not the target."""
+    git(repo, "checkout", "-q", "-b", on_branch)
+    commit_file(repo, "unrelated.txt", "different content", "unrelated work")
+    git(repo, "commit", "--allow-empty", "-m", attestation_message(target_commit, target_tree))
+    forged = git(repo, "rev-parse", "HEAD").stdout.strip()
+    git(repo, "checkout", "-q", "main")
+    return forged
+
+
+def test_forged_tree_trailer_earns_no_note_and_target_stays_unattested(repo, capsys, monkeypatch):
+    """The reviewer's construction: a [SIGNOFF] commit on an unrelated tree whose
+    trailer names the target's tree. Recovery used to attach a tree note on the
+    trailer's say-so, after which the unchanged verifier accepted the target."""
+    monkeypatch.setenv("GIT_SIGNOFF_NO_UPDATE_CHECK", "1")
+    commit_file(repo, "b.txt", "target", "target: never attested")
+    target = git(repo, "rev-parse", "HEAD").stdout.strip()
+    target_tree = git(repo, "rev-parse", "HEAD^{tree}").stdout.strip()
+    _forged_attestation_of(repo, target, target_tree)
+    assert recover_notes.recover(str(repo), "forge", []) == 0
+    out = capsys.readouterr().out
+    assert "skip" in out and "not the declared reviewed commit" in out
+    listing = git(repo, "ls-tree", "-r", "refs/notes/signoff", check=False).stdout
+    assert target not in listing and target_tree not in listing
+    ok, lines = _verify_module().check_head(str(repo), target)
+    assert not ok, lines
+
+
+def test_declared_tree_that_is_not_the_parents_tree_attaches_to_the_commit_only(repo, capsys):
+    """Eight attestations in this repository's own early history (2026-08-01..05,
+    the bash-heredoc skill) declare a tree no reviewed commit has. Their commit
+    anchor is earned; their tree anchor is not."""
+    reviewed = git(repo, "rev-parse", "HEAD").stdout.strip()
+    wrong_tree = "f" * 40
+    git(repo, "commit", "--allow-empty", "-m", attestation_message(reviewed, wrong_tree))
+    assert recover_notes.recover(str(repo), "HEAD", []) == 0
+    out = capsys.readouterr().out
+    assert "tree-only-skip" in out and wrong_tree[:7] in out
+    listing = git(repo, "ls-tree", "-r", "refs/notes/signoff").stdout
+    assert reviewed in listing and wrong_tree not in listing
+
+
+def test_non_empty_attestation_commit_is_skipped(repo, capsys):
+    reviewed = git(repo, "rev-parse", "HEAD").stdout.strip()
+    tree = git(repo, "rev-parse", "HEAD^{tree}").stdout.strip()
+    (repo / "smuggled.txt").write_text("payload")
+    git(repo, "add", "smuggled.txt")
+    git(repo, "commit", "-m", attestation_message(reviewed, tree))
+    assert recover_notes.recover(str(repo), "HEAD", []) == 0
+    assert "not an empty commit" in capsys.readouterr().out
+    assert git(repo, "rev-parse", "-q", "--verify", "refs/notes/signoff", check=False).returncode != 0
+
+
+def test_attestation_after_a_merge_commit_is_skipped(repo, capsys):
+    """An attestation committed on the integration branch after merging, naming
+    the PR head: real in this repository's history (c2754c7), but its parent is
+    the merge commit, so the commit object does not back the claim."""
+    git(repo, "checkout", "-q", "-b", "feature")
+    commit_file(repo, "f.txt", "feature", "feature work")
+    pr_head = git(repo, "rev-parse", "HEAD").stdout.strip()
+    pr_tree = git(repo, "rev-parse", "HEAD^{tree}").stdout.strip()
+    git(repo, "checkout", "-q", "main")
+    git(repo, "merge", "-q", "--no-ff", "-m", "Merge feature", "feature")
+    git(repo, "commit", "--allow-empty", "-m", attestation_message(pr_head, pr_tree))
+    assert recover_notes.recover(str(repo), "HEAD", []) == 0
+    out = capsys.readouterr().out
+    assert "skip" in out and "not the declared reviewed commit" in out
+    assert git(repo, "rev-parse", "-q", "--verify", "refs/notes/signoff", check=False).returncode != 0
+
+
+def test_two_parent_signoff_subject_is_skipped(repo, capsys):
+    git(repo, "checkout", "-q", "-b", "side")
+    commit_file(repo, "s.txt", "side", "side work")
+    git(repo, "checkout", "-q", "main")
+    reviewed = git(repo, "rev-parse", "HEAD").stdout.strip()
+    tree = git(repo, "rev-parse", "HEAD^{tree}").stdout.strip()
+    git(repo, "merge", "-q", "--no-ff", "-m", attestation_message(reviewed, tree), "side")
+    assert recover_notes.recover(str(repo), "HEAD", []) == 0
+    assert "2 parents" in capsys.readouterr().out
+    assert git(repo, "rev-parse", "-q", "--verify", "refs/notes/signoff", check=False).returncode != 0
+
+
+def test_valid_attestation_from_a_pull_request_head_recovers_a_squash_tip(repo, tmp_path, monkeypatch):
+    """The positive case the whole design rests on: the PR head carries a sound
+    attestation; the squash tip has the same tree; recovery over the PR ref
+    reconstructs the tree note; the verifier then passes the squash tip."""
+    monkeypatch.setenv("GIT_SIGNOFF_NO_UPDATE_CHECK", "1")
+    git(repo, "checkout", "-q", "-b", "feature")
+    commit_file(repo, "f.txt", "feature", "feature work")
+    reviewed = git(repo, "rev-parse", "HEAD").stdout.strip()
+    tree = git(repo, "rev-parse", "HEAD^{tree}").stdout.strip()
+    digest = "Signoff-Transcript-Digest: sha256:" + "0123456789abcdef" * 4 + "\n"  # a complete payload, as the producer writes
+    git(repo, "commit", "--allow-empty", "-m", attestation_message(reviewed, tree, extra=digest))
+    pr_head = git(repo, "rev-parse", "HEAD").stdout.strip()
+    git(repo, "update-ref", "refs/pull/1/head", pr_head)  # what GitHub retains
+    git(repo, "checkout", "-q", "main")
+    git(repo, "merge", "-q", "--squash", "feature")
+    git(repo, "commit", "-q", "-m", "squash: feature")
+    squash = git(repo, "rev-parse", "HEAD").stdout.strip()
+    verify = _verify_module()
+    ok, _ = verify.check_head(str(repo), squash)
+    assert not ok  # no note yet, attestation commit not in main's history
+    assert recover_notes.recover(str(repo), "refs/pull/1/head", []) == 0
+    ok, lines = verify.check_head(str(repo), squash)
+    assert ok and "note on tree" in " ".join(lines)
+    # and a later change to the tree is not covered
+    commit_file(repo, "g.txt", "more", "after the squash")
+    ok, _ = verify.check_head(str(repo), git(repo, "rev-parse", "HEAD").stdout.strip())
+    assert not ok

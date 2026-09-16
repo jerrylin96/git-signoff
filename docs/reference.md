@@ -247,5 +247,16 @@ Tests: `scripts/tests/test_verify_signoff.py`,
 Rebuilds `refs/notes/signoff` from the `[SIGNOFF *]` commits reachable from
 `--ref` plus any `--payload-file` attestations whose objects no longer exist
 locally. Run by `.github/workflows/notes-recovery.yml` on every push to
-`main`, because cloud sessions cannot push notes refs. Idempotent. Tests:
-`scripts/tests/test_recover_notes.py`.
+`main`, because cloud sessions cannot push notes refs. Idempotent.
+
+A note is attached only where the commit object backs the trailer's claim.
+A commit-sourced payload earns its reviewed-commit anchor when the
+attestation commit has exactly one parent, is empty (its tree is the
+parent's), and that parent is the declared reviewed commit; it earns its
+tree anchor only if the declared tree is the parent's actual tree (else the
+note goes on the commit alone, reported as `tree-only-skip`). Anything else
+is skipped loudly. Without this, a `[SIGNOFF]` commit on an unrelated tree
+whose trailer named some target's tree would mint a tree note and turn that
+unattested target green in every verifier. Payload files are trusted as
+given: they exist for attestations whose objects are gone and are committed
+to this repository. Tests: `scripts/tests/test_recover_notes.py`.

@@ -7,6 +7,16 @@ dates on `origin`.
 
 ## Unreleased
 
+- **Changed** `scripts/recover_notes.py` to attach a note only where the
+  attestation commit object backs the trailer: one parent, empty commit,
+  parent is the declared reviewed commit (else skipped), and the declared
+  tree is the parent's tree (else the commit anchor only). A `[SIGNOFF]`
+  commit on an unrelated tree naming a target's tree could otherwise mint a
+  tree note and turn an unattested target green (constructed in external
+  review, 2026-09-16). Eight attestations from 2026-08-01..05 in this
+  repository's own history declare a tree no reviewed commit has; they now
+  recover on their commit anchor only. Payload files remain trusted as
+  committed fixtures.
 - **Fixed** `attest.py commit` attesting a commit the interview never covered
   when no transcript was available. `commit` re-ran `prepare` and took
   whatever HEAD was; only the transcript's approval marker tied it to the
