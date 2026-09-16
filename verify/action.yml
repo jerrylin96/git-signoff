@@ -9,9 +9,11 @@ branding:
 inputs:
   mode:
     description: >-
-      'head' (PR gate: the PR head commit must be attested), 'history'
-      (repo badge: the ref's history must carry valid attestations), or
-      'auto' (head on pull_request events, history otherwise).
+      'head' (the target commit must be attested: an attestation at the tip,
+      an attested PR merge, or — for a squash or rebase merge — the reviewed
+      tree via a note or via the merged pull request's head), 'history' (the
+      ref's history must carry valid attestations), or 'auto' (head on every
+      event since verify-v1.5; before, history on push).
     default: 'auto'
   target:
     description: >-
@@ -21,16 +23,26 @@ inputs:
   require:
     description: 'History mode: minimum number of valid attestations.'
     default: '1'
+  scan-refs:
+    description: >-
+      Head mode: refs whose sound attestation commits may anchor the target by
+      tree. 'auto' (default) resolves the merged, same-repository pull request
+      whose merge commit is the target (push events; needs the gh CLI and the
+      workflow token) and fetches exactly its refs/pull/N/head; 'none' scans
+      nothing; any other value is passed through verbatim. Evidence from a
+      fork is never fetched by 'auto'.
+    default: 'auto'
 
 runs:
   using: 'composite'
   steps:
-    - name: Verify attestations
+    - name: Resolve mode and target
+      id: resolve
       shell: bash
       run: |
         MODE='${{ inputs.mode }}'
         if [ "$MODE" = auto ]; then
-          [ "$GITHUB_EVENT_NAME" = pull_request ] && MODE=head || MODE=history
+          MODE=head
         fi
         TARGET='${{ inputs.target }}'
         if [ -z "$TARGET" ]; then
@@ -40,5 +52,55 @@ runs:
             TARGET=HEAD
           fi
         fi
+        echo "mode=$MODE" >> "$GITHUB_OUTPUT"
+        echo "target=$TARGET" >> "$GITHUB_OUTPUT"
+
+    - name: Resolve eligible pull-request heads
+      id: eligible
+      shell: bash
+      env:
+        GH_TOKEN: ${{ github.token }}
+        SCAN_INPUT: ${{ inputs.scan-refs }}
+        MODE: ${{ steps.resolve.outputs.mode }}
+        TARGET: ${{ steps.resolve.outputs.target }}
+      run: |
+        # Evidence eligibility (docs/attest-any-target.md §2.13): only the
+        # merged, same-repository pull request whose merge commit is the
+        # target may supply an attestation for it. Eligibility is an API fact
+        # about the PR, never a ref-name pattern; nothing is fetched otherwise.
+        SCAN=""
+        if [ "$MODE" = head ] && [ "$SCAN_INPUT" = auto ] && [ "$GITHUB_EVENT_NAME" = push ]; then
+          if command -v gh >/dev/null 2>&1; then
+            SHA=$(git rev-parse "$TARGET^{commit}")
+            NUMBERS=$(gh pr list --state merged --base "$GITHUB_REF_NAME" --limit 100 \
+              --json number,mergeCommit,headRepository,headRepositoryOwner \
+              --jq ".[] | select(.mergeCommit.oid == \"$SHA\" and (.headRepositoryOwner.login + \"/\" + .headRepository.name) == \"$GITHUB_REPOSITORY\") | .number" \
+              2>/dev/null || true)
+            for N in $NUMBERS; do
+              if git fetch -q origin "+refs/pull/$N/head:refs/remotes/pull/$N/head"; then
+                SCAN="$SCAN refs/remotes/pull/$N/head"
+                echo "eligible: pull request #$N (merged into $GITHUB_REF_NAME from this repository)"
+              fi
+            done
+            if [ -z "$NUMBERS" ]; then
+              echo "no merged same-repository pull request has $SHA as its merge commit; nothing scanned"
+            fi
+          else
+            echo "gh CLI not available; no pull-request heads scanned"
+          fi
+        elif [ "$MODE" = head ] && [ "$SCAN_INPUT" != auto ] && [ "$SCAN_INPUT" != none ]; then
+          SCAN="$SCAN_INPUT"
+        fi
+        echo "scan=$SCAN" >> "$GITHUB_OUTPUT"
+
+    - name: Verify attestations
+      shell: bash
+      env:
+        MODE: ${{ steps.resolve.outputs.mode }}
+        TARGET: ${{ steps.resolve.outputs.target }}
+        SCAN: ${{ steps.eligible.outputs.scan }}
+      run: |
+        # shellcheck disable=SC2086  # SCAN is a space-separated list of refs
         python3 "${GITHUB_ACTION_PATH}/../skills/git-signoff/verify_signoff.py" \
-          --mode "$MODE" --target "$TARGET" --require '${{ inputs.require }}'
+          --mode "$MODE" --target "$TARGET" --require '${{ inputs.require }}' \
+          ${SCAN:+--scan-refs $SCAN}

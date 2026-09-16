@@ -55,7 +55,7 @@ def test_site_covers_audit_walkthrough():
 def test_site_advertises_badge_and_verifier():
     html = _html()
     assert "attested by humans" in html
-    assert "jerrylin96/git-signoff/verify@verify-v1.4" in html
+    assert "jerrylin96/git-signoff/verify@verify-v1.5" in html
     assert "verify@main" not in html, "site must show the pinned verifier tag, like README and the scaffold"
 
 

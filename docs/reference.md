@@ -243,10 +243,10 @@ Tests: `scripts/tests/test_attest.py`, `test_attest_adapters.py`,
 ## `verify_signoff.py` — verifier
 
 Same file at `skills/git-signoff/verify_signoff.py` (vendored) and behind the
-composite action `jerrylin96/git-signoff/verify@verify-v1.4`.
+composite action `jerrylin96/git-signoff/verify@verify-v1.5`.
 
 ```
-verify_signoff.py [--repo PATH] [--mode {head,history}] [--target REV] [--require N]
+verify_signoff.py [--repo PATH] [--mode {head,history}] [--target REV] [--require N] [--scan-refs REF ...]
 verify_signoff.py --audit [COMMIT] [--export PATH] [--repo PATH]
 verify_signoff.py --version
 ```
@@ -254,17 +254,18 @@ verify_signoff.py --version
 | Flag | Effect |
 |---|---|
 | `--repo PATH` | Repository to verify (default `.`). |
-| `--mode head` | PR gate (default): `--target` (default `HEAD`) must be a valid **empty** attestation commit attesting its parent's commit and tree; or be covered by a note on its commit or tree, a `[SIGNOFF *]` commit in its history, or (for a 2-parent merge) a clean `merge-tree` whose PR head is attested. |
-| `--mode history` | Badge check: `--target` (a ref) must reach at least `--require` (default 1) structurally valid attestations, counting notes and commits, deduplicated by reviewed commit. |
+| `--mode head` | PR gate (default): `--target` (default `HEAD`) must be a valid **empty** attestation commit attesting its parent's commit and tree; or be covered by a note on its commit or tree, a *sound* `[SIGNOFF *]` commit in its history or under `--scan-refs` (one parent, empty, parent is the declared reviewed commit; the declared tree anchors only when it is the parent's tree), or (for a 2-parent merge) a clean `merge-tree` whose PR head is attested. |
+| `--mode history` | Badge check: `--target` (a ref) must reach at least `--require` (default 1) valid attestations — notes, and attestation commits that corroborate their trailers (a rebased attestation commit does not) — deduplicated by reviewed commit. |
+| `--scan-refs REF ...` | Head mode: also consider sound attestation commits reachable from these refs (patterns expand via `for-each-ref`); a tree match proves the same code state was attested, not that this PR, base, or interview was reviewed. The composite action passes the merged same-repository pull request's head for the target; the verifier trusts no ref it was not given. |
 | `--audit [COMMIT]` | Re-hash the local transcript for the attestation covering `COMMIT` (default `HEAD`) against `Signoff-Transcript-Digest` over the first `Signoff-Transcript-Bytes` bytes. The transcript is resolved from the harness id and conversation id, or from `GIT_SIGNOFF_TRANSCRIPT_FILE`. |
 | `--export PATH` | With `--audit`: write the audited byte snapshot to `PATH`. |
-| `--version` | Prints the pin (`verify-v1.4`). |
+| `--version` | Prints the pin (`verify-v1.5`). |
 
 Before checking, the verifier fetches `origin`'s notes into its own mirror
 ref `refs/notes/signoff-verify` and never writes `refs/notes/signoff`, so an
 unpushed local attestation survives verification. Then it lists this
 repository's `verify-v*` tags and prints
-`warning: verifier pin verify-v1.4 is behind verify-vX.Y; see verify/README.md`
+`warning: verifier pin verify-v1.5 is behind verify-vX.Y; see verify/README.md`
 on stderr when a newer pin exists (never changes the verdict; stdout carries
 only the verdict; silent on network failure).
 

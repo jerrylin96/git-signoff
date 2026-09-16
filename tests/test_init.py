@@ -147,7 +147,7 @@ def test_scaffold_workflow_file(temp_git_repo):
     content = workflow.read_text(encoding="utf-8")
     assert "branches: [ master ]" in content
     assert "fetch-depth: 0" in content
-    assert "jerrylin96/git-signoff/verify@verify-v1.4" in content
+    assert "jerrylin96/git-signoff/verify@verify-v1.5" in content
 
 
 def test_scaffold_profile_file(temp_git_repo):

@@ -274,7 +274,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0   # full history — attestations live in it
-      - uses: jerrylin96/git-signoff/verify@verify-v1.4
+      - uses: jerrylin96/git-signoff/verify@verify-v1.5
 ```
 
 Supports standard merge strategies: **2-parent PR merges** (verifies clean merge tree & attested PR head in `head` mode), **fast-forward merges** (`head` mode), **squash merges** (`history` mode; in `head` mode when base is unchanged), and **rebase merges** (`history` mode; in `head` mode, re-run `/git-signoff` after rebase). Enforce strictly with preconfigured [`ruleset.json`](verify/ruleset.json). Full setup & badge markdown: [`verify/`](verify/README.md).

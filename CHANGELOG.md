@@ -5,8 +5,23 @@ the composite action (`verify-vX.Y`) and the initializer (`init-vN`) never
 move and are listed with the release that introduced them. Dates are the tag
 dates on `origin`.
 
-## Unreleased
+## Unreleased (`verify-v1.5`)
 
+- **Changed** the verifier (`verify-v1.5`): an attestation *commit* found by
+  the log lookup counts only if its object corroborates its trailers — one
+  parent, empty, parent is the declared reviewed commit; the declared tree
+  anchors only when it is the parent's tree. Closes the forgery an external
+  review constructed (an empty `[SIGNOFF]` commit naming a later tree passed
+  that tree). History mode no longer counts a rebased attestation commit.
+  Added `--scan-refs REF ...`: sound attestation commits under the given
+  refs may anchor the target by tree, which establishes that the same code
+  state was attested, not that this PR or interview was reviewed. The
+  composite action's `auto` mode is now `head` on every event (the badge
+  means "the current tip is attested"), and on `push` it resolves the merged
+  same-repository pull request whose merge commit is the target via the API
+  and scans exactly its `refs/pull/N/head`; forks are never fetched by
+  `auto`. New input `scan-refs` (`auto` | `none` | explicit). Adopters with
+  unattested history start red until the first attestation lands.
 - **Added** target mode: `attest.py prepare --target <branch>` reviews
   `origin/<branch>`'s tip from any checkout (the working tree is not read),
   and `commit` builds the attestation object with `commit-tree`,

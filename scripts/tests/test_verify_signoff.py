@@ -393,10 +393,14 @@ def test_head_mode_fails_on_rebase_onto_advanced_base_without_resignoff(repo):
     assert not ok
     assert "does not attest its parent" in lines[0]
 
-    # In history mode: historical attestation remains valid in history log
+    # In history mode (verify-v1.5): the rebased copy of the attestation commit
+    # no longer corroborates its trailers — its parent is the rewritten commit,
+    # not the one it names — so it is reported, not counted. Before v1.5 the
+    # badge counted an attestation of a commit that is not in this history.
     ok_hist, lines_hist = verify_signoff.check_history(str(repo), "HEAD", require=1)
-    assert ok_hist, lines_hist
-    assert "1 valid attestation(s)" in lines_hist[0]
+    assert not ok_hist, lines_hist
+    assert "0 valid attestation(s)" in lines_hist[0]
+    assert "not the declared reviewed commit" in "\n".join(lines_hist)
 
 
 def test_head_mode_fails_on_squash_merge_onto_advanced_base_without_resignoff(repo):
@@ -1177,7 +1181,7 @@ def test_pin_version_parsing():
 
 
 def test_stale_pin_warning_when_upstream_has_newer_tag(repo, tmp_path, monkeypatch, capsys):
-    remote = _fake_pin_remote(tmp_path, ["verify-v1", "verify-v1.4", "verify-v1.5", "init-v9"])
+    remote = _fake_pin_remote(tmp_path, ["verify-v1", "verify-v1.5", "verify-v1.6", "init-v9"])
     monkeypatch.delenv("GIT_SIGNOFF_NO_UPDATE_CHECK", raising=False)
     monkeypatch.setenv("GIT_SIGNOFF_PIN_REMOTE", remote)
     attest_head(repo)
@@ -1185,7 +1189,7 @@ def test_stale_pin_warning_when_upstream_has_newer_tag(repo, tmp_path, monkeypat
     captured = capsys.readouterr()
     assert rc == 0, captured.out  # the warning never changes the verdict
     # stderr carries the warning so stdout stays the verdict for pipelines
-    assert f"warning: verifier pin {verify_signoff.VERIFIER_PIN} is behind verify-v1.5" in captured.err
+    assert f"warning: verifier pin {verify_signoff.VERIFIER_PIN} is behind verify-v1.6" in captured.err
     assert "see verify/README.md" in captured.err
     assert "warning: verifier pin" not in captured.out
     assert captured.out.startswith("PASS")
@@ -1227,3 +1231,116 @@ def test_version_flag_prints_pin(capsys):
         verify_signoff.main(["--version"])
     assert exc.value.code == 0
     assert verify_signoff.VERIFIER_PIN in capsys.readouterr().out
+
+
+
+# --- evidence, not trailers (verify-v1.5; docs/attest-any-target.md §2.13) --------
+
+
+def _complete(reviewed, tree):
+    return attestation_message(reviewed, tree)
+
+
+def test_log_lookup_ignores_a_forged_tree_trailer(repo):
+    """The reviewer's construction: an empty [SIGNOFF] commit whose trailer names
+    a *later* tree it can predict. Its parent matches the declared reviewed
+    commit, but the declared tree is not the parent's tree, so the tree anchor
+    is not earned. Before v1.5 this passed head mode on the later commit."""
+    a = git(repo, "rev-parse", "HEAD").stdout.strip()
+    (repo / "z.txt").write_text("predicted")
+    git(repo, "add", "z.txt")
+    predicted_tree = git(repo, "write-tree").stdout.strip()
+    git(repo, "reset", "-q")  # unstage; keep the file out of the forged commit
+    (repo / "z.txt").unlink()
+    git(repo, "commit", "-q", "--allow-empty", "-m", _complete(a, predicted_tree))
+    forged = git(repo, "rev-parse", "HEAD").stdout.strip()
+    commit_file(repo, "z.txt", "predicted", "the later commit whose tree was predicted")
+    later = git(repo, "rev-parse", "HEAD").stdout.strip()
+    assert git(repo, "rev-parse", "HEAD^{tree}").stdout.strip() == predicted_tree
+    ok, lines = verify_signoff.check_head(str(repo), later)
+    assert not ok, lines
+    # the forged commit still earns its own commit anchor: a is attested by it
+    problems, commit_anchor, tree_anchor = verify_signoff.commit_evidence(str(repo), forged, verify_signoff.parse_trailers(_complete(a, predicted_tree)))
+    assert problems == [] and commit_anchor == a and tree_anchor is None
+    # and history mode counts it (it is a real attestation of a), once
+    ok, hist = verify_signoff.check_history(str(repo), "HEAD", require=1)
+    assert ok and "1 valid attestation(s)" in hist[0]
+
+
+def test_log_lookup_ignores_an_attestation_whose_parent_is_not_the_declared_commit(repo):
+    """An attestation committed after a merge, naming the PR head (real in this
+    repository's history): the object does not back the claim."""
+    git(repo, "checkout", "-q", "-b", "feature")
+    commit_file(repo, "f.txt", "feature", "feature work")
+    pr_head = git(repo, "rev-parse", "HEAD").stdout.strip()
+    pr_tree = git(repo, "rev-parse", "HEAD^{tree}").stdout.strip()
+    git(repo, "checkout", "-q", "main")
+    git(repo, "merge", "-q", "--no-ff", "-m", "Merge feature", "feature")
+    git(repo, "commit", "-q", "--allow-empty", "-m", _complete(pr_head, pr_tree))
+    ok, lines = verify_signoff.check_history(str(repo), "HEAD", require=1)
+    assert not ok and "not the declared reviewed commit" in "\n".join(lines)
+    ok, lines = verify_signoff.check_head(str(repo), pr_head)
+    assert not ok  # pr_head has no attestation in *its* history either
+
+
+def test_log_lookup_ignores_a_non_empty_attestation_commit_in_history(repo):
+    reviewed = git(repo, "rev-parse", "HEAD").stdout.strip()
+    tree = git(repo, "rev-parse", "HEAD^{tree}").stdout.strip()
+    (repo / "smuggled.txt").write_text("payload")
+    git(repo, "add", "smuggled.txt")
+    git(repo, "commit", "-q", "-m", _complete(reviewed, tree))
+    commit_file(repo, "later.txt", "x", "later")
+    ok, lines = verify_signoff.check_history(str(repo), "HEAD", require=1)
+    assert not ok and "not an empty commit" in "\n".join(lines)
+
+
+def test_scan_refs_lets_a_merged_pull_requests_head_anchor_a_squash_tip(repo, tmp_path):
+    """The positive case the design rests on, without any note: the PR head
+    carries a sound attestation; the squash tip has the same tree; the ref the
+    action fetched is scanned; a later change to the tree is not covered; a
+    ref the caller did not pass is not consulted."""
+    git(repo, "checkout", "-q", "-b", "feature")
+    commit_file(repo, "f.txt", "feature", "feature work")
+    attest_head(repo)
+    pr_head = git(repo, "rev-parse", "HEAD").stdout.strip()
+    git(repo, "update-ref", "refs/remotes/pull/7/head", pr_head)  # what the action fetches
+    git(repo, "checkout", "-q", "main")
+    git(repo, "merge", "-q", "--squash", "feature")
+    git(repo, "commit", "-q", "-m", "squash: feature (#7)")
+    squash = git(repo, "rev-parse", "HEAD").stdout.strip()
+    ok, _ = verify_signoff.check_head(str(repo), squash)
+    assert not ok  # nothing in main's history, no note
+    ok, lines = verify_signoff.check_head(str(repo), squash, scan_refs=("refs/remotes/pull/7/head",))
+    assert ok, lines
+    assert "via commit" in lines[0] and "refs/remotes/pull/7/head" in lines[0] and "reviewed tree" in lines[0]
+    ok, lines = verify_signoff.check_head(str(repo), squash, scan_refs=("refs/remotes/pull/*/head",))
+    assert ok, lines  # patterns expand through for-each-ref
+    ok, _ = verify_signoff.check_head(str(repo), squash, scan_refs=("refs/remotes/pull/8/head",))
+    assert not ok  # a ref that does not exist anchors nothing
+    commit_file(repo, "g.txt", "more", "after the squash")
+    ok, _ = verify_signoff.check_head(str(repo), "HEAD", scan_refs=("refs/remotes/pull/7/head",))
+    assert not ok  # changed tree: not covered
+    # CLI surface
+    rc = verify_signoff.main(["--repo", str(repo), "--mode", "head", "--target", squash, "--scan-refs", "refs/remotes/pull/7/head"])
+    assert rc == 0
+
+
+def test_scan_refs_apply_the_same_integrity_rules(repo):
+    """A forged attestation on a scanned ref is no better than one in history."""
+    a = git(repo, "rev-parse", "HEAD").stdout.strip()
+    (repo / "z.txt").write_text("predicted")
+    git(repo, "add", "z.txt")
+    predicted_tree = git(repo, "write-tree").stdout.strip()
+    git(repo, "reset", "-q")
+    (repo / "z.txt").unlink()
+    git(repo, "checkout", "-q", "-b", "fork-ish")
+    commit_file(repo, "unrelated.txt", "different", "unrelated work")
+    unrelated = git(repo, "rev-parse", "HEAD").stdout.strip()
+    git(repo, "commit", "-q", "--allow-empty", "-m", _complete(unrelated, predicted_tree))  # parent ok, tree forged
+    git(repo, "update-ref", "refs/remotes/pull/9/head", git(repo, "rev-parse", "HEAD").stdout.strip())
+    git(repo, "checkout", "-q", "main")
+    commit_file(repo, "z.txt", "predicted", "target with the predicted tree")
+    assert git(repo, "rev-parse", "HEAD^{tree}").stdout.strip() == predicted_tree
+    ok, _ = verify_signoff.check_head(str(repo), "HEAD", scan_refs=("refs/remotes/pull/9/head",))
+    assert not ok
+    assert a  # (unused sha kept for clarity of the setup)

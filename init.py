@@ -97,7 +97,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0   # full history — attestations live in it
-      - uses: jerrylin96/git-signoff/verify@verify-v1.4
+      - uses: jerrylin96/git-signoff/verify@verify-v1.5
 """
 
 RULESET_PAYLOAD = {
