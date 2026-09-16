@@ -4,11 +4,9 @@
 (2026-09-16), in the slices of §5, after external review found no remaining
 design blockers. Release gate before `verify-v1.5` is tagged: the Actions
 fetch check in §2.13's pre-implementation list. Revised five times after
-three review passes that reproduced failures against the current code. The
-producer bug and its follow-up (§2.12) and the recovery hardening (§2.13)
-are fixed on this branch; the rest of this document is not implemented,
-and the verifier pin is held until §2.13's boundaries are implemented and
-tested.
+three review passes that reproduced failures against the code as it was;
+the fixes those passes prompted (§2.12, §2.13) shipped first, the feature
+slices after.
 §2 holds positions settled in the first pass; §3 holds the items that were
 open, each now carrying a decision and the reasoning, with the rejected
 alternatives kept so a reviewer can disagree with something concrete.
