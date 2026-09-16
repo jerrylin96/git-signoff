@@ -1,10 +1,16 @@
 # Design: attest any target, from anywhere
 
-**Status:** Draft for discussion, revised 2026-09-16 after a second review pass. Nothing here is implemented. Sections marked
-*settled* are positions we are confident in; sections marked *open* list the
-alternatives and what each costs. Decide the open items, then this document
-becomes the change list for `gsa-core.md` (a minor version), `SKILL.md`,
-`attest.py`, `init.py`, and the verify workflow.
+**Status:** Decided, pending one external review before implementation.
+Revised 2026-09-16 after two review passes. Nothing here is implemented.
+§2 holds positions settled in the first pass; §3 holds the items that were
+open, each now carrying a decision and the reasoning, with the rejected
+alternatives kept so a reviewer can disagree with something concrete.
+The decision rule applied throughout §3: judge by the broadest set of
+adopters (most often one researcher with an agent in one checkout), not
+by any single team's habits; prefer the option that adds no protocol
+surface; decide now when reversal is cheap. This document is the change
+list for `gsa-core.md` 3.8.0, `SKILL.md`, `attest.py`, `init.py`, and
+the verify workflow.
 
 **Origin:** a reviewer who works from the integration branch (`dev`) tried
 `/git-signoff` and found it hard to use. The skill assumes the reviewer has
@@ -137,7 +143,7 @@ inside this constraint.
 
 `init.py` changes ship as `init-v8`. `gsa-core.md` goes to 3.8.0: producer
 behaviour is generalised, no trailer changes. If §3.3 resolves as
-recommended, the composite action's default changes and ships as
+decided in §3.3, the composite action's default changes and ships as
 `verify-v1.5`.
 
 ### 2.9 Target parsing
@@ -171,7 +177,7 @@ branch, since that is today's behaviour and the reviewer is on it.
 
 ---
 
-## 3. Open
+## 3. Decided after review (alternatives kept)
 
 ### 3.1 Whose branch gets advanced
 
@@ -183,12 +189,21 @@ check *should* go red because the diff changed after the attestation.
 
 | Option | How | Costs |
 |---|---|---|
-| **A. Advance the target branch** (proposed) | `commit-tree` parented on the tip; `update-ref`; fast-forward push of `refs/heads/<target>`. | Requires push rights to that branch. Writes to someone else's branch, under the reviewer's identity. |
+| **A. Advance the target branch** (decided) | `commit-tree` parented on the tip; lease push of the object to `refs/heads/<target>` (§2.5); no local ref update (§2.11). | Requires push rights to that branch. Writes to someone else's branch, under the reviewer's identity. |
 | **B. Reviewer-owned ref** | Same commit, pushed to `refs/heads/signoff/<target>`; note attached to the reviewed commit. Head mode passes on the note. | Ref clutter needing cleanup on merge. `recover_notes.py` must learn to scan `signoff/*` refs. A second persistence shape to document, test, and explain. |
 
-Decide A unless the branch-ownership concern is real for the team. If the
-branches under review are the reviewer's own (or written by an agent in
-their checkout), the concern does not arise and A is strictly simpler.
+**Decision: A.** Three reasons, none specific to any one team. The most
+common adopter is one researcher with an agent in one checkout, for whom
+"someone else's branch" never arises and B would be pure overhead. A
+maintainer pushing to a pull-request branch is an existing GitHub norm,
+so nothing new has to be learned. B adds a second persistence shape to
+the protocol: every third-party verifier would have to implement it and
+§5.1's lookup order would grow, and spec surface is the cost that
+compounds for a protocol seeking implementers. The ownership concern is a
+team norm a tool cannot settle; the approval step already names the
+branch that will receive the commit, so the reviewer consents each time.
+Reopen only on a concrete adopting team that objects; B is the harder
+direction to reverse, so it is not chosen on a hypothetical.
 
 ### 3.2 Enforce or advise, and what the initializer asks
 
@@ -198,10 +213,14 @@ their checkout), the concern does not arise and A is strictly simpler.
 | **Advise** | Ruleset off; workflow runs on push. | Badge tells the truth; stops nobody. |
 | **Enforce with bypass** | Ruleset on; named `bypass_actors`. | Named people may push directly; their unattested pushes still turn the badge red (if §3.3 chooses head mode). Everyone else must PR. |
 
-Open questions: does `init.py` ask this as a question, or keep today's
-"create the ruleset unless `--skip-ruleset`" and document bypass as a
-manual step? Does the config file record the choice, and if so does
-anything read it? A recorded-but-unread setting is a trap.
+**Decision: change nothing in the initializer; document bypass.** The
+initializer already enforces by default and `--skip-ruleset` already is
+advisory mode. The bypass list is a GitHub setting about people, not a
+property of the tool, so it is a documented manual step in
+`verify/README.md`. The config file records nothing about enforcement,
+because a recorded-but-unread setting is a trap. Enforcement stays the
+default even though some teams dislike PR requirements: the gate is the
+product, and the opt-out exists.
 
 ### 3.3 What the push-to-integration job checks
 
@@ -219,7 +238,7 @@ the badge green forever.
 Head mode on push is the only option under which §3.2's bypass path means
 anything. If §3.2 chooses plain Enforce, this item matters less.
 
-**Recommendation:** head mode as the new default, shipped as `verify-v1.5`.
+**Decision: head mode as the new default, shipped as `verify-v1.5`.**
 For a strictly enforced repository every push to the integration branch
 is an attested PR merge, so head mode is always green and costs nothing.
 For an advisory or bypass repository it is the entire point. History mode
@@ -233,9 +252,9 @@ the command to run. History mode stays available as an explicit input;
 Proposed: the configured integration branch. Alternative: the pull
 request's base branch, which is more precise for stacked PRs but requires
 a GitHub query (`gh`, not always installed) or a `--reference` flag the
-human must remember. Proposal: integration branch by default,
-`--reference` to override, as today. Stacked PRs are an existing
-limitation, unchanged.
+human must remember. **Decision:** integration branch by default,
+`--reference` to override, per the precedence in §2.10. Stacked PRs are
+an existing limitation, unchanged.
 
 ### 3.5 Commit identity in target mode
 
@@ -246,8 +265,11 @@ is already true today and already documented in HARNESSES.md. Target
 mode does not change this, but it makes the gap more visible: a commit on
 someone else's branch, authored by a session identity, attested by a
 human email. Options: leave as is; or set author from the confirmed email
-when the harness is a cloud session. The second is small but touches
-provenance semantics and belongs in the spec if done.
+when the harness is a cloud session. **Decision: leave as is, explicitly
+deferred.** It is documented behaviour today and target mode does not
+change what is recorded, only where. Revisit on a report of confusion;
+the change is small but touches provenance semantics and would need a
+spec sentence in §2.4.
 
 ### 3.6 Local state of the target branch — settled, see §2.11
 
@@ -259,9 +281,9 @@ discussion still resolves.
 Minimal: `{"integration_branch": "dev"}`. Tempting additions
 (`enforcement`, `attest_from`) are each a setting that some code path must
 honour or they become misleading. Rule proposed: a key is added only in
-the same change as its first reader. Also decide the file's relationship
-to `.git-signoff/profile.md` (sibling, not merged) and whether
-`init.py` rewrites it on re-run (proposed: yes, after confirming).
+the same change as its first reader. **Decision:** the minimal schema and
+that rule; the file is a sibling of `.git-signoff/profile.md`, not merged
+into it; `init.py` rewrites it on re-run after confirming the value.
 
 ### 3.8 Listing heuristic, and the empty list
 
@@ -269,15 +291,15 @@ How many candidates, and chosen how?
 
 | Option | Behaviour | Costs |
 |---|---|---|
-| **Count cap** (recommended) | The ten most recent by commit date, each shown with its date; `--all` lists every candidate. | A very active repository may push the wanted branch off the list; the date column and `--all` cover it. |
+| **Count cap** (decided) | The ten most recent by commit date, each shown with its date; `--all` lists every candidate. | A very active repository may push the wanted branch off the list; the date column and `--all` cover it. |
 | **Time window** | Branches touched in the last N days. | Fails in the setting this feature is for: a lab branch last touched six weeks ago is often the one the lead reviews late, and it would be hidden with no hint that anything was hidden. |
 
 If the list is empty (everything merged, or nothing has a remote
 counterpart), the skill needs a next step for the human. Options: say so
 and stop; fall back to asking for a branch name; offer `--reference` for
 the direct-push case of §2.4. Small, but it is the first thing a confused
-new user sees. Lean: state the reason the list is empty, then ask for a
-name.
+new user sees. **Decision:** state the reason the list is empty, then
+ask for a name.
 
 ---
 
@@ -321,12 +343,18 @@ or §5 (lookup order) unless §3.1 chooses B.
 - Docs: `reference.md`, `walkthrough.md` (a second walkthrough from the
   integration branch), `HARNESSES.md`, README quickstart.
 
-## 6. Evidence to gather before deciding §3
+## 6. Evidence still worth gathering from the originating adopter
 
-- Whose branches does the reviewer attest: their own, an agent's in their
-  own checkout, or other people's? (Decides §3.1.)
+None of it changes the design above; it tells us whether the feature
+helps the reviewer who prompted it, and what to write in the docs.
+
 - Does code reach the integration branch through pull requests, direct
   pushes, or both, and for whom? Five minutes in `git log --merges` on the
-  integration branch answers it. (Decides §3.2 and §3.3.)
+  integration branch answers it. If there are no pull requests, the gate
+  cannot help this repository regardless, and that is a workflow
+  conversation, not a spec change.
+- Whose branches does the reviewer attest? If other people's, §3.1's
+  consent line in the approval step should be worded with that reader
+  in mind.
 - Is the repository's GitHub default branch the same as its integration
-  branch? (Decides how much §2.3 matters for this adopter.)
+  branch? Tells us how much §2.3 matters for this adopter.
