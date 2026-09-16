@@ -5,8 +5,26 @@ the composite action (`verify-vX.Y`) and the initializer (`init-vN`) never
 move and are listed with the release that introduced them. Dates are the tag
 dates on `origin`.
 
-## Unreleased (`verify-v1.5`)
+## Unreleased (`verify-v1.5`, `init-v8`, spec 3.8.0)
 
+- **Added** notes recovery for adopters: `init.py` scaffolds
+  `.github/workflows/git-signoff-notes.yml`, which runs the new composite
+  action `jerrylin96/git-signoff/recover` on every push to the integration
+  branch. It rebuilds `refs/notes/signoff` from attestation commits in the
+  branch's history and in the heads of merged, same-repository pull requests
+  (the same eligibility the verifier applies), then pushes it. Only this
+  repository had a recovery workflow before; `scripts/recover_notes.py`
+  accepts repeated `--ref`. This repository's own workflow now uses the
+  action.
+- **Changed** `gsa-core.md` to 3.8.0: attestations are recorded on the
+  branch whose tip is the reviewed commit, from any checkout (§2, §2.5 item
+  3, §4.1); §5.1 gains the evidence rules — object integrity for attestation
+  commits, source eligibility beyond the target's history, and what a
+  cross-history match establishes. No trailer changes.
+- **Release gate before tagging `verify-v1.5`:** confirm on a scratch GitHub
+  repository that `refs/pull/N/head` is fetchable from Actions with the
+  default token after the branch is deleted (`scan-refs: auto` and the
+  recover action rest on it).
 - **Changed** the verifier (`verify-v1.5`): an attestation *commit* found by
   the log lookup counts only if its object corroborates its trailers — one
   parent, empty, parent is the declared reviewed commit; the declared tree

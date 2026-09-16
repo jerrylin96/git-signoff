@@ -150,6 +150,15 @@ def test_scaffold_workflow_file(temp_git_repo):
     assert "jerrylin96/git-signoff/verify@verify-v1.5" in content
 
 
+def test_scaffold_notes_workflow_file(temp_git_repo):
+    init.scaffold_notes_workflow(temp_git_repo, default_branch="dev")
+    workflow = temp_git_repo / ".github" / "workflows" / "git-signoff-notes.yml"
+    content = workflow.read_text(encoding="utf-8")
+    assert "branches: [ dev ]" in content and "branch: dev" in content
+    assert "jerrylin96/git-signoff/recover@verify-v1.5" in content
+    assert "contents: write" in content and "pull-requests: read" in content
+
+
 def test_scaffold_profile_file(temp_git_repo):
     init.scaffold_profile(temp_git_repo, profile_id="domain-science")
     profile = temp_git_repo / ".git-signoff" / "profile.md"
@@ -221,7 +230,7 @@ def test_skill_source_ref_pin_consistency():
     import re
 
     repo_root = Path(__file__).parent.parent
-    assert init.SKILL_SOURCE_REF == "init-v7", f"Expected init-v7, got {init.SKILL_SOURCE_REF}"
+    assert init.SKILL_SOURCE_REF == "init-v8", f"Expected init-v8, got {init.SKILL_SOURCE_REF}"
     ref = init.SKILL_SOURCE_REF
 
 
@@ -564,6 +573,9 @@ def test_end_to_end_init(temp_git_repo):
     up = subprocess.run(["git", "rev-parse", "--abbrev-ref", "git-signoff/init@{upstream}"], cwd=temp_git_repo, capture_output=True, text=True)
     assert up.returncode != 0
 
+    # Both workflows are committed: the gate and the notes recovery adopters lacked before init-v8
+    committed_files = subprocess.check_output(["git", "show", "--name-only", "--format=", "HEAD"], cwd=temp_git_repo, text=True).split()
+    assert ".github/workflows/git-signoff.yml" in committed_files and ".github/workflows/git-signoff-notes.yml" in committed_files
     # The integration branch is chosen once and committed with the scaffold
     config = json.loads((temp_git_repo / ".git-signoff" / "config.json").read_text())
     assert config == {"integration_branch": "main"}

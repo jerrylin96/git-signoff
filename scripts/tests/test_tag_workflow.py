@@ -71,6 +71,6 @@ def test_current_pins_declared_in_pins():
     m = PINS_RE.search(workflow_text())
     assert m, "PINS not declared in tag.yml"
     pins = m.group(1).split()
-    for pin in ("init-v7", "verify-v1.5", "verify-v1.4", "init-v5", "verify-v1"):
+    for pin in ("init-v8", "init-v7", "verify-v1.5", "verify-v1.4", "init-v5", "verify-v1"):
         assert pin in pins, f"{pin} not declared in tag.yml PINS: {pins}"
 

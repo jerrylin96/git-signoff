@@ -83,6 +83,13 @@ dogfoods via symlinks at both `.claude/skills/git-signoff` and
 `.agents/skills/git-signoff` to its own `skills/git-signoff/`; that symlink pattern is
 for this repo only.
 
+**Migration note (2026-09, `init-v8`):** re-running the initializer adds
+`.git-signoff/config.json` (the integration branch, confirmed once), renders
+the ruleset for that branch, and scaffolds the notes-recovery workflow; the
+vendored `attest.py` gains target mode (`prepare --target <branch>`,
+`targets`) and the preparation record; `verify@verify-v1.5` is the matching
+verifier pin. Existing attestations verify as before.
+
 **Migration note (2026-09, `init-v7`):** the skill folder, command, config
 directory, workflow file, and environment variables were renamed from
 `signoff` to `git-signoff` (`.claude/skills/git-signoff`,

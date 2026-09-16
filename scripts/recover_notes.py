@@ -185,12 +185,19 @@ def write_notes(repo, notes, message):
 
 
 def recover(repo, ref, payload_files):
+    """`ref` may be one ref or a list: the integration branch plus the heads of
+    eligible (merged, same-repository) pull requests — see recover/action.yml,
+    which decides eligibility; this script scans what it is given."""
+    refs = [ref] if isinstance(ref, str) else list(ref)
     # (label, payload, anchors): anchors are earned for commit-sourced payloads
     # (commit_anchors) and taken from the trailers for trusted payload files.
-    payloads = [
-        (label, payload, commit_anchors(repo, label, sha, payload))
-        for label, payload, sha in attestation_payloads(repo, ref)
-    ]
+    payloads, seen = [], set()
+    for one in refs:
+        for label, payload, sha in attestation_payloads(repo, one):
+            if sha in seen:
+                continue
+            seen.add(sha)
+            payloads.append((label, payload, commit_anchors(repo, label, sha, payload)))
     for path in payload_files:
         with open(path, encoding="utf-8") as f:
             text = f.read().strip("\n")
@@ -219,7 +226,7 @@ def recover(repo, ref, payload_files):
         print("no attestation payloads found; nothing to do")
         return 0
     commit = write_notes(
-        repo, notes, f"Recover signoff notes from attestation messages in {ref}"
+        repo, notes, f"Recover signoff notes from attestation messages in {', '.join(refs)}"
     )
     print(
         f"{NOTES_REF} -> {commit[:12]} ({attached} attachment(s))"
@@ -232,7 +239,12 @@ def recover(repo, ref, payload_files):
 def main(argv=None):
     p = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     p.add_argument("--repo", default=".", help="repository to operate on")
-    p.add_argument("--ref", default="HEAD", help="history to scan for [SIGNOFF *] commits")
+    p.add_argument(
+        "--ref",
+        action="append",
+        default=None,
+        help="history to scan for [SIGNOFF *] commits (repeatable; default HEAD)",
+    )
     p.add_argument(
         "--payload-file",
         action="append",
@@ -240,7 +252,7 @@ def main(argv=None):
         help="extra attestation payload file (repeatable)",
     )
     args = p.parse_args(argv)
-    return recover(args.repo, args.ref, args.payload_file)
+    return recover(args.repo, args.ref or ["HEAD"], args.payload_file)
 
 
 if __name__ == "__main__":

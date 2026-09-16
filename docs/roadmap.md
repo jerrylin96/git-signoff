@@ -11,8 +11,8 @@ This document tracks development milestones, retrospective phase gate logs, and 
 
 ## 1. Active Backlog & Ongoing Phases
 
-### Attest any target, from anywhere (design, not started)
-A reviewer working from the integration branch could not use `/git-signoff`, and three code paths decide what the integration branch is. Draft design with settled positions and open trade-offs: [`docs/attest-any-target.md`](attest-any-target.md). Ships as `init-v8` and gsa-core 3.8.0 once the open items are decided.
+### Attest any target, from anywhere (implemented, awaiting release)
+A reviewer working from the integration branch could not use `/git-signoff`, and three code paths decided what the integration branch is. Design, five external-review revisions, and the decisions: [`docs/attest-any-target.md`](attest-any-target.md). Implemented 2026-09-16 as `.git-signoff/config.json` + the reference precedence, target mode (`prepare --target`, `targets`, notes-then-lease commit), the preparation record, `verify-v1.5` (object-integrity rules, `--scan-refs`, head mode on every event, API eligibility in the action), the `recover` action and the adopters' notes workflow, gsa-core 3.8.0, and the component-scaled interview floor. **Release gate** (`tag.yml` creates `verify-v1.5` and `init-v8` on merge; the release workflow cuts the version): confirm on a scratch GitHub repository that `refs/pull/N/head` is fetchable from Actions with the default token after branch deletion.
 
 ### Phase 3f (Adaptive Signoff Interview Intensity)
 - [x] **Prompt-Level Implementation**: Dynamic auto-classification of interview intensity based on diff semantics and blast radius when bare `/git-signoff` is invoked without explicit modifiers: Tier 0 (`cursory` for pure docs/types <50 LoC), Tier 1 (`standard` for default feature work, with pure docs of any size capped at Tier 1), and Tier 2 (`skeptical` for high-impact changes: security/auth, schema/migrations, public APIs, numerical/science invariants, or >200 LoC / >5 files). Safety clamps strictly block `--quick` on high-impact diffs and enforce graduated one-way escalation.

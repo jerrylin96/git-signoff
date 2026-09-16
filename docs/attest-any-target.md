@@ -1,8 +1,10 @@
 # Design: attest any target, from anywhere
 
-**Status:** Ready for implementation (external review, 2026-09-16, no
-remaining design blockers). Revised five times after three review passes
-that reproduced failures against the current code. The
+**Status:** Implemented on branch `claude/joss-submission-prep-pmfto5`
+(2026-09-16), in the slices of §5, after external review found no remaining
+design blockers. Release gate before `verify-v1.5` is tagged: the Actions
+fetch check in §2.13's pre-implementation list. Revised five times after
+three review passes that reproduced failures against the current code. The
 producer bug and its follow-up (§2.12) and the recovery hardening (§2.13)
 are fixed on this branch; the rest of this document is not implemented,
 and the verifier pin is held until §2.13's boundaries are implemented and

@@ -304,6 +304,23 @@ def test_two_parent_signoff_subject_is_skipped(repo, capsys):
     assert git(repo, "rev-parse", "-q", "--verify", "refs/notes/signoff", check=False).returncode != 0
 
 
+def test_recover_accepts_several_refs_and_dedupes_shared_history(repo, capsys):
+    """The action passes the integration branch plus each eligible PR head; an
+    attestation reachable from both is attached once."""
+    reviewed, tree = add_attestation(repo)
+    git(repo, "update-ref", "refs/remotes/pull/3/head", "HEAD")
+    assert recover_notes.recover(str(repo), ["HEAD", "refs/remotes/pull/3/head"], []) == 0
+    out = capsys.readouterr().out
+    assert out.count(f"attach {reviewed[:7]}") == 1 and out.count(f"attach {tree[:7]}") == 1
+    assert "HEAD, refs/remotes/pull/3/head" in git(repo, "log", "-1", "--format=%s", "refs/notes/signoff").stdout
+
+
+def test_cli_ref_is_repeatable(repo, capsys):
+    reviewed, _ = add_attestation(repo)
+    assert recover_notes.main(["--repo", str(repo), "--ref", "HEAD", "--ref", "HEAD"]) == 0
+    assert git(repo, "notes", "--ref=signoff", "show", reviewed).returncode == 0
+
+
 def test_valid_attestation_from_a_pull_request_head_recovers_a_squash_tip(repo, tmp_path, monkeypatch):
     """The positive case the whole design rests on: the PR head carries a sound
     attestation; the squash tip has the same tree; recovery over the PR ref

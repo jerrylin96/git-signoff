@@ -100,6 +100,34 @@ jobs:
       - uses: jerrylin96/git-signoff/verify@verify-v1.5
 """
 
+NOTES_WORKFLOW_TEMPLATE = """name: git-signoff notes
+
+# Rebuilds refs/notes/signoff from attestation commits — in {default_branch}'s
+# history and in the heads of merged pull requests from this repository — and
+# pushes it. Interviews run in cloud sessions cannot push notes themselves; this
+# is what lets a squash- or rebase-merged branch's attestation survive.
+
+on:
+  push:
+    branches: [ {default_branch} ]
+  workflow_dispatch: {{}}
+
+permissions:
+  contents: write
+  pull-requests: read
+
+jobs:
+  recover-notes:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: jerrylin96/git-signoff/recover@verify-v1.5
+        with:
+          branch: {default_branch}
+"""
+
 RULESET_PAYLOAD = {
     "name": "Signoff Enforcement",
     "target": "branch",
@@ -351,6 +379,17 @@ def scaffold_workflow(repo_root: Path, default_branch: str = "main") -> Path:
     return wf_file
 
 
+def scaffold_notes_workflow(repo_root: Path, default_branch: str = "main") -> Path:
+    """The recovery workflow adopters did not get before init-v8 (only this
+    repository had one), so the notes path did not exist outside it."""
+    wf_dir = repo_root / ".github" / "workflows"
+    wf_file = wf_dir / "git-signoff-notes.yml"
+    ensure_no_symlink_in_path(repo_root, wf_file)
+    wf_dir.mkdir(parents=True, exist_ok=True)
+    wf_file.write_text(NOTES_WORKFLOW_TEMPLATE.format(default_branch=default_branch), encoding="utf-8")
+    return wf_file
+
+
 def scaffold_profile(repo_root: Path, profile_id: str = "domain-science") -> Path:
     profile_dir = repo_root / ".git-signoff"
     profile_file = profile_dir / "profile.md"
@@ -367,7 +406,7 @@ SKILL_SOURCE_REPO = "https://github.com/jerrylin96/git-signoff"
 # script version instead of silently tracking the default branch. Pin tags
 # never move; bump this together with the install snippets (README,
 # verify/README.md, site/index.html) and tag.yml's PINS list.
-SKILL_SOURCE_REF = "init-v7"
+SKILL_SOURCE_REF = "init-v8"
 VENDOR_STAMP_FILENAME = "VENDORED-FROM"
 BENIGN_METADATA_FILES: set[str] = {".DS_Store", "Thumbs.db", "desktop.ini"}
 
@@ -857,6 +896,7 @@ def stage_signoff_files(
     dests = _normalize_skill_destinations(repo_root, destinations)
     files = [
         ".github/workflows/git-signoff.yml",
+        ".github/workflows/git-signoff-notes.yml",
         ".git-signoff/profile.md",
         CONFIG_RELPATH.as_posix(),
         ".git-signoff/ruleset.json",
@@ -1307,6 +1347,7 @@ def run_init(
 
     scaffold_paths = [
         root / ".github" / "workflows" / "git-signoff.yml",
+        root / ".github" / "workflows" / "git-signoff-notes.yml",
         root / ".git-signoff" / "profile.md",
         root / CONFIG_RELPATH,
         root / ".git-signoff" / "ruleset.json",
@@ -1321,6 +1362,7 @@ def run_init(
     # refuse here so nothing (no branch, no bootstrap commit) is created first.
     symlink_checked = [
         root / ".github" / "workflows" / "git-signoff.yml",
+        root / ".github" / "workflows" / "git-signoff-notes.yml",
         root / ".git-signoff" / "profile.md",
         root / CONFIG_RELPATH,
     ]
@@ -1422,6 +1464,7 @@ def run_init(
         # Step 4: Scaffold files
         scaffold_started = True
         scaffold_workflow(root, default_branch=ctx.default_branch)
+        scaffold_notes_workflow(root, default_branch=ctx.default_branch)
         scaffold_profile(root, profile_id=effective_profile)
         scaffold_config(root, integration_branch=ctx.default_branch)
         vendor_skill(root, source=skill_source, destinations=resolved_dests, allow_dirty=allow_dirty)
@@ -1535,7 +1578,7 @@ def main() -> int:
         except Exception:
             pass
         dests_str = ", ".join(str(d.relative_to(root_dir)) for d in res.destinations) or ".claude/skills/git-signoff"
-        print(f"[4/5] 📝 Scaffolded workflow, profile, and vendored the /git-signoff skill into {dests_str}.")
+        print(f"[4/5] 📝 Scaffolded the verify and notes-recovery workflows, the profile and config, and vendored the /git-signoff skill into {dests_str}.")
         hint = single_destination_hint(root_dir, res.destinations, args.skill_target)
         if hint:
             print(f"  ℹ️  {hint}")

@@ -19,7 +19,7 @@ end-to-end example is [`walkthrough.md`](walkthrough.md).
 ## `init.py` — repository initializer
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/jerrylin96/git-signoff/init-v7/init.py -o /tmp/signoff-init.py
+curl -fsSL https://raw.githubusercontent.com/jerrylin96/git-signoff/init-v8/init.py -o /tmp/signoff-init.py
 python3 /tmp/signoff-init.py [options]
 ```
 
@@ -43,6 +43,8 @@ back to the state it found.
 | `--verbose` | On error, print the exception type and traceback. |
 
 Files written (all under the repository root): `.github/workflows/git-signoff.yml`,
+`.github/workflows/git-signoff-notes.yml` (notes recovery via the `recover`
+composite action, on push to the integration branch),
 `.git-signoff/profile.md`, `.git-signoff/config.json` (`{"integration_branch":
 NAME}`), `.git-signoff/ruleset.json` (rendered for that branch; the portable
 `verify/ruleset.json` template keeps `~DEFAULT_BRANCH`), `README.md` (badge),
@@ -288,12 +290,19 @@ Tests: `scripts/tests/test_verify_signoff.py`,
 
 ---
 
-## `scripts/recover_notes.py` — notes recovery (this repository's CI)
+## `scripts/recover_notes.py` and `recover/action.yml` — notes recovery
 
 Rebuilds `refs/notes/signoff` from the `[SIGNOFF *]` commits reachable from
-`--ref` plus any `--payload-file` attestations whose objects no longer exist
-locally. Run by `.github/workflows/notes-recovery.yml` on every push to
-`main`, because cloud sessions cannot push notes refs. Idempotent.
+each `--ref` (repeatable) plus any `--payload-file` attestations whose objects
+no longer exist locally. The composite action `jerrylin96/git-signoff/recover`
+runs it in Actions, where pushes are unrestricted (cloud sessions cannot push
+notes refs): it fetches the existing notes, resolves the merged pull requests
+into the branch that came from this repository (`pull-requests: auto`; the
+same eligibility the verifier's `scan-refs: auto` applies; forks are never
+fetched), passes `--ref origin/<branch>` plus `--ref refs/remotes/pull/N/head`
+for each, and pushes. `init.py` scaffolds it as
+`.github/workflows/git-signoff-notes.yml`; this repository's
+`notes-recovery.yml` uses the same action. Idempotent.
 
 A note is attached only where the commit object backs the trailer's claim.
 A commit-sourced payload earns its reviewed-commit anchor when the
