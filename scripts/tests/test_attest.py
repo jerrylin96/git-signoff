@@ -108,6 +108,7 @@ def test_prepare_human_output_ends_with_marker_line(scratch_repo, monkeypatch, c
 
 
 def test_marker_command_prints_only_the_marker(scratch_repo, monkeypatch, capsys):
+    _prepared(scratch_repo)
     code, out, _ = run(monkeypatch, capsys, scratch_repo, "marker", "--reference", "main")
     assert code == 0
     assert out.strip().split("\n") == [out.strip()]
@@ -740,10 +741,31 @@ def test_marker_command_reprints_the_recorded_marker(scratch_repo, monkeypatch, 
     assert code == 0
     code, out, _ = run(monkeypatch, capsys, scratch_repo, "marker")
     assert code == 0 and out.strip() == data["marker"]  # same timestamp: the recorded one, not a fresh prepare
+    prepared = data["reviewed_commit_sha"]
     commit_file(scratch_repo, "later.txt", "x\n", "moves HEAD")
-    code, out, _ = run(monkeypatch, capsys, scratch_repo, "marker", "--reference", "main")
-    assert code == 0 and out.strip().split()[1] == _head(scratch_repo)  # stale record: re-prepared for the new HEAD
-    assert json.loads(_record(scratch_repo).read_text())["reviewed_commit_sha"] == _head(scratch_repo)
+    code, out, err = run(monkeypatch, capsys, scratch_repo, "marker", "--reference", "main")
+    assert code == 3 and out == "" and "stale" in err and "attest.py prepare" in err
+    assert json.loads(_record(scratch_repo).read_text())["reviewed_commit_sha"] == prepared  # untouched
+
+
+def test_marker_without_record_is_stale(scratch_repo, monkeypatch, capsys):
+    code, out, err = run(monkeypatch, capsys, scratch_repo, "marker")
+    assert code == 3 and out == "" and "no preparation record" in err
+    assert not _record(scratch_repo).exists()
+
+
+def test_marker_cannot_clear_a_refusal(scratch_repo, monkeypatch, capsys):
+    """External review, second pass: prepare A, add B, commit refuses, `marker`
+    silently re-prepared for B, commit --ack-no-transcript attested B. Every
+    command except prepare must leave a stale record stale."""
+    _prepared(scratch_repo)
+    later = commit_file(scratch_repo, "later.txt", "x\n", "never reviewed")
+    args = ("commit", "--email", "dev@example.com", "--level", "standard", "--reference", "main", "--no-push", "--ack-no-transcript")
+    assert run(monkeypatch, capsys, scratch_repo, *args)[0] == 3
+    assert run(monkeypatch, capsys, scratch_repo, "marker", "--reference", "main")[0] == 3
+    code, _, err = run(monkeypatch, capsys, scratch_repo, *args)
+    assert code == 3 and "stale" in err
+    assert _head(scratch_repo) == later and git(scratch_repo, "notes", "--ref=signoff", "list", check=False).stdout.strip() == ""
 
 
 def test_record_lives_in_the_worktree_git_dir(scratch_repo, tmp_path, monkeypatch, capsys):

@@ -105,6 +105,14 @@ profile), which is the only state `commit` will attest. Prints:
 | `record` | Path of the preparation record just written. |
 | `warnings` | Also printed to stderr. |
 
+### `marker`
+
+Prints the recorded `GSA-APPROVAL` line and nothing else. Read-only: with no
+preparation record, or one whose reviewed commit is no longer HEAD, it exits 3
+with the same message `commit` would give, plus a pointer to `prepare`. It
+never re-prepares — that would let a refused commit be retried against the
+moved HEAD without an interview of the new range.
+
 ### `commit`
 
 Validates arguments (exit 2): `--email` contains `@`; every `--tradeoff`,

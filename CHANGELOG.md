@@ -19,7 +19,9 @@ dates on `origin`.
   `--reference` at commit must resolve to the recorded one (else exit 2); the
   base in the trailers is the recorded one even if the reference moved during
   the interview. A successful commit removes the record; `marker` reprints the
-  recorded marker. Spec `gsa-core.md` 3.7.2 (informative §4.1).
+  recorded marker and is read-only (a stale or missing record is exit 3, so it
+  cannot restart a review the way a silent re-prepare would; caught in the
+  second external review pass). Spec `gsa-core.md` 3.7.2 (informative §4.1).
 - **Changed** the license of the three specification documents under
   `skills/git-signoff/specs/` from the Community Specification License 1.0
   to the Apache License 2.0 (`gsa-core.md` 3.7.1, since superseded by 3.7.2 above, `gsa-escrow.md` 1.0.1,

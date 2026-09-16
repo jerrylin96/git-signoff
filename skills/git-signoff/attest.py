@@ -23,7 +23,9 @@ Commands:
       and the refs/notes/signoff mirror, self-check with the sibling
       verifier, and push the notes.
   attest.py marker   [--reference REF]
-      Reprint the recorded approval marker (re-running prepare if none).
+      Reprint the recorded approval marker. Read-only: no record, or a
+      record that no longer matches HEAD, is exit 3 — only `prepare` starts
+      a new review.
   attest.py --version
 
 Exit codes:
@@ -66,7 +68,9 @@ Preparation record:
   profile against it and refuses (exit 3) on any drift, whether or not a
   transcript is available. Without it, `--ack-no-transcript` would let a
   commit made after the interview be attested as if it had been reviewed. A
-  successful commit removes the record.
+  successful commit removes the record. Only `prepare` writes it: `marker`
+  and `commit` never re-prepare on a stale record, so a refusal cannot be
+  cleared by any command other than the one that begins a new review.
 
 Approval marker (gsa-core §2.3, SHOULD for producers):
 
@@ -1414,7 +1418,7 @@ def build_parser() -> argparse.ArgumentParser:
     prep.add_argument("--reference", help="base branch or commit (default: HEAD@{upstream}, else main/master)")
     prep.add_argument("--json", action="store_true", help="print one JSON object on stdout")
 
-    mark = sub.add_parser("marker", help="reprint the recorded approval marker (re-preparing if none)")
+    mark = sub.add_parser("marker", help="reprint the recorded approval marker (read-only; stale or missing record is exit 3)")
     mark.add_argument("--reference", help=argparse.SUPPRESS)
 
     com = sub.add_parser("commit", help="write the attestation commit and notes")
@@ -1449,10 +1453,18 @@ def main(argv: list[str] | None = None) -> int:
                 _print_prepare(state)
             return EXIT_OK
         if args.command == "marker":
+            # Read-only on purpose: a stale or missing record is a refusal, never
+            # a silent re-prepare. Otherwise `marker` would be the one command
+            # that restarts a review without an interview: prepare A, add B,
+            # commit refuses B, `marker` re-prepares for B, commit attests B.
             try:
                 state = load_prepared(root, args.reference)
-            except AttestError:
-                state = prepare(root, args.reference)
+            except AttestError as exc:
+                raise AttestError(
+                    exc.code,
+                    f"{exc} `marker` only reprints the recorded marker; run `attest.py prepare` to start a new "
+                    "review of the current state, and cover it in the interview.",
+                ) from exc
             print(state.marker)
             return EXIT_OK
         opts = CommitOptions(
