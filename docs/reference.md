@@ -74,7 +74,8 @@ imports by path. Run it from anywhere inside the repository; it uses
 `git rev-parse --show-toplevel`.
 
 ```
-attest.py prepare  [--reference REF] [--json]
+attest.py prepare  [--target BRANCH] [--reference REF] [--json]
+attest.py targets  [--reference REF] [--limit N] [--all] [--json]
 attest.py commit   --email EMAIL --level {cursory,standard,skeptical}
                    [--tradeoff T]... [--risk R]... [--summary TEXT] [--model ID]
                    [--reference REF] [--ack-no-transcript] [--no-sign]
@@ -85,7 +86,16 @@ attest.py --version
 
 ### `prepare`
 
-Refuses a dirty tree (exit 3). Resolves HEAD as the reviewed commit and the
+**Target mode** (`--target BRANCH`, spelled `feature`, `origin/feature`, or
+`refs/heads/feature`): fetches `origin/BRANCH` and reviews its tip. The
+working tree is not consulted and need not be clean; the checkout supplies
+only `.git-signoff/config.json` and the interview profile. Refused (exit 2)
+for the integration branch and for a branch not on `origin`; exit 3 when
+the tip is already an attestation. The reference skips the upstream step
+below and starts at the integration branch. Output gains `target` and
+`target_ref`.
+
+**HEAD mode** (no `--target`): refuses a dirty tree (exit 3). Resolves HEAD as the reviewed commit and the
 reference, in this order: `--reference`; `HEAD@{upstream}` when it is a strict
 ancestor of HEAD (after `git push -u origin <feature>` the upstream is the
 branch's own remote counterpart and is skipped with a warning); the
@@ -114,6 +124,17 @@ profile), which is the only state `commit` will attest. Prints:
 | `marker` | `GSA-APPROVAL <reviewed-sha> <utc-timestamp>` — the line the agent emits after approval. |
 | `record` | Path of the preparation record just written. |
 | `warnings` | Also printed to stderr. |
+
+### `targets`
+
+Branches awaiting review: after `git fetch --prune`, every `refs/remotes/origin/*`
+not merged into the base (`--reference`, else the integration branch —
+neither: exit 2), excluding the base itself and tips whose subject is an
+attestation, ordered by most recent committer date, ten by default (`--limit`,
+`--all`). Each row: branch, short SHA, date, commits ahead, subject. An empty
+list prints why (merged / attested / base counts). `--json`: `base`,
+`base_source`, `integration_branch`, `candidates`, `total`, `truncated`,
+`skipped`.
 
 ### `marker`
 
@@ -155,6 +176,20 @@ helper → exit 7).
 `--dry-run` prints the message and stops here (exit 0, nothing written; the
 marker is not required because the dry run precedes approval).
 
+**Target mode** (the record names a target; `--no-push` is exit 2): re-fetches
+`origin/<target>` and requires it at the recorded tip (exit 3); builds the
+attestation object with `git commit-tree` parented on it (`-S` when signing;
+nothing references the object), checks its tree and parent (exit 7), runs
+`check_head` on the object (exit 7, nothing published), appends the notes on
+the reviewed commit and tree and pushes them (a refusal is a warning naming
+the recovery dependency), then pushes the object to `refs/heads/<target>` with
+`--force-with-lease=refs/heads/<target>:<reviewed>`. A rejected push is exit 3:
+the branch is untouched, the object is unreferenced, and the notes — already
+published — stand and are named. No local branch is updated; the
+remote-tracking ref is refreshed. Output gains `target` and `branch_pushed`.
+
+**HEAD mode:**
+
 Otherwise: re-checks HEAD and the clean tree (exit 3), runs
 `git commit --allow-empty [-S]` (`-S` when `user.signingkey` is set and
 `--no-sign` is absent; a failing commit → exit 6, nothing written), verifies
@@ -181,7 +216,7 @@ Output (`--json`: one object; otherwise labeled lines): `attestation_sha`,
 |---|---|
 | 0 | Success. A refused notes push is reported, not fatal. |
 | 2 | Usage or argument error, including unsafe free text; `--reference` that does not resolve; no default reference; missing sibling `verify_signoff.py`. |
-| 3 | Stale or dirty: no preparation record (`prepare` has not run); HEAD or its tree differs from the record; the interview profile changed since `prepare`; unstaged or staged changes; the marker names an ancestor of HEAD; HEAD is already an attestation commit (nothing new to attest, or a failed rollback left one behind). |
+| 3 | Stale or dirty: no preparation record (`prepare` has not run); HEAD or its tree differs from the record; the interview profile changed since `prepare`; unstaged or staged changes; the marker names an ancestor of HEAD; HEAD (or the target's tip) is already an attestation commit; target mode: `origin/<target>` moved since `prepare`, or the lease push was rejected (notes already published stand). |
 | 4 | Transcript problem: unavailable without `--ack-no-transcript`; marker not found; marker for an unrelated commit. |
 | 5 | `GIT_SIGNOFF_PROFILE_FILE` set but unreadable. A malformed repo-local profile is *not* an error (falls back, reported). |
 | 6 | git failure (rev-parse, commit, notes append). |

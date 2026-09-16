@@ -94,7 +94,7 @@ AI: ✅ Attestation commit [SIGNOFF a1b2c3d] created! Your badge is green.
 
 1. **Install** — run the 60-second initializer above, or pick the one row for your harness below.
 2. **Open the PR** — review the diff as usual (when the branch's commits are well-structured, reading them one at a time shows what changed when and why far better than one squashed diff); the `verify-signoff` check runs red until the branch ends in a valid attestation. Attest *after* the diff is final: the attestation must be the last commit on the branch, so pushing anything after it turns the check red again (just re-run `/git-signoff`).
-3. **Run** — from the branch you want to merge, type `/git-signoff` (adaptive default auto-selects intensity from diff; `--deep` for skeptical rigor, `--quick` for low-risk diffs subject to safety clamps).
+3. **Run** — from the branch you want to merge, type `/git-signoff`; or, from wherever you sit (typically the integration branch), `/git-signoff <branch>` — the attestation is pushed to that branch and your checkout is not touched. With no branch named on the integration branch, the agent lists the branches awaiting review for you to pick. (Adaptive default auto-selects intensity from the diff; `--deep` for skeptical rigor, `--quick` for low-risk diffs subject to safety clamps.)
 4. **Answer, confirm, merge** — respond in your own words, acknowledge the named trade-offs and risks, confirm your email. The attestation commit and note are created and pushed with your branch; when `verify-signoff` turns green, merge as usual.
 
 ---

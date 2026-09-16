@@ -1416,3 +1416,264 @@ def test_end_to_end_vendored_by_init_then_attested_and_verified(tmp_path):
     git(repo, "commit", "-q", "-m", "squash: scaffold git signoff attestation")
     proc = subprocess.run([sys.executable, str(vendored / "verify_signoff.py"), "--mode", "head"], cwd=repo, capture_output=True, text=True, env=env)
     assert proc.returncode == 0 and "note on tree" in proc.stdout, proc.stdout
+
+
+# --- target mode: attest any branch from anywhere (docs/attest-any-target.md §2) ----
+
+
+@pytest.fixture
+def lab(tmp_path):
+    """origin (default dev) + reviewer clone sitting on dev with the config +
+    author clone that pushed `feature` (two commits ahead of dev)."""
+    origin = tmp_path / "origin.git"
+    origin.mkdir()
+    git(origin, "init", "-q", "--bare", "-b", "dev")
+    author = init_repo(tmp_path / "author", branch="dev")
+    commit_file(author, "base.txt", "base\n", "base commit")
+    (author / ".git-signoff").mkdir()
+    (author / ".git-signoff" / "config.json").write_text(json.dumps({"integration_branch": "dev"}) + "\n")
+    git(author, "add", ".git-signoff")
+    git(author, "commit", "-q", "-m", "config: integration branch dev")
+    git(author, "remote", "add", "origin", str(origin))
+    git(author, "push", "-q", "-u", "origin", "dev")
+    git(author, "checkout", "-q", "-b", "feature")
+    commit_file(author, "feat.py", "x = 1\n", "feature: first")
+    commit_file(author, "feat.py", "x = 2\n", "feature: second")
+    git(author, "push", "-q", "-u", "origin", "feature")
+    reviewer = tmp_path / "reviewer"
+    git(tmp_path, "clone", "-q", str(origin), "reviewer")
+    git(reviewer, "config", "user.email", "pi@example.com")
+    git(reviewer, "config", "user.name", "PI")
+    git(reviewer, "config", "commit.gpgsign", "false")
+    git(reviewer, "remote", "set-head", "origin", "dev")
+    return origin, author, reviewer
+
+
+def _origin_tip(origin, branch):
+    return git(origin, "rev-parse", f"refs/heads/{branch}").stdout.strip()
+
+
+def test_prepare_target_reviews_the_remote_tip_from_the_integration_branch(lab, monkeypatch, capsys):
+    origin, author, reviewer = lab
+    feature_tip = _origin_tip(origin, "feature")
+    (reviewer / "scratch.txt").write_text("the reviewer's own uncommitted work\n")  # target mode ignores the checkout
+    code, data, err = run_json(monkeypatch, capsys, reviewer, "prepare", "--target", "feature")
+    assert code == 0, err
+    assert data["target"] == "feature" and data["target_ref"] == "refs/remotes/origin/feature"
+    assert data["reviewed_commit_sha"] == feature_tip
+    assert data["reference"] == "origin/dev" and data["base_sha"] == _origin_tip(origin, "dev")
+    assert data["hints"]["executable_files"] == 1 and len(data["name_status"]) == 1
+    assert data["marker"].startswith(f"GSA-APPROVAL {feature_tip} ")
+    rec = json.loads(_record(reviewer).read_text())
+    assert rec["target"] == "feature" and rec["integration_branch"] == "dev"
+    assert git(reviewer, "branch", "--show-current").stdout.strip() == "dev"  # never switched
+    code, out, _ = run(monkeypatch, capsys, reviewer, "prepare", "--target", "feature")
+    assert "target: origin/feature" in out
+
+
+@pytest.mark.parametrize("spelling", ["feature", "origin/feature", "refs/heads/feature", "refs/remotes/origin/feature"])
+def test_prepare_target_spellings_resolve_to_the_remote_branch(lab, monkeypatch, capsys, spelling):
+    origin, _, reviewer = lab
+    code, data, err = run_json(monkeypatch, capsys, reviewer, "prepare", "--target", spelling)
+    assert code == 0, err
+    assert data["target"] == "feature" and data["reviewed_commit_sha"] == _origin_tip(origin, "feature")
+
+
+def test_prepare_target_refuses_the_integration_branch_and_unknown_branches(lab, monkeypatch, capsys):
+    _, _, reviewer = lab
+    code, _, err = run(monkeypatch, capsys, reviewer, "prepare", "--target", "dev")
+    assert code == 2 and "is the integration branch" in err
+    code, _, err = run(monkeypatch, capsys, reviewer, "prepare", "--target", "nope")
+    assert code == 2 and "does not exist on origin" in err
+    code, _, err = run(monkeypatch, capsys, reviewer, "prepare", "--target", "bad name")
+    assert code == 2 and "not a branch name" in err
+
+
+def test_prepare_target_refuses_a_tip_that_is_already_an_attestation(lab, tmp_path, monkeypatch, capsys):
+    origin, author, reviewer = lab
+    _prepared(author, None)  # author attests on their own branch the usual way
+    t = _transcript(tmp_path, author)
+    code, _, err = run(monkeypatch, capsys, author, "commit", "--email", "a@example.com", "--level", "standard",
+                       env={"GIT_SIGNOFF_TRANSCRIPT_FILE": str(t)})
+    assert code == 0, err
+    git(author, "push", "-q", "origin", "feature")
+    code, _, err = run(monkeypatch, capsys, reviewer, "prepare", "--target", "feature")
+    assert code == 3 and "already ends in an attestation" in err
+
+
+def test_commit_target_pushes_the_attestation_to_the_branch_and_nothing_else_moves(lab, tmp_path, monkeypatch, capsys):
+    origin, author, reviewer = lab
+    feature_tip = _origin_tip(origin, "feature")
+    dev_tip = _origin_tip(origin, "dev")
+    git(reviewer, "branch", "feature", "origin/feature~1")  # a stale local copy, must not move
+    stale_local = git(reviewer, "rev-parse", "feature").stdout.strip()
+    code, data, err = run_json(monkeypatch, capsys, reviewer, "prepare", "--target", "feature")
+    assert code == 0, err
+    t = _transcript(tmp_path, reviewer, sha=feature_tip)
+    code, data, err = run_json(
+        monkeypatch, capsys, reviewer, "commit", "--email", "pi@example.com", "--level", "skeptical",
+        "--tradeoff", "reviewed from dev", env={"GIT_SIGNOFF_TRANSCRIPT_FILE": str(t)},
+    )
+    assert code == 0, err
+    assert data["target"] == "feature" and data["branch_pushed"] is True
+    attestation = data["attestation_sha"]
+    # origin/feature now ends in the attestation, parented on the reviewed tip, empty
+    assert _origin_tip(origin, "feature") == attestation
+    assert git(origin, "rev-parse", f"{attestation}~1").stdout.strip() == feature_tip
+    assert git(origin, "rev-parse", f"{attestation}^{{tree}}").stdout.strip() == git(origin, "rev-parse", f"{feature_tip}^{{tree}}").stdout.strip()
+    trailers = attest.parse_trailers(git(origin, "log", "-1", "--format=%B", attestation).stdout)
+    assert trailers["Signoff-Reviewed-Commit-SHA"] == [feature_tip]
+    assert trailers["Signoff-Base-SHA"] == [dev_tip]
+    assert trailers["Signoff-Verified-By"] == ["pi@example.com"]
+    assert trailers["Signoff-Tradeoff"] == ["reviewed from dev"]
+    # notes were published on the reviewed commit and its tree
+    assert data["notes_pushed"] is True and data["noted_shas"] == [feature_tip, trailers["Signoff-Reviewed-Tree-SHA"][0]]
+    assert git(origin, "rev-parse", "-q", "--verify", "refs/notes/signoff").returncode == 0
+    # nothing else moved: dev, the reviewer's HEAD, the stale local branch
+    assert _origin_tip(origin, "dev") == dev_tip
+    assert git(reviewer, "branch", "--show-current").stdout.strip() == "dev"
+    assert git(reviewer, "rev-parse", "HEAD").stdout.strip() == dev_tip
+    assert git(reviewer, "rev-parse", "feature").stdout.strip() == stale_local
+    assert git(reviewer, "rev-parse", "origin/feature").stdout.strip() == attestation  # remote-tracking ref refreshed
+    assert not _record(reviewer).exists()
+    # the PR check passes on the pushed branch, from any clone
+    git(author, "fetch", "-q", "origin")
+    ok, lines = verify_signoff.check_head(str(author), "origin/feature")
+    assert ok, lines
+
+
+def test_commit_target_human_output_and_dry_run(lab, tmp_path, monkeypatch, capsys):
+    origin, _, reviewer = lab
+    feature_tip = _origin_tip(origin, "feature")
+    assert run(monkeypatch, capsys, reviewer, "prepare", "--target", "feature")[0] == 0
+    t = _transcript(tmp_path, reviewer, sha=feature_tip, with_marker=False)
+    code, out, err = run(monkeypatch, capsys, reviewer, "commit", "--email", "pi@example.com", "--level", "standard",
+                         "--dry-run", env={"GIT_SIGNOFF_TRANSCRIPT_FILE": str(t)})
+    assert code == 0, err
+    assert out.startswith(f"[SIGNOFF {feature_tip[:7]}]") and "dry run: nothing committed" in out
+    assert _origin_tip(origin, "feature") == feature_tip and _record(reviewer).exists()
+    t = _transcript(tmp_path, reviewer, sha=feature_tip)
+    code, out, err = run(monkeypatch, capsys, reviewer, "commit", "--email", "pi@example.com", "--level", "standard",
+                         env={"GIT_SIGNOFF_TRANSCRIPT_FILE": str(t)})
+    assert code == 0, err
+    assert "pushed to: origin/feature" in out and "no local ref moved" in out
+
+
+def test_commit_target_race_leaves_the_branch_untouched_and_the_notes_published(lab, tmp_path, monkeypatch, capsys):
+    """The author pushes during the interview: the lease rejects the push; the
+    branch is theirs; the notes describe the reviewed commit and tree, which
+    is true, and the message says so (§2.5 failure contract)."""
+    origin, author, reviewer = lab
+    reviewed = _origin_tip(origin, "feature")
+    assert run(monkeypatch, capsys, reviewer, "prepare", "--target", "feature")[0] == 0
+    commit_file(author, "feat.py", "x = 3\n", "feature: third, mid-interview")
+    git(author, "push", "-q", "origin", "feature")
+    moved = _origin_tip(origin, "feature")
+    t = _transcript(tmp_path, reviewer, sha=reviewed)
+    code, _, err = run(monkeypatch, capsys, reviewer, "commit", "--email", "pi@example.com", "--level", "standard",
+                       env={"GIT_SIGNOFF_TRANSCRIPT_FILE": str(t)})
+    assert code == 3 and "stale" in err and reviewed in err and moved in err
+    assert _origin_tip(origin, "feature") == moved  # untouched
+    assert git(origin, "rev-parse", "-q", "--verify", "refs/notes/signoff", check=False).returncode != 0  # refused before anything was published
+    assert _record(reviewer).exists()  # a refusal keeps the record; prepare --target starts over
+
+
+def test_commit_target_lease_rejection_after_notes_is_reported_truthfully(lab, tmp_path, monkeypatch):
+    """Force the narrowest race: the branch moves between the pre-push fetch and
+    the lease push. Notes are already published; the message must say so."""
+    origin, author, reviewer = lab
+    reviewed = _origin_tip(origin, "feature")
+    attest.prepare(str(reviewer), target="feature")
+    t = _transcript(tmp_path, reviewer, sha=reviewed)
+    real_git = attest.GitRepo.git
+
+    def racing_git(self, *args, check=True):
+        if args[:2] == ("push", "-q") and any(a.startswith("--force-with-lease") for a in args):
+            commit_file(author, "feat.py", "x = 9\n", "feature: sneaks in")
+            git(author, "push", "-q", "origin", "feature")
+        return real_git(self, *args, check=check)
+
+    monkeypatch.setattr(attest.GitRepo, "git", racing_git)
+    opts = attest.CommitOptions(email="pi@example.com", level="standard")
+    with pytest.raises(attest.AttestError) as exc:
+        attest.commit(str(reviewer), opts, env={"GIT_SIGNOFF_TRANSCRIPT_FILE": str(t)})
+    msg = str(exc.value)
+    assert exc.value.code == 3 and "rejected" in msg and "were published" in msg and "untouched" in msg
+    assert git(origin, "log", "-1", "--format=%s", "feature").stdout.strip() == "feature: sneaks in"
+    note = git(origin, "notes", "--ref=signoff", "show", reviewed, check=False)
+    assert note.returncode == 0 and f"Signoff-Reviewed-Commit-SHA: {reviewed}" in note.stdout
+
+
+def test_commit_target_refuses_no_push(lab, tmp_path, monkeypatch, capsys):
+    origin, _, reviewer = lab
+    assert run(monkeypatch, capsys, reviewer, "prepare", "--target", "feature")[0] == 0
+    t = _transcript(tmp_path, reviewer, sha=_origin_tip(origin, "feature"))
+    code, _, err = run(monkeypatch, capsys, reviewer, "commit", "--email", "pi@example.com", "--level", "standard",
+                       "--no-push", env={"GIT_SIGNOFF_TRANSCRIPT_FILE": str(t)})
+    assert code == 2 and "--no-push is not available" in err
+    assert _origin_tip(origin, "feature") != ""  # unchanged, no attestation
+
+
+def test_marker_works_from_a_target_record(lab, monkeypatch, capsys):
+    origin, _, reviewer = lab
+    code, data, _ = run_json(monkeypatch, capsys, reviewer, "prepare", "--target", "feature")
+    assert code == 0
+    code, out, _ = run(monkeypatch, capsys, reviewer, "marker")
+    assert code == 0 and out.strip() == data["marker"]
+
+
+def test_targets_lists_unmerged_remote_branches_most_recent_first(lab, tmp_path, monkeypatch, capsys):
+    origin, author, reviewer = lab
+    # a merged branch, an attested branch, and an older unmerged branch
+    git(author, "checkout", "-q", "-b", "merged", "dev")
+    commit_file(author, "m.txt", "m\n", "merged work")
+    git(author, "push", "-q", "origin", "merged")
+    git(author, "checkout", "-q", "dev")
+    git(author, "merge", "-q", "--ff-only", "merged")
+    git(author, "push", "-q", "origin", "dev")
+    git(author, "checkout", "-q", "-b", "older", "dev")
+    (author / "o.txt").write_text("o\n")
+    git(author, "add", "o.txt")
+    subprocess.run(  # the listing orders by committer date; make this one old
+        ["git", "commit", "-q", "-m", "older work"], cwd=author, check=True,
+        env={**os.environ, "GIT_COMMITTER_DATE": "2026-01-01T00:00:00Z", "GIT_AUTHOR_DATE": "2026-01-01T00:00:00Z"},
+    )
+    git(author, "push", "-q", "origin", "older")
+    git(author, "checkout", "-q", "-b", "done", "dev")
+    commit_file(author, "d.txt", "d\n", "done work")
+    _prepared(author, None)
+    t = _transcript(tmp_path, author)
+    assert run(monkeypatch, capsys, author, "commit", "--email", "a@example.com", "--level", "standard",
+               env={"GIT_SIGNOFF_TRANSCRIPT_FILE": str(t)})[0] == 0
+    git(author, "push", "-q", "origin", "done")
+    code, data, err = run_json(monkeypatch, capsys, reviewer, "targets")
+    assert code == 0, err
+    names = [c["branch"] for c in data["candidates"]]
+    assert names == ["feature", "older"], names  # merged excluded, attested excluded, dev excluded, recency order
+    assert data["base"] == "origin/dev" and data["integration_branch"] == "dev"
+    assert data["skipped"] == {"integration": 1, "merged": 1, "attested": 1}
+    assert data["candidates"][0]["ahead"] == 2 and data["candidates"][0]["date"]
+    code, out, _ = run(monkeypatch, capsys, reviewer, "targets")
+    assert "feature" in out and "older" in out and "prepare --target" in out
+    code, data, _ = run_json(monkeypatch, capsys, reviewer, "targets", "--limit", "1")
+    assert [c["branch"] for c in data["candidates"]] == ["feature"] and data["truncated"] and data["total"] == 2
+    code, data, _ = run_json(monkeypatch, capsys, reviewer, "targets", "--all")
+    assert data["total"] == 2 and not data["truncated"]
+
+
+def test_targets_empty_list_says_why(lab, monkeypatch, capsys):
+    origin, author, reviewer = lab
+    git(author, "checkout", "-q", "dev")
+    git(author, "merge", "-q", "--ff-only", "feature")
+    git(author, "push", "-q", "origin", "dev")
+    code, out, _ = run(monkeypatch, capsys, reviewer, "targets")
+    assert code == 0 and "no branches awaiting review" in out and "merged (1)" in out
+
+
+def test_targets_requires_a_base(scratch_repo, monkeypatch, capsys):
+    git(scratch_repo, "remote", "add", "origin", str(scratch_repo))  # a remote with no default branch and no config
+    code, _, err = run(monkeypatch, capsys, scratch_repo, "targets")
+    assert code == 2 and "no base to list against" in err
+    code, data, err = run_json(monkeypatch, capsys, scratch_repo, "targets", "--reference", "main")
+    assert code == 0, err
+    assert data["base"] == "main" and data["base_source"] == "reference"

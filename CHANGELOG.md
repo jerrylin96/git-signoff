@@ -7,6 +7,18 @@ dates on `origin`.
 
 ## Unreleased
 
+- **Added** target mode: `attest.py prepare --target <branch>` reviews
+  `origin/<branch>`'s tip from any checkout (the working tree is not read),
+  and `commit` builds the attestation object with `commit-tree`,
+  self-checks it, publishes the notes, then pushes it to the branch under a
+  lease on the reviewed tip — no local ref moves, and a rejected push
+  leaves the branch untouched with the already-published notes named.
+  `attest.py targets` lists fetched remote branches awaiting review (not
+  merged into the integration branch, not already attested; ten most recent
+  by default). The integration branch is never a target. `/git-signoff
+  <branch>` in SKILL.md; the Worktree Target Mandate is rewritten around it.
+  Not available from web sessions, whose git proxy pushes only to the
+  session's branch (HARNESSES.md).
 - **Added** `.git-signoff/config.json` with `integration_branch`, written by
   `init.py` (`--integration-branch`, else detected and confirmed). One
   choice read by the workflow's push filter, the rendered ruleset

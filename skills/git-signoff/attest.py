@@ -8,11 +8,18 @@ Python 3.10+, vendored into adopter repositories with the rest of this folder.
 
 Commands:
 
-  attest.py prepare  [--reference REF] [--json]
+  attest.py prepare  [--target BRANCH] [--reference REF] [--json]
       Resolve reviewed/base/tree SHAs, the range diff summary, the active
       interview profile, science-guard signals, transcript availability,
       intensity hints, and the approval marker the agent must emit; record
-      the prepared state under .git/git-signoff/prepared.json.
+      the prepared state under .git/git-signoff/prepared.json. With
+      --target, the reviewed commit is origin/BRANCH's tip after a fetch and
+      the working tree is not consulted (target mode: attest any branch from
+      wherever you sit).
+  attest.py targets  [--reference REF] [--limit N] [--all] [--json]
+      List branches awaiting review: fetched remote branches not merged into
+      the integration branch (or REF), excluding the integration branch and
+      tips that are already attestations, most recent first, ten by default.
   attest.py commit   --email EMAIL --level {cursory,standard,skeptical}
                      [--tradeoff T]... [--risk R]... [--summary TEXT]
                      [--model ID] [--reference REF] [--ack-no-transcript]
@@ -21,7 +28,10 @@ Commands:
       or the profile changed since), snapshot the transcript, require the
       approval marker, derive the status, write the empty attestation commit
       and the refs/notes/signoff mirror, self-check with the sibling
-      verifier, and push the notes.
+      verifier, and push the notes. In target mode (the record names a
+      target) the commit object is built with commit-tree, self-checked,
+      the notes are pushed, and only then is the object pushed to
+      origin/BRANCH under a lease on the reviewed SHA; no local ref moves.
   attest.py marker   [--reference REF]
       Reprint the recorded approval marker. Read-only: no record, or a
       record that no longer matches HEAD, is exit 3 — only `prepare` starts
@@ -36,8 +46,10 @@ Exit codes:
      free text, or a missing sibling verify_signoff.py
   3  stale or dirty: no preparation record (prepare has not run), HEAD or its
      tree moved since prepare, the interview profile changed since prepare,
-     unstaged / staged changes, or HEAD is already an attestation commit
-     (nothing new to attest)
+     unstaged / staged changes, HEAD is already an attestation commit
+     (nothing new to attest), or — target mode — origin/BRANCH moved since
+     prepare or the lease push was rejected (the notes published just before
+     it stand: they describe the reviewed commit and tree truthfully)
   4  transcript problem: unresolvable without --ack-no-transcript, or the
      approval marker for this reviewed commit is not in the resolved transcript
   5  profile problem: GIT_SIGNOFF_PROFILE_FILE is set but unreadable (a
@@ -130,6 +142,8 @@ NOTES_TRACKING_REF = "refs/notes/signoff-remote"
 RECORD_RELPATH = os.path.join("git-signoff", "prepared.json")  # under the (per-worktree) git dir
 CONFIG_RELPATH = os.path.join(".git-signoff", "config.json")  # committed, repository-level settings
 BRANCH_NAME_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._/-]*$")
+TARGET_REMOTE = "origin"
+TARGETS_DEFAULT_LIMIT = 10
 RECORD_VERSION = 1
 STATUS_VERIFIED = "VERIFIED_BY_HUMAN"
 STATUS_NO_DIGEST = "VERIFIED_BY_HUMAN_NO_TRANSCRIPT_DIGEST"
@@ -611,6 +625,7 @@ class PrepareState:
     warnings: list[str] = field(default_factory=list)
     record_path: str | None = None
     integration_branch: str | None = None
+    target: str | None = None  # target mode: the branch whose origin tip is reviewed
 
     @property
     def marker(self) -> str:
@@ -632,6 +647,7 @@ class PrepareState:
             "conversation_id": self.conversation_id,
             "transcript_path": self.transcript_path,
             "integration_branch": self.integration_branch,
+            "target": self.target,
         }
 
     @classmethod
@@ -655,6 +671,7 @@ class PrepareState:
             prepared_at=rec["prepared_at"],
             record_path=path,
             integration_branch=rec.get("integration_branch"),
+            target=rec.get("target"),
         )
 
     def to_json(self) -> dict:
@@ -687,6 +704,8 @@ class PrepareState:
             "marker": self.marker,
             "record": self.record_path,
             "integration_branch": self.integration_branch,
+            "target": self.target,
+            "target_ref": f"refs/remotes/{TARGET_REMOTE}/{self.target}" if self.target else None,
             "warnings": self.warnings,
         }
 
@@ -728,6 +747,37 @@ def current_branch(repo: GitRepo) -> str | None:
     return proc.stdout.strip() or None if proc.returncode == 0 else None
 
 
+def normalize_target(name: str) -> str:
+    """`feature`, `origin/feature`, `refs/heads/feature`, `refs/remotes/origin/feature`
+    all name the remote branch `feature` (docs/attest-any-target.md §2.9)."""
+    for prefix in (f"refs/remotes/{TARGET_REMOTE}/", "refs/heads/", f"{TARGET_REMOTE}/"):
+        if name.startswith(prefix):
+            name = name[len(prefix):]
+            break
+    if not BRANCH_NAME_RE.match(name):
+        raise AttestError(EXIT_USAGE, f"--target {name!r} is not a branch name")
+    return name
+
+
+def fetch_target(repo: GitRepo, target: str) -> str:
+    """Fetch origin/<target> and return its tip. The PR check reads the remote,
+    so the remote is what is reviewed; a branch that exists only locally is an
+    error, not a fallback."""
+    fetch = repo.git("fetch", "-q", TARGET_REMOTE, f"+refs/heads/{target}:refs/remotes/{TARGET_REMOTE}/{target}", check=False)
+    if fetch.returncode != 0:
+        err = fetch.stderr.strip().splitlines()
+        detail = err[-1] if err else f"exit {fetch.returncode}"
+        if "couldn't find remote ref" in fetch.stderr or "Could not find" in fetch.stderr:
+            raise AttestError(EXIT_USAGE, f"--target {target!r} does not exist on {TARGET_REMOTE} ({detail}); push it first.")
+        raise AttestError(EXIT_GIT, f"could not fetch {TARGET_REMOTE}/{target}: {detail}")
+    return repo.out("rev-parse", f"refs/remotes/{TARGET_REMOTE}/{target}^{{commit}}")
+
+
+def _is_attestation_commit(repo: GitRepo, sha: str) -> bool:
+    subject = repo.git("log", "-1", "--format=%s", sha, check=False).stdout.strip()
+    return bool(ATTESTATION_SUBJECT_RE.match(subject))
+
+
 def _range_is_empty(repo: GitRepo, reference: str, reviewed: str) -> bool:
     """True when `reference` already contains `reviewed`: there is nothing to review."""
     return repo.git("merge-base", "--is-ancestor", reviewed, reference, check=False).returncode == 0
@@ -740,6 +790,8 @@ def _resolve_reference(
     warnings: list[str],
     integration: str | None = None,
     integration_source: str = "none",
+    branch_name: str | None = None,
+    skip_upstream: bool = False,
 ) -> str:
     if reference:
         if repo.git("rev-parse", "--verify", "-q", f"{reference}^{{commit}}", check=False).returncode != 0:
@@ -751,10 +803,12 @@ def _resolve_reference(
             )
         return reference
 
-    branch = current_branch(repo)
+    branch = branch_name if branch_name is not None else current_branch(repo)
     on_integration = bool(integration) and branch == integration
-    proc = repo.git("rev-parse", "--abbrev-ref", "HEAD@{upstream}", check=False)
-    upstream = proc.stdout.strip() if proc.returncode == 0 else ""
+    upstream = ""
+    if not skip_upstream:
+        proc = repo.git("rev-parse", "--abbrev-ref", "HEAD@{upstream}", check=False)
+        upstream = proc.stdout.strip() if proc.returncode == 0 else ""
     # After `git push -u origin <feature>` the upstream is the branch's own
     # remote counterpart: it contains HEAD, so the range would be empty.
     # Only an upstream that is *behind* HEAD (the base branch, or the not-yet-
@@ -783,8 +837,7 @@ def _resolve_reference(
     candidates: list[str] = []
     if integration:
         candidates += [f"origin/{integration}", integration]
-    head_full = repo.git("symbolic-ref", "-q", "HEAD", check=False).stdout.strip()
-    if head_full not in ("refs/heads/main", "refs/heads/master"):
+    if branch not in ("main", "master"):
         candidates += ["main", "master", "origin/main", "origin/master"]
     for candidate in candidates:
         if candidate == branch or candidate == f"origin/{branch}":
@@ -825,10 +878,37 @@ def prepare(
     reference: str | None = None,
     env: Mapping[str, str] | None = None,
     adapter: TranscriptProvider | None = None,
+    target: str | None = None,
 ) -> PrepareState:
     repo = GitRepo(root)
     environ = os.environ if env is None else env
     warnings: list[str] = []
+    config = read_config(root)
+    integration, integration_source = integration_branch(repo, config)
+
+    if target is not None:
+        # Target mode (docs/attest-any-target.md §2.1, §2.9): the reviewed
+        # commit is origin/<target>'s tip after a fetch. The checkout supplies
+        # only the repository-level inputs (config, profile); its working tree
+        # is neither read nor required to be clean.
+        target = normalize_target(target)
+        if integration and target == integration:
+            raise AttestError(
+                EXIT_USAGE,
+                f"--target {target!r} is the integration branch; it is never a target (§2.4). From the "
+                "integration branch itself, attest your own unpushed commits with the bare command.",
+            )
+        reviewed = fetch_target(repo, target)
+        if _is_attestation_commit(repo, reviewed):
+            raise AttestError(
+                EXIT_STALE,
+                f"{TARGET_REMOTE}/{target} already ends in an attestation commit ({reviewed[:7]}); there is nothing "
+                "new to attest. If the branch changed since, its author must push the new commits first.",
+            )
+        ref = _resolve_reference(
+            repo, reference, reviewed, warnings, integration, integration_source, branch_name=target, skip_upstream=True
+        )
+        return _prepare_range(root, repo, environ, adapter, reviewed, ref, warnings, integration, target)
 
     head = repo.git("rev-parse", "--verify", "-q", "HEAD^{commit}", check=False)
     if head.returncode != 0 or not head.stdout.strip():
@@ -849,9 +929,21 @@ def prepare(
         )
     check_clean_tree(repo)
 
-    config = read_config(root)
-    integration, integration_source = integration_branch(repo, config)
     ref = _resolve_reference(repo, reference, reviewed, warnings, integration, integration_source)
+    return _prepare_range(root, repo, environ, adapter, reviewed, ref, warnings, integration, None)
+
+
+def _prepare_range(
+    root: str,
+    repo: GitRepo,
+    environ: Mapping[str, str],
+    adapter: TranscriptProvider | None,
+    reviewed: str,
+    ref: str,
+    warnings: list[str],
+    integration: str | None,
+    target: str | None,
+) -> PrepareState:
     base = repo.out("merge-base", ref, reviewed)
     tree = repo.out("rev-parse", f"{reviewed}^{{tree}}")
     rng = f"{base}..{reviewed}"
@@ -899,9 +991,81 @@ def prepare(
         prepared_at=_utc_now(),
         warnings=warnings,
         integration_branch=integration,
+        target=target,
     )
     state.record_path = write_record(repo, state)
     return state
+
+
+# --- targets: branches awaiting review (docs/attest-any-target.md §2.2, §3.8) -----
+
+
+def list_targets(root: str, reference: str | None = None, limit: int | None = TARGETS_DEFAULT_LIMIT) -> dict:
+    """Fetched remote branches not merged into the base, excluding the base
+    itself and tips that are already attestations, most recent commit first.
+    `limit=None` lists all. The base is REF, else the integration branch."""
+    repo = GitRepo(root)
+    config = read_config(root)
+    integration, source = integration_branch(repo, config)
+    fetch = repo.git("fetch", "-q", "--prune", TARGET_REMOTE, check=False)
+    if fetch.returncode != 0:
+        err = fetch.stderr.strip().splitlines()
+        raise AttestError(EXIT_GIT, f"could not fetch {TARGET_REMOTE}: {err[-1] if err else f'exit {fetch.returncode}'}")
+    base_name = reference or integration
+    if not base_name:
+        raise AttestError(
+            EXIT_USAGE,
+            "no base to list against: set integration_branch in .git-signoff/config.json (init.py does), "
+            "or pass --reference <branch>.",
+        )
+    base = None
+    for candidate in ([base_name] if reference else [f"{TARGET_REMOTE}/{base_name}", base_name]):
+        if repo.git("rev-parse", "--verify", "-q", f"{candidate}^{{commit}}", check=False).returncode == 0:
+            base = candidate
+            break
+    if base is None:
+        raise AttestError(EXIT_USAGE, f"base {base_name!r} does not resolve to a commit")
+    base_sha = repo.out("rev-parse", f"{base}^{{commit}}")
+    listing = repo.git(
+        "for-each-ref", "--sort=-committerdate",
+        "--format=%(refname)%09%(objectname)%09%(committerdate:short)%09%(subject)",
+        f"refs/remotes/{TARGET_REMOTE}/", check=False,
+    ).stdout
+    candidates = []
+    skipped = {"integration": 0, "merged": 0, "attested": 0}
+    for line in listing.splitlines():
+        parts = line.split("\t", 3)
+        if len(parts) != 4:
+            continue
+        refname, sha, date, subject = parts
+        prefix = f"refs/remotes/{TARGET_REMOTE}/"
+        name = refname[len(prefix):] if refname.startswith(prefix) else refname
+        if name == "HEAD":  # the symbolic ref for the remote's default branch, not a branch
+            continue
+        if name == base_name or (integration and name == integration):
+            skipped["integration"] += 1
+            continue
+        if repo.git("merge-base", "--is-ancestor", sha, base_sha, check=False).returncode == 0:
+            skipped["merged"] += 1
+            continue
+        if ATTESTATION_SUBJECT_RE.match(subject):
+            skipped["attested"] += 1
+            continue
+        ahead = repo.git("rev-list", "--count", f"{base_sha}..{sha}", check=False).stdout.strip() or "?"
+        candidates.append({"branch": name, "sha": sha, "short_sha": sha[:7], "date": date, "ahead": int(ahead) if ahead.isdigit() else None, "subject": subject})
+    total = len(candidates)
+    shown = candidates if limit is None else candidates[:limit]
+    return {
+        "ok": True,
+        "command": "targets",
+        "base": base,
+        "base_source": "reference" if reference else source,
+        "integration_branch": integration,
+        "candidates": shown,
+        "total": total,
+        "truncated": total > len(shown),
+        "skipped": skipped,
+    }
 
 
 # --- preparation record: the reviewed state is an explicit input to commit ---------
@@ -961,14 +1125,26 @@ def load_prepared(root: str, reference: str | None = None, env: Mapping[str, str
         raise AttestError(EXIT_STALE, f"preparation record at {path} is not one this attest.py wrote; re-run `attest.py prepare`.")
 
     reviewed = rec["reviewed_commit_sha"]
-    head = repo.git("rev-parse", "--verify", "-q", "HEAD^{commit}", check=False).stdout.strip()
-    if head != reviewed:
-        raise AttestError(
-            EXIT_STALE,
-            f"stale: prepare was run for {reviewed} but HEAD is now {head or 'unborn'}. The interview covered the "
-            "prepared range only; re-run `attest.py prepare` and cover the new state before attesting.",
-        )
-    check_clean_tree(repo)
+    target = rec.get("target")
+    if target:
+        # Target mode: the remote branch, not HEAD, must still be where the
+        # interview left it; the reviewer's working tree is irrelevant.
+        tip = fetch_target(repo, target)
+        if tip != reviewed:
+            raise AttestError(
+                EXIT_STALE,
+                f"stale: prepare reviewed {TARGET_REMOTE}/{target} at {reviewed} but it is now at {tip}. The interview "
+                "covered the prepared range only; re-run `attest.py prepare --target` and cover the new state.",
+            )
+    else:
+        head = repo.git("rev-parse", "--verify", "-q", "HEAD^{commit}", check=False).stdout.strip()
+        if head != reviewed:
+            raise AttestError(
+                EXIT_STALE,
+                f"stale: prepare was run for {reviewed} but HEAD is now {head or 'unborn'}. The interview covered the "
+                "prepared range only; re-run `attest.py prepare` and cover the new state before attesting.",
+            )
+        check_clean_tree(repo)
     tree = repo.out("rev-parse", f"{reviewed}^{{tree}}")
     if tree != rec["tree_sha"]:
         raise AttestError(
@@ -1188,6 +1364,8 @@ class CommitResult:
     notes_merged_remote: bool = False
     verifier: list[str] = field(default_factory=list)
     warnings: list[str] = field(default_factory=list)
+    target: str | None = None
+    branch_pushed: bool = False
 
     def to_json(self) -> dict:
         d = asdict(self)
@@ -1292,6 +1470,73 @@ def push_notes(repo: GitRepo, remote: str = "origin") -> tuple[bool, bool, str |
     return True, merged, None
 
 
+def _commit_target(root: str, repo: GitRepo, state: PrepareState, opts: CommitOptions, message: str, signed: bool, verifier, result: CommitResult) -> CommitResult:
+    """Target mode (docs/attest-any-target.md §2.5), one order: build the
+    commit object (nothing references it), self-check it, publish the notes,
+    then lease-push the object to origin/<target>. Nothing before the push
+    needs undoing; a rejected push leaves the branch untouched and the notes
+    published, which is accepted and reported. No local ref moves (§2.11)."""
+    target, reviewed, tree = state.target, state.reviewed_commit_sha, state.tree_sha
+    if not opts.push:
+        raise AttestError(EXIT_USAGE, "target mode attests by pushing to the target branch; --no-push is not available with a --target record.")
+    tip = fetch_target(repo, target)
+    if tip != reviewed:
+        raise AttestError(EXIT_STALE, f"stale: {TARGET_REMOTE}/{target} moved to {tip[:7]} during commit (reviewed {reviewed[:7]}); re-run prepare.")
+
+    # 1. the object
+    args = ["commit-tree", tree, "-p", reviewed] + (["-S"] if signed else []) + ["-m", message]
+    proc = repo.git(*args, check=False)
+    if proc.returncode != 0:
+        raise AttestError(EXIT_GIT, f"git commit-tree failed: {proc.stderr.strip()}")
+    attestation_sha = proc.stdout.strip()
+    if repo.out("rev-parse", f"{attestation_sha}^{{tree}}") != tree or repo.out("rev-parse", f"{attestation_sha}~1") != reviewed:
+        raise AttestError(EXIT_SELFCHECK, "post-commit-tree integrity check failed: tree or parent differ; nothing referenced the object, nothing to undo.")
+
+    # 2. self-check on the unreferenced object
+    try:
+        ok, lines = verifier.check_head(root, attestation_sha)
+    except SystemExit as exc:
+        ok, lines = False, [str(exc)]
+    if not ok:
+        raise AttestError(EXIT_SELFCHECK, "the verifier rejected the attestation object before anything was published: " + " ".join(lines))
+
+    # 3. notes: on the reviewed commit and its tree, which already exist on the remote
+    for sha in (reviewed, tree):
+        proc = repo.git("notes", f"--ref={NOTES_REF}", "append", "-m", message, sha, check=False)
+        if proc.returncode != 0:
+            raise AttestError(EXIT_GIT, f"git notes append on {sha[:7]} failed: {proc.stderr.strip()}; nothing published.")
+    result.noted_shas = [reviewed, tree]
+    pushed, merged, reason = push_notes(repo)
+    result.notes_pushed, result.notes_merged_remote, result.notes_push_reason = pushed, merged, reason
+    if not pushed:
+        result.warnings.append(
+            f"notes push refused ({reason}): this attestation will survive a squash or rebase merge only through "
+            "the recovery path (verify-v1.5 scans the merged pull request's head; recovery reconstructs the tree note)."
+        )
+
+    # 4. the branch, last, under a lease on the reviewed tip
+    push = repo.git(
+        "push", "-q", TARGET_REMOTE, f"{attestation_sha}:refs/heads/{target}",
+        f"--force-with-lease=refs/heads/{target}:{reviewed}", check=False,
+    )
+    if push.returncode != 0:
+        err = push.stderr.strip().splitlines()
+        raise AttestError(
+            EXIT_STALE,
+            f"push to {TARGET_REMOTE}/{target} rejected ({err[-1] if err else f'exit {push.returncode}'}): the branch "
+            f"moved after prepare or the lease on {reviewed[:7]} failed. The branch is untouched and the attestation "
+            f"object {attestation_sha[:7]} is unreferenced. The notes on {reviewed[:7]} and tree {tree[:7]} "
+            + ("were published" if pushed else "are local")
+            + " and stand: they describe the reviewed state truthfully. Re-run prepare --target to review the new tip.",
+        )
+    repo.git("fetch", "-q", TARGET_REMOTE, f"+refs/heads/{target}:refs/remotes/{TARGET_REMOTE}/{target}", check=False)
+    result.attestation_sha = attestation_sha
+    result.branch_pushed = True
+    result.verifier = lines
+    clear_record(repo)
+    return result
+
+
 def commit(root: str, opts: CommitOptions, env: Mapping[str, str] | None = None, adapter=None, verifier=None) -> CommitResult:
     environ = os.environ if env is None else env
     validate_commit_options(opts)
@@ -1380,8 +1625,11 @@ def commit(root: str, opts: CommitOptions, env: Mapping[str, str] | None = None,
         dry_run=opts.dry_run,
         warnings=list(state.warnings) + ([marker_warning] if marker_warning else []),
     )
+    result.target = state.target
     if opts.dry_run:
         return result
+    if state.target:
+        return _commit_target(root, repo, state, opts, message, signed, verifier, result)
 
     # Re-check immediately before writing: HEAD recomputed, tree clean.
     if repo.out("rev-parse", "HEAD") != reviewed:
@@ -1450,6 +1698,8 @@ def _print_prepare(state: PrepareState) -> None:
     p = state.profile
     print(f"reviewed commit: {state.reviewed_commit_sha}")
     print(f"base (merge-base with {state.reference}): {state.base_sha}")
+    if state.target:
+        print(f"target: {TARGET_REMOTE}/{state.target} (target mode: the attestation will be pushed to that branch; your checkout is not touched)")
     if state.integration_branch:
         print(f"integration branch: {state.integration_branch}")
     print(f"tree: {state.tree_sha}")
@@ -1487,6 +1737,25 @@ def _print_prepare(state: PrepareState) -> None:
         print(f"warning: {w}", file=sys.stderr)
 
 
+def _print_targets(listing: dict) -> None:
+    base = listing["base"]
+    if not listing["candidates"]:
+        sk = listing["skipped"]
+        print(
+            f"no branches awaiting review against {base}: every fetched remote branch is merged ({sk['merged']}), "
+            f"already ends in an attestation ({sk['attested']}), or is the base itself. Name a branch explicitly "
+            "with `prepare --target <branch>` if one is missing here."
+        )
+        return
+    print(f"branches awaiting review against {base} (most recent first):")
+    for c in listing["candidates"]:
+        ahead = f"{c['ahead']} ahead" if c["ahead"] is not None else "? ahead"
+        print(f"  {c['branch']}  {c['short_sha']}  {c['date']}  {ahead}  {c['subject'][:60]}")
+    if listing["truncated"]:
+        print(f"  … {listing['total'] - len(listing['candidates'])} more; `targets --all` lists every candidate")
+    print("next: `attest.py prepare --target <branch>`")
+
+
 def _print_commit(result: CommitResult) -> None:
     if result.dry_run:
         print(result.message)
@@ -1494,6 +1763,8 @@ def _print_commit(result: CommitResult) -> None:
         print("dry run: nothing committed. Proposed trailers above.")
     else:
         print(f"attestation commit: {result.attestation_sha}")
+        if result.target:
+            print(f"pushed to: {TARGET_REMOTE}/{result.target} (lease on the reviewed tip held; no local ref moved)")
     print(f"status: {result.status}")
     print(f"transcript digest: {result.transcript_digest} ({result.transcript_bytes} bytes)")
     if result.transcript_path:
@@ -1522,8 +1793,15 @@ def build_parser() -> argparse.ArgumentParser:
     sub = p.add_subparsers(dest="command", required=True)
 
     prep = sub.add_parser("prepare", help="resolve SHAs, diff summary, profile, signals, hints, marker")
-    prep.add_argument("--reference", help="base branch or commit (default: HEAD@{upstream}, else main/master)")
+    prep.add_argument("--target", help="attest origin/BRANCH's tip instead of HEAD (target mode; the checkout is not consulted)")
+    prep.add_argument("--reference", help="base branch or commit (default: upstream, config integration_branch, origin/HEAD, main/master)")
     prep.add_argument("--json", action="store_true", help="print one JSON object on stdout")
+
+    tg = sub.add_parser("targets", help="list remote branches awaiting review, most recent first")
+    tg.add_argument("--reference", help="base to list against (default: the integration branch)")
+    tg.add_argument("--limit", type=int, default=TARGETS_DEFAULT_LIMIT, help=f"how many to show (default {TARGETS_DEFAULT_LIMIT})")
+    tg.add_argument("--all", action="store_true", help="show every candidate")
+    tg.add_argument("--json", action="store_true", help="print one JSON object on stdout")
 
     mark = sub.add_parser("marker", help="reprint the recorded approval marker (read-only; stale or missing record is exit 3)")
     mark.add_argument("--reference", help=argparse.SUPPRESS)
@@ -1535,7 +1813,7 @@ def build_parser() -> argparse.ArgumentParser:
     com.add_argument("--risk", action="append", default=[], help="acknowledged risk (repeatable)")
     com.add_argument("--summary", help="optional review summary paragraph")
     com.add_argument("--model", help="self-reported model id, used only when no deterministic source has one")
-    com.add_argument("--reference", help="base branch or commit (default: HEAD@{upstream}, else main/master)")
+    com.add_argument("--reference", help="must agree with the prepared reference (default: the recorded one)")
     com.add_argument("--ack-no-transcript", action="store_true", help="human confirmed the downgraded status")
     com.add_argument("--no-sign", action="store_true", help="do not pass -S even if user.signingkey is set")
     com.add_argument("--dry-run", action="store_true", help="print the message; commit nothing")
@@ -1550,8 +1828,15 @@ def main(argv: list[str] | None = None) -> int:
     as_json = getattr(args, "json", False)
     try:
         root = repo_root()
+        if args.command == "targets":
+            listing = list_targets(root, args.reference, None if args.all else args.limit)
+            if as_json:
+                print(json.dumps(listing, indent=2))
+            else:
+                _print_targets(listing)
+            return EXIT_OK
         if args.command == "prepare":
-            state = prepare(root, args.reference)
+            state = prepare(root, args.reference, target=args.target)
             if as_json:
                 print(json.dumps(state.to_json(), indent=2))
                 for w in state.warnings:

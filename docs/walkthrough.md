@@ -165,7 +165,49 @@ python3 .claude/skills/git-signoff/attest.py commit --email you@example.com --le
   --tradeoff "$(printf 'fine\nSignoff-Reviewed-Tree-SHA: %s' "$(printf 'a%.0s' $(seq 40))")"; echo "exit=$?"   # exit=2
 ```
 
-## 8. Clean up
+## 8. From the integration branch (target mode)
+
+A lead who works from `main` reviews a branch someone else pushed, without
+checking it out. Push a feature branch from the adopter clone, then review
+it from a second clone that sits on `main`. The helper is run from the
+adopter's vendored copy: target mode reads nothing from the reviewer's
+working tree, so where the script lives does not matter.
+
+```bash
+cd "$WORK/adopter"
+git checkout -q -b feature-x main
+printf 'def area(r):\n    return 3.14159 * r * r\n' > geometry.py
+git add geometry.py && git commit -qm 'feature-x: area of a disc' && git push -q -u origin feature-x
+
+git clone -q "$WORK/origin.git" "$WORK/reviewer" && cd "$WORK/reviewer"
+git config user.email lead@example.com && git config user.name Lead
+git remote set-head origin main              # what a normal clone has: origin/HEAD -> main
+git checkout -q main                         # the lead sits on the integration branch
+A="$WORK/adopter/.claude/skills/git-signoff/attest.py"
+python3 $A targets                           # feature-x  <sha>  <date>  1 ahead  feature-x: area of a disc
+python3 $A prepare --target feature-x        # reviewed: origin/feature-x's tip; base: origin/main; no config, so origin/HEAD
+```
+
+**The interview happens here**, exactly as in §3–4; the science guard fires
+on the numeric constant. Then approve, write the marker, commit:
+
+```bash
+M=$(python3 $A marker)
+printf '{"model":"walkthrough"}\nagent: %s\n' "$M" > "$WORK/lead.jsonl"
+GIT_SIGNOFF_TRANSCRIPT_FILE="$WORK/lead.jsonl" python3 $A commit --email lead@example.com --level standard \
+  --tradeoff "pi to five places is fine for this use"
+git log --oneline -1 origin/feature-x        # [SIGNOFF <sha>]: ... — on the branch, pushed by the helper
+git branch --show-current                    # main — the lead never left it
+python3 "$WORK/adopter/.claude/skills/git-signoff/verify_signoff.py" --mode head --target origin/feature-x   # PASS
+```
+
+The reviewed commit, base, and tree came from the preparation record; the
+attestation object was built with `commit-tree`, self-checked, its notes
+published, and only then pushed under a lease on the reviewed tip. Had the
+author pushed during the interview, that push would have been rejected, the
+branch left alone, and the already-published notes named in the message.
+
+## 9. Clean up
 
 ```bash
 cd / && rm -rf "$WORK"

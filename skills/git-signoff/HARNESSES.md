@@ -117,6 +117,11 @@ Web-specific caveats:
 - **Weaker append-only assumption** (GSA §2.3): web sessions sync and compact
   transcripts, so first-N-bytes re-verification is less reliable than on
   local CLI harnesses.
+- **Target mode is for local harnesses.** `attest.py prepare --target <branch>`
+  pushes the attestation to `origin/<branch>`; the web session's git proxy
+  allows pushes only to the session's own working branch, so that push is
+  refused there (exit 3, nothing on the branch, notes reported). From a web
+  session, check the branch out and use HEAD mode as before.
 - **`refs/notes/signoff` cannot be pushed from a web session** (verified
   2026-08-05): the cloud GitHub proxy restricts pushes to the session's
   working branch and returns HTTP 403 for notes refs (misreported by git as
