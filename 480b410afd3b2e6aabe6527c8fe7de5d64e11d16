@@ -1,0 +1,21 @@
+[SIGNOFF 480b410]: human comprehension and risk attestation
+
+Bundled range: relicense of the GSA specs to Apache-2.0 and JOSS metadata fixes; integration-branch config and reference precedence; target mode (prepare --target, targets, notes-then-lease commit) and the preparation record; verify-v1.5 object-integrity rules, --scan-refs and head mode on every event; recover action with API eligibility; gsa-core 3.8.0; component-scaled skeptical floor. Sixteen probes over six components, three prediction challenges, two ownership decisions recorded above.
+
+Signoff-Spec-Version: 1.0
+Signoff-Status: VERIFIED_BY_HUMAN
+Signoff-Timestamp: 2026-09-17T15:36:16Z
+Signoff-Base-SHA: 818d0c8f11b9400120b448b6c3b5280d9c961e38
+Signoff-Reviewed-Commit-SHA: 480b410afd3b2e6aabe6527c8fe7de5d64e11d16
+Signoff-Reviewed-Tree-SHA: 69b994d8bcf5456489c646c8d41c364d0e629ed3
+Signoff-Harness-ID: claude-code
+Signoff-Conversation-ID: cfa96aa9-8d54-5f5e-a2b4-340816f8ffd5
+Signoff-Transcript-Digest: sha256:58aa1a6f9f8ebe45a5cdfb2baa4b22bc49955dc4bfb1f786dbcf0feee98f4b95
+Signoff-Transcript-Bytes: 6260521
+Signoff-Tradeoff: The interview floor scales with directories holding executable changes, a deterministic heuristic that undercounts a large single-file change and overcounts cosmetic edits spread across directories; accepted for reproducibility over judgment.
+Signoff-Tradeoff: Target mode publishes notes before the leased branch push, so a rejected lease leaves truthful notes about a commit the branch never received; accepted because the push is the only irreversible step and the notes describe the reviewed state honestly.
+Signoff-Risk: verify-v1.5 makes head mode the default on push: a repository whose main tip was never attested goes red after upgrading, which is the badge now telling the truth; the remedy is an interview on the tip, or mode: history to keep the old claim.
+Signoff-Risk: The bare command diffs against HEAD's upstream when it is behind HEAD, so a partially pushed feature branch is reviewed only from its own pushed tip, not from the integration branch; the narrower base is visible only in Signoff-Base-SHA. Fix deferred: skip an upstream that is the branch's own remote counterpart.
+Signoff-Risk: The refs/pull/N/head fetch behind scan-refs auto and the recover action was confirmed on this repository over git fetch, not yet from an Actions run; if it fails the verifier scans nothing and squash merges fail loudly, never pass falsely.
+Signoff-Verified-By: jerrylin247365@gmail.com
+Signoff-Agent: harness=claude-code/2.1.42 model=claude-fable-5-1 reasoning=high interview=skeptical/software-general
