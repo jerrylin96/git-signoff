@@ -21,10 +21,16 @@ dates on `origin`.
   3, §4.1); §5.1 gains the evidence rules — object integrity for attestation
   commits, source eligibility beyond the target's history, and what a
   cross-history match establishes. No trailer changes.
-- **Release gate before tagging `verify-v1.5`:** confirm on a scratch GitHub
-  repository that `refs/pull/N/head` is fetchable from Actions with the
-  default token after the branch is deleted (`scan-refs: auto` and the
-  recover action rest on it).
+- **Fetch assumption behind `scan-refs: auto` and the recover action:**
+  `refs/pull/N/head` must stay fetchable after the pull request's branch is
+  deleted. Confirmed on this repository on 2026-09-17: origin retains only
+  `main` and the feature branch, yet advertises and serves the head ref of
+  all 22 merged pull requests over `git fetch`. `tag.yml` creates
+  `verify-v1.5` at merge, so the remaining end-to-end confirmation is the
+  first `notes-recovery` run after merge, whose log lists each eligible pull
+  request it fetched. If the fetch ever fails, the guard skips that ref and
+  the verifier scans nothing: squash merges without a pushed note fail
+  loudly, never pass falsely.
 - **Changed** the verifier (`verify-v1.5`): an attestation *commit* found by
   the log lookup counts only if its object corroborates its trailers — one
   parent, empty, parent is the declared reviewed commit; the declared tree

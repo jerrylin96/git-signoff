@@ -2,8 +2,9 @@
 
 **Status:** Implemented on branch `claude/joss-submission-prep-pmfto5`
 (2026-09-16), in the slices of §5, after external review found no remaining
-design blockers. Release gate before `verify-v1.5` is tagged: the Actions
-fetch check in §2.13's pre-implementation list. Revised five times after
+design blockers. The fetch assumption in §2.5 item 3 was confirmed on this
+repository on 2026-09-17 (see CHANGELOG); the first `notes-recovery` run
+after merge is its end-to-end confirmation. Revised five times after
 three review passes that reproduced failures against the code as it was;
 the fixes those passes prompted (§2.12, §2.13) shipped first, the feature
 slices after.
@@ -206,9 +207,15 @@ not be on. The contract instead removes the ordering dependency:
    (it does not today: only this repository has one), so the path exists
    outside this repository at all. No re-dispatch: item 1 makes it
    unnecessary.
-3. **Pre-implementation check.** Confirm on a scratch GitHub repository
-   that `refs/pull/N/head` is fetchable from Actions with the default token
-   after the branch is deleted, since item 1 rests on it.
+3. **Fetch assumption.** Item 1 rests on `refs/pull/N/head` staying
+   fetchable after the branch is deleted. Confirmed on this repository on
+   2026-09-17: only two branches remain on origin, and the head ref of every
+   one of the 22 merged pull requests is still advertised and fetchable.
+   The Actions default token fetches pull refs by the same mechanism
+   `actions/checkout` uses on every `pull_request` event; the first
+   `notes-recovery` run after merge confirms it end to end. A failed fetch
+   is skipped, so the verifier scans nothing and fails loudly rather than
+   passing falsely.
 
 ### 2.6 Enforcement strength follows the chosen workflow
 
@@ -575,8 +582,9 @@ may consult, and the sentence on what a cross-history match establishes.
   adopters alongside `git-signoff.yml`.
 - `init.py`: report an installed ruleset whose branch disagrees with the
   configured one, with the manual step.
-- Pre-implementation check: `refs/pull/N/head` fetchable from Actions with
-  the default token after branch deletion, on a scratch repository.
+- Fetch assumption: `refs/pull/N/head` fetchable after branch deletion,
+  confirmed on this repository (§2.5 item 3); end-to-end confirmation is
+  the first `notes-recovery` run after merge.
 - Tests: the §2.13 regression matrix for the lookup (the recovery half
   exists); target mode end to end against scratch repos (reviewer on `dev`,
   target pushed by another clone); race (author pushes mid-interview);
