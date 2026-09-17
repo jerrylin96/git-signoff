@@ -22,6 +22,24 @@ Two modes:
            repo-badge check. Passes when at least --require valid
            attestations (default 1) are found.
 
+Evidence, not trailers (verify-v1.5). An attestation *commit* found by the
+log lookup — in the target's own history or under --scan-refs — counts only
+if the commit object corroborates its trailers: exactly one parent, empty
+(its tree is the parent's), and that parent is the declared reviewed commit;
+its declared tree anchors only when it is the parent's actual tree. Without
+this, an empty [SIGNOFF] commit on an unrelated tree whose trailer named some
+target's tree would pass that target. Notes are judged as before: they are
+statements attached to the very object being verified.
+
+  --scan-refs REF [REF ...]   head mode: also consider sound attestation
+           commits reachable from these refs (pull-request head refs the
+           composite action fetched for the merged PR associated with the
+           target). A match by tree establishes that the same tracked code
+           state was attested — not that this pull request, base, or
+           interview context was reviewed (gsa-core §5.1). Which refs are
+           eligible is the caller's decision (verify/action.yml: merged,
+           same-repository PRs); the verifier trusts no ref it was not given.
+
 Exit 0 on pass, 1 on fail. No dependencies beyond Python 3.10+ and git;
 copy this file anywhere or run it via the companion composite action
 (verify/action.yml in the git-signoff repository). The file is vendored into
@@ -72,7 +90,7 @@ from pathlib import Path  # noqa: E402
 # The pin tag this file ships under. tag.yml's PINS list and the install
 # snippets must carry the same value (pinned by tests); the stale-pin warning
 # compares it against the tags published upstream.
-VERIFIER_PIN = "verify-v1.4"
+VERIFIER_PIN = "verify-v1.5"
 PIN_REMOTE = "https://github.com/jerrylin96/git-signoff"
 PIN_TAG_RE = re.compile(r"refs/tags/verify-v(\d+)(?:\.(\d+))?$")
 
@@ -236,13 +254,73 @@ def describe(trailers):
 
 
 def history_payloads(repo, ref):
-    """(source, payload) for every [SIGNOFF *] commit reachable from ref."""
+    """(source, payload, sha) for every [SIGNOFF *] commit reachable from ref."""
     proc = git(repo, "log", ref, "--format=%H", r"--grep=^\[SIGNOFF ", check=False)
     out = []
     for sha in proc.stdout.split():
         payload = git(repo, "log", "-1", "--format=%B", sha).stdout
         if SUBJECT_RE.match(payload):
-            out.append((f"commit {sha[:7]}", payload))
+            out.append((f"commit {sha[:7]}", payload, sha))
+    return out
+
+
+def commit_evidence(repo, sha, trailers):
+    """What an attestation *commit* has earned: (problems, commit_anchor, tree_anchor).
+
+    The commit object must corroborate the trailers, in the shape the producer
+    writes and head mode already demands of an attestation at the tip: exactly
+    one parent, empty (its tree is the parent's), and the parent is the
+    declared Signoff-Reviewed-Commit-SHA. Failing any of these, `problems` is
+    non-empty and nothing is anchored. The declared Signoff-Reviewed-Tree-SHA
+    anchors only when it is the parent's actual tree; otherwise the commit
+    anchors its reviewed commit alone (this repository's own early history has
+    eight such attestations, written by the first skill, that declare a tree no
+    reviewed commit has). Notes are not judged here: a note is attached to the
+    object it describes, which is its corroboration.
+    """
+    parents = git(repo, "log", "-1", "--format=%P", sha, check=False).stdout.split()
+    if len(parents) != 1:
+        return [f"{len(parents)} parents (an attestation commit has exactly one)"], None, None
+    parent = parents[0]
+    parent_tree = git(repo, "rev-parse", f"{parent}^{{tree}}", check=False).stdout.strip()
+    own_tree = git(repo, "rev-parse", f"{sha}^{{tree}}", check=False).stdout.strip()
+    if not parent_tree or own_tree != parent_tree:
+        return ["not an empty commit (its tree differs from its parent's)"], None, None
+    reviewed = trailers.get("Signoff-Reviewed-Commit-SHA", [None])[0]
+    if reviewed != parent:
+        return [f"parent {parent[:7]} is not the declared reviewed commit {(reviewed or 'none')[:7]}"], None, None
+    declared_tree = trailers.get("Signoff-Reviewed-Tree-SHA", [None])[0]
+    tree_anchor = declared_tree if declared_tree == parent_tree else None
+    return [], reviewed, tree_anchor
+
+
+def _earned_anchor(repo, sha, trailers, commit, tree):
+    """The reason a sound attestation commit anchors `commit`/`tree`, or None."""
+    problems, commit_anchor, tree_anchor = commit_evidence(repo, sha, trailers)
+    if problems:
+        return None
+    if commit_anchor == commit:
+        return "reviewed commit"
+    if tree_anchor is not None and tree_anchor == tree:
+        return "reviewed tree"
+    return None
+
+
+def scan_ref_payloads(repo, refs):
+    """(source, payload, sha) for [SIGNOFF *] commits reachable from each of
+    `refs` (patterns are expanded with for-each-ref; a plain ref is used as is).
+    Deduplicated by sha."""
+    out, seen = [], set()
+    for pattern in refs:
+        tips = git(repo, "for-each-ref", "--format=%(objectname)", pattern, check=False).stdout.split()
+        if not tips:
+            direct = git(repo, "rev-parse", "--verify", "-q", f"{pattern}^{{commit}}", check=False)
+            tips = [direct.stdout.strip()] if direct.returncode == 0 else []
+        for tip in tips:
+            for source, payload, sha in history_payloads(repo, tip):
+                if sha not in seen:
+                    seen.add(sha)
+                    out.append((f"{source} via {pattern}", payload, sha))
     return out
 
 
@@ -295,9 +373,11 @@ def _anchoring_note_attestation(repo, commit, tree):
     return None
 
 
-def check_head(repo, target):
+def check_head(repo, target, scan_refs=()):
     """PR-gate check: is `target` (or, for an attestation commit, its parent,
     or for a 2-parent merge commit, its attested PR head) attested?
+    `scan_refs`: additional refs whose sound attestation commits may anchor the
+    target by tree (verify-v1.5; see the module docstring for what that means).
     Returns (passed, lines-to-print)."""
     commit = git(repo, "rev-parse", f"{target}^{{commit}}").stdout.strip()
     tree = git(repo, "rev-parse", f"{commit}^{{tree}}").stdout.strip()
@@ -359,7 +439,7 @@ def check_head(repo, target):
                 f"FAIL: merge commit {commit[:7]} tree does not match clean 3-way merge of parents "
                 f"{p1[:7]} and {p2[:7]} (manual conflict resolution or unreviewed changes introduced in merge)"
             ]
-        ok2, lines2 = check_head(repo, p2)
+        ok2, lines2 = check_head(repo, p2, scan_refs)
         if ok2:
             return True, [
                 f"PASS: merge commit {commit[:7]} verified via attested PR head {p2[:7]}",
@@ -370,13 +450,16 @@ def check_head(repo, target):
             *[f"  {line}" for line in lines2],
         ]
 
-    for source, payload in history_payloads(repo, commit):
+    # Log lookup (§5.1 steps 2–3): an attestation commit is evidence only when
+    # its object corroborates its trailers — see commit_evidence.
+    for source, payload, sha in history_payloads(repo, commit) + scan_ref_payloads(repo, scan_refs):
         trailers = parse_trailers(payload)
         if validate_single(trailers):
             continue
-        if _anchors(trailers, commit, tree):
+        how = _earned_anchor(repo, sha, trailers, commit, tree)
+        if how:
             return True, [
-                f"PASS: {commit[:7]} attested via {source}",
+                f"PASS: {commit[:7]} attested via {source} ({how})",
                 f"  {describe(trailers)}",
             ]
 
@@ -390,7 +473,13 @@ def check_history(repo, ref, require):
     """Repo-badge check: does ref's history carry valid attestations?"""
     lines, valid = [], 0
     seen = set()
-    payloads = history_payloads(repo, ref)
+    payloads = []
+    for source, payload, sha in history_payloads(repo, ref):
+        trailers = parse_trailers(payload)
+        problems = validate_single(trailers)
+        if not problems:
+            problems, _, _ = commit_evidence(repo, sha, trailers)
+        payloads.append((source, payload, problems or None))
     annotated = []
     for n_ref in (NOTES_REF, NOTES_FETCH_REF):
         listing = git(repo, "notes", f"--ref={n_ref}", "list", check=False)
@@ -409,13 +498,16 @@ def check_history(repo, ref, require):
                 # reporting a legitimate merge as several invalid fragments.
                 merged = parse_trailers(payload)
                 if duplicate_problems(merged) and not validate_merged(merged):
-                    payloads.append((f"note on {target[:7]} (cat_sort_uniq-merged)", payload))
+                    payloads.append((f"note on {target[:7]} (cat_sort_uniq-merged)", payload, None))
                     continue
             for block in blocks:
-                payloads.append((f"note on {target[:7]}", block))
-    for source, payload in payloads:
+                payloads.append((f"note on {target[:7]}", block, None))
+    for source, payload, precomputed in payloads:
         trailers = parse_trailers(payload)
-        problems = [] if source.endswith("(cat_sort_uniq-merged)") else validate_single(trailers)
+        if precomputed is not None:
+            problems = precomputed
+        else:
+            problems = [] if source.endswith("(cat_sort_uniq-merged)") else validate_single(trailers)
         key = tuple(trailers.get("Signoff-Reviewed-Commit-SHA", [source]))
         if key in seen:
             continue
@@ -529,12 +621,11 @@ def extract_attestation_trailers(repo, target, seen=None, depth=0):
         if p2_trailers:
             return p2_trailers
 
-    # 4. Fall back to scanning commit history and notes
-    for _, payload in history_payloads(repo, commit):
-        for block in split_attestation_blocks(payload):
-            t = parse_trailers(block)
-            if not validate_single(t) and _anchors(t, commit, tree):
-                return t
+    # 4. Fall back to scanning commit history (same evidence rule as check_head)
+    for _, payload, sha in history_payloads(repo, commit):
+        t = parse_trailers(payload)
+        if not validate_single(t) and _earned_anchor(repo, sha, t, commit, tree):
+            return t
 
     return None
 
@@ -729,6 +820,14 @@ def main(argv=None):
     p.add_argument("--mode", choices=("head", "history"), default="head")
     p.add_argument("--target", default="HEAD", help="commit (head mode) or ref (history mode)")
     p.add_argument("--require", type=int, default=1, help="history mode: minimum valid attestations")
+    p.add_argument(
+        "--scan-refs",
+        nargs="+",
+        default=[],
+        metavar="REF",
+        help="head mode: also consider sound attestation commits reachable from these refs (e.g. the merged "
+        "pull request's refs/remotes/pull/N/head); a tree match proves the same code state was attested",
+    )
     p.add_argument("--version", action="version", version=f"verify_signoff.py {VERIFIER_PIN}")
     p.add_argument(
         "--audit",
@@ -764,7 +863,7 @@ def main(argv=None):
         return 0 if ok else 1
 
     if args.mode == "head":
-        ok, lines = check_head(args.repo, args.target)
+        ok, lines = check_head(args.repo, args.target, tuple(args.scan_refs))
     else:
         ok, lines = check_history(args.repo, args.target, args.require)
     if not ok and fetched.returncode != 0:

@@ -147,7 +147,16 @@ def test_scaffold_workflow_file(temp_git_repo):
     content = workflow.read_text(encoding="utf-8")
     assert "branches: [ master ]" in content
     assert "fetch-depth: 0" in content
-    assert "jerrylin96/git-signoff/verify@verify-v1.4" in content
+    assert "jerrylin96/git-signoff/verify@verify-v1.5" in content
+
+
+def test_scaffold_notes_workflow_file(temp_git_repo):
+    init.scaffold_notes_workflow(temp_git_repo, default_branch="dev")
+    workflow = temp_git_repo / ".github" / "workflows" / "git-signoff-notes.yml"
+    content = workflow.read_text(encoding="utf-8")
+    assert "branches: [ dev ]" in content and "branch: dev" in content
+    assert "jerrylin96/git-signoff/recover@verify-v1.5" in content
+    assert "contents: write" in content and "pull-requests: read" in content
 
 
 def test_scaffold_profile_file(temp_git_repo):
@@ -221,7 +230,7 @@ def test_skill_source_ref_pin_consistency():
     import re
 
     repo_root = Path(__file__).parent.parent
-    assert init.SKILL_SOURCE_REF == "init-v7", f"Expected init-v7, got {init.SKILL_SOURCE_REF}"
+    assert init.SKILL_SOURCE_REF == "init-v8", f"Expected init-v8, got {init.SKILL_SOURCE_REF}"
     ref = init.SKILL_SOURCE_REF
 
 
@@ -378,6 +387,8 @@ def test_branch_collision_handling(temp_git_repo):
 # --- T1.5: GitHub Ruleset Automation & Degradation ---
 
 def test_setup_ruleset_gh_already_exists(temp_git_repo):
+    """The listing omits conditions, so the ruleset is fetched by id; it targets
+    refs/heads/main explicitly and main is the integration branch: a match."""
     with patch("shutil.which", return_value="/usr/local/bin/gh"), \
          patch("subprocess.run") as mock_run:
         mock_auth = MagicMock(returncode=0, stdout="", stderr="")
@@ -386,10 +397,75 @@ def test_setup_ruleset_gh_already_exists(temp_git_repo):
             stdout=json.dumps([{"id": 123, "name": "Signoff Enforcement"}]),
             stderr="",
         )
-        mock_run.side_effect = [mock_auth, mock_list]
-        
-        result = init.setup_ruleset(temp_git_repo, slug="org/repo")
-        assert result.status == "already_exists"
+        mock_show = MagicMock(
+            returncode=0,
+            stdout=json.dumps({"id": 123, "name": "Signoff Enforcement",
+                               "conditions": {"ref_name": {"include": ["refs/heads/main"], "exclude": []}}}),
+            stderr="",
+        )
+        mock_run.side_effect = [mock_auth, mock_list, mock_show]
+
+        result = init.setup_ruleset(temp_git_repo, slug="org/repo", integration_branch="main")
+        assert result.status == "already_exists" and "refs/heads/main" in result.detail
+        rendered = json.loads((temp_git_repo / ".git-signoff" / "ruleset.json").read_text())
+        assert rendered["conditions"]["ref_name"]["include"] == ["refs/heads/main"]
+
+
+def test_setup_ruleset_default_branch_target_matches_when_it_is_the_integration_branch(temp_git_repo):
+    with patch("shutil.which", return_value="/usr/local/bin/gh"), \
+         patch("subprocess.run") as mock_run:
+        mock_auth = MagicMock(returncode=0, stdout="", stderr="")
+        mock_list = MagicMock(
+            returncode=0,
+            stdout=json.dumps([{"id": 7, "name": "Signoff Enforcement",
+                                "conditions": {"ref_name": {"include": ["~DEFAULT_BRANCH"], "exclude": []}}}]),
+            stderr="",
+        )
+        mock_default = MagicMock(returncode=0, stdout="dev\n", stderr="")
+        mock_run.side_effect = [mock_auth, mock_list, mock_default]
+        result = init.setup_ruleset(temp_git_repo, slug="org/repo", integration_branch="dev")
+        assert result.status == "already_exists" and "~DEFAULT_BRANCH" in result.detail
+
+
+def test_setup_ruleset_reports_a_mismatching_installed_ruleset_and_does_not_edit_it(temp_git_repo, capsys):
+    """docs/attest-any-target.md §2.3: re-running to choose dev while GitHub
+    still protects main is reported with the manual step, never reconciled."""
+    with patch("shutil.which", return_value="/usr/local/bin/gh"), \
+         patch("subprocess.run") as mock_run, patch("webbrowser.open") as mock_browser:
+        mock_auth = MagicMock(returncode=0, stdout="", stderr="")
+        mock_list = MagicMock(
+            returncode=0,
+            stdout=json.dumps([{"id": 7, "name": "Signoff Enforcement",
+                                "conditions": {"ref_name": {"include": ["~DEFAULT_BRANCH"], "exclude": []}}}]),
+            stderr="",
+        )
+        mock_default = MagicMock(returncode=0, stdout="main\n", stderr="")
+        mock_run.side_effect = [mock_auth, mock_list, mock_default]
+        result = init.setup_ruleset(temp_git_repo, slug="org/repo", integration_branch="dev", open_browser=True)
+        assert result.status == "mismatch"
+        assert "~DEFAULT_BRANCH (main)" in result.detail and "'dev'" in result.detail
+        assert result.rules_url == "https://github.com/org/repo/settings/rules"
+        mock_browser.assert_called_once()
+        # no PUT/PATCH/POST was attempted: three calls, all reads
+        assert mock_run.call_count == 3
+        assert all("--method" not in " ".join(c.args[0]) for c in mock_run.call_args_list)
+        err = capsys.readouterr().err
+        assert "Not edited" in err and "refs/heads/dev" in err
+        rendered = json.loads((temp_git_repo / ".git-signoff" / "ruleset.json").read_text())
+        assert rendered["conditions"]["ref_name"]["include"] == ["refs/heads/dev"]
+
+
+def test_ruleset_payload_renders_the_integration_branch_and_leaves_the_template_alone():
+    rendered = init.ruleset_payload("dev")
+    assert rendered["conditions"]["ref_name"]["include"] == ["refs/heads/dev"]
+    assert init.RULESET_PAYLOAD["conditions"]["ref_name"]["include"] == ["~DEFAULT_BRANCH"]
+    assert rendered["rules"] == init.RULESET_PAYLOAD["rules"]
+
+
+def test_scaffold_config_writes_the_integration_branch(temp_git_repo):
+    path = init.scaffold_config(temp_git_repo, "dev")
+    assert path == temp_git_repo / ".git-signoff" / "config.json"
+    assert json.loads(path.read_text()) == {"integration_branch": "dev"}
 
 
 def test_setup_ruleset_gh_create_success(temp_git_repo):
@@ -450,8 +526,10 @@ def test_setup_ruleset_skip_flag(temp_git_repo):
 # --- T1.6: CLI Arguments & TTY Handling ---
 
 def test_parse_cli_arguments():
-    args = init.parse_args(["--non-interactive", "--profile", "domain-science", "--branch", "custom/init", "--skip-ruleset", "--skip-badge", "--allow-dirty"])
+    args = init.parse_args(["--non-interactive", "--profile", "domain-science", "--branch", "custom/init", "--skip-ruleset", "--skip-badge", "--allow-dirty", "--integration-branch", "dev"])
     assert args.non_interactive is True
+    assert args.integration_branch == "dev"
+    assert init.parse_args([]).integration_branch is None
     assert args.profile == "domain-science"
     assert args.branch == "custom/init"
     assert args.skip_ruleset is True
@@ -495,6 +573,49 @@ def test_end_to_end_init(temp_git_repo):
     up = subprocess.run(["git", "rev-parse", "--abbrev-ref", "git-signoff/init@{upstream}"], cwd=temp_git_repo, capture_output=True, text=True)
     assert up.returncode != 0
 
+    # Both workflows are committed: the gate and the notes recovery adopters lacked before init-v8
+    committed_files = subprocess.check_output(["git", "show", "--name-only", "--format=", "HEAD"], cwd=temp_git_repo, text=True).split()
+    assert ".github/workflows/git-signoff.yml" in committed_files and ".github/workflows/git-signoff-notes.yml" in committed_files
+    # The integration branch is chosen once and committed with the scaffold
+    config = json.loads((temp_git_repo / ".git-signoff" / "config.json").read_text())
+    assert config == {"integration_branch": "main"}
+    committed = subprocess.check_output(["git", "show", "HEAD:.git-signoff/config.json"], cwd=temp_git_repo, text=True)
+    assert json.loads(committed) == config
+
+
+def test_explicit_integration_branch_drives_workflow_config_ruleset_and_base(temp_git_repo):
+    """--integration-branch dev on a repo whose detected default is main: the
+    setup branch is based on dev, and every consumer reads dev."""
+    subprocess.run(["git", "branch", "dev"], cwd=temp_git_repo, check=True)
+    result = init.run_init(
+        repo_root=temp_git_repo,
+        profile_id="software-general",
+        slug="example-org/test-project",
+        skip_ruleset=False,  # writes the rendered ruleset; gh is absent so it falls back to manual
+        non_interactive=True,
+        skill_source=SKILL_SRC,
+        integration_branch="dev",
+    )
+    assert result.success
+    assert result.pr_url == "https://github.com/example-org/test-project/compare/dev...git-signoff/init?expand=1"
+    assert json.loads((temp_git_repo / ".git-signoff" / "config.json").read_text()) == {"integration_branch": "dev"}
+    workflow = (temp_git_repo / ".github" / "workflows" / "git-signoff.yml").read_text()
+    assert "branches: [ dev ]" in workflow
+    ruleset = json.loads((temp_git_repo / ".git-signoff" / "ruleset.json").read_text())
+    assert ruleset["conditions"]["ref_name"]["include"] == ["refs/heads/dev"]
+    # based on dev: dev is the parent of the scaffold commit
+    parent = subprocess.check_output(["git", "rev-parse", "HEAD~1"], cwd=temp_git_repo, text=True).strip()
+    assert parent == subprocess.check_output(["git", "rev-parse", "dev"], cwd=temp_git_repo, text=True).strip()
+
+
+def test_invalid_integration_branch_name_is_refused_before_any_mutation(temp_git_repo):
+    head = subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=temp_git_repo, text=True).strip()
+    with pytest.raises(RuntimeError, match="Invalid integration branch"):
+        init.run_init(repo_root=temp_git_repo, profile_id="software-general", skip_ruleset=True,
+                      non_interactive=True, skill_source=SKILL_SRC, integration_branch="bad name!")
+    assert subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=temp_git_repo, text=True).strip() == head
+    assert not (temp_git_repo / ".git-signoff").exists()
+    assert subprocess.check_output(["git", "branch", "--show-current"], cwd=temp_git_repo, text=True).strip() == "main"
 
 
 def test_base_branch_safety(temp_git_repo):

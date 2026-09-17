@@ -1,10 +1,10 @@
 # Specification: Portable Git Signoff Attestation (GSA) Protocol Core
 
-**Document Version:** 3.7.0 (approval-marker binding: a producer SHOULD require a marker naming the reviewed commit to appear in the transcript snapshot it hashes, §2.3, with an informative note in §3.1; the skill-layer environment variables are renamed `GIT_SIGNOFF_*` in §2.3 and §3.2; §4 updated for the removal of the Python reference library — the shipped producer is `attest.py` in the skill folder. Previous: 3.6.0, single-valued trailer rule and merged-note anchoring scope.)  
+**Document Version:** 3.8.0 (target mode: an attestation is recorded on the branch whose tip is the reviewed commit, from any checkout — §2 wording, §2.5 item 3 ordering, §4.1 `signoff_prepare(target_ref)` generalized; and §5.1 gains the evidence rules for attestation commits consulted by the lookup — object integrity, source eligibility, and what a cross-history match establishes — after an external review reproduced a trailer-only forgery on 2026-09-16. Trailers, statuses, and field rules are unchanged; existing attestations verify as before. Previous: 3.7.2, informative, §4.1: the producer's stale-state check verifies against the state `signoff_prepare` recorded rather than a re-derived HEAD, closing a no-transcript gap found in external review on 2026-09-16; no normative change. Previous: 3.7.1, license only: the specification text is relicensed from the Community Specification License 1.0 to the Apache License 2.0; no normative change. Previous: 3.7.0, approval-marker binding: a producer SHOULD require a marker naming the reviewed commit to appear in the transcript snapshot it hashes, §2.3, with an informative note in §3.1; the skill-layer environment variables are renamed `GIT_SIGNOFF_*` in §2.3 and §3.2; §4 updated for the removal of the Python reference library — the shipped producer is `attest.py` in the skill folder. Previous: 3.6.0, single-valued trailer rule and merged-note anchoring scope.)  
 **Status:** Draft / Pending Review  
 **Target Scope:** `git-signoff` skill portability, producer implementations (the skill folder's `attest.py`; optionally an MCP server), Harness Adapters, Git Notes Attestation, and Open Commit Protocol Core  
 **Canonical Spec Location:** `skills/git-signoff/specs/gsa-core.md`  
-**License:** This specification is licensed under the [Community Specification License 1.0](https://github.com/jerrylin96/git-signoff/blob/main/LICENSE-SPEC) (SPDX: `Community-Spec-1.0`); the reference implementations in this repository remain MIT.  
+**License:** Copyright 2026 Jerry Lin. This specification is licensed under the [Apache License, Version 2.0](LICENSE) (SPDX: `Apache-2.0`); the reference implementations in this repository are [MIT](../LICENSE).  
 
 ---
 
@@ -20,7 +20,7 @@ The **Git Signoff Attestation (GSA) Protocol** defines an open, harness- and mod
 
 ## 2. Protocol Specification: Standardized Git Attestation Format
 
-Attestations are recorded as empty Git commits (`git commit --allow-empty`) on feature branches AND mirrored into dedicated Git Notes (`refs/notes/signoff`) to guarantee survival across squash merges and branch deletions.
+Attestations are recorded as empty Git commits on the branch whose tip is the reviewed commit — written at HEAD, or built with `git commit-tree` and pushed to that branch from any checkout (target mode) — AND mirrored into dedicated Git Notes (`refs/notes/signoff`) to guarantee survival across squash merges and branch deletions.
 
 ### 2.1 Commit & Note Metadata Schema
 
@@ -94,6 +94,7 @@ To ensure attestations survive post-merge branch deletion and squash merges:
    git push origin refs/notes/signoff
    ```
    Fetching directly into the local `refs/notes/signoff` is a non-fast-forward update whenever local and remote notes have diverged and is rejected; the `+`-forced tracking ref sidesteps this on repeat runs, and `--ref=signoff` ensures the merge targets the signoff notes ref rather than the default `refs/notes/commits`.
+3. **Target-mode ordering (producers writing to a branch other than HEAD's):** build the attestation commit object first (nothing references it), self-check it, publish the notes — the reviewed commit and tree already exist on the remote — and only then push the object to the target branch under a lease on the reviewed commit (`--force-with-lease=<branch>:<reviewed-commit-sha>`). Nothing before the push needs undoing. A rejected push leaves the branch untouched and the published notes standing; a producer MUST report them, since they truthfully describe the reviewed commit and tree, and MUST NOT move any local ref for the target branch.
 
 ---
 
@@ -159,14 +160,14 @@ The Socratic interrogation logic (probing 4 axes, evaluating user clarity) remai
 ### 4.1 MCP Tools
 
 * **`signoff_prepare(target_ref: str)`**:
-  - Resolves `reviewed_commit_sha`, `base_sha`, and `tree_sha`.
+  - Resolves `reviewed_commit_sha`, `base_sha`, and `tree_sha`. `target_ref` is HEAD or any branch: for a branch, the reviewed commit is the remote's tip of that branch after a fetch, and the working tree is not consulted. The integration branch (the branch pull requests merge into, a repository-level setting) is never a target; on it, a producer attests only the reviewer's own unpushed range. *Informative:* when invoked on the integration branch with no target, a producer lists fetched remote branches not merged into it, excluding tips that are already attestations, most recent first, for the human to choose from.
   - Generates raw range diff, modified file list, and patch stats for LLM Socratic auditing.
   - Detects active `TranscriptProvider` and returns current transcript status (informative only).
   - Reports the resolved interview profile (source, path, `Profile-ID`, 12-hex block digest — the skill-layer resolution order of §2.3, with an unreadable `GIT_SIGNOFF_PROFILE_FILE` aborting and a malformed file-sourced profile falling back to the embedded default with the reason surfaced) and the science-guard signal categories detected in the range diff (informative mirror of the skill layer's Section 1 step 5 and science-detection escalation guard; the agent prompt remains authoritative for interview conduct).
 * **`signoff_commit(tradeoffs: list[str], risks: list[str], user_email: str, sign_commit: bool = True, ack_no_transcript: bool = False)`**:
-  - **Stale State Circuit Breaker:** Re-verifies `HEAD == reviewed_commit_sha`, `git diff --quiet`, and `git diff --cached --quiet`. Aborts if dirty or stale.
+  - **Stale State Circuit Breaker:** Verifies against the state `signoff_prepare` recorded, never against a re-derived HEAD: `HEAD == reviewed_commit_sha` and `HEAD^{tree} == tree_sha` from that record, `git diff --quiet`, `git diff --cached --quiet`, and the interview profile resolving to the recorded source, id, and digest. Aborts if dirty or stale. Rationale: the approval marker (§2.3) binds the transcript to the reviewed commit only when a transcript exists; the recorded state binds the commit to it in every case, including `VERIFIED_BY_HUMAN_NO_TRANSCRIPT_DIGEST`.
   - **Deterministic Status & Ack Enforcement:** Calls `TranscriptProvider.fetch_transcript_bytes()` once. If transcript is unavailable and `ack_no_transcript=False`, the producer MUST abort execution. If `ack_no_transcript=True`, the producer sets `Signoff-Status: VERIFIED_BY_HUMAN_NO_TRANSCRIPT_DIGEST`. When bytes are available the producer SHOULD require the §2.3 approval marker in the snapshot.
-  - Constructs flat GSA trailers, executes empty commit (`git commit --allow-empty [-S]`), attaches Git Notes (`refs/notes/signoff`) on the reviewed commit and its tree, and SHOULD verify its own output with the reference verifier's head-mode check before reporting success (removing the commit and notes if the check fails).
+  - Constructs flat GSA trailers, executes empty commit (`git commit --allow-empty [-S]` at HEAD; `git commit-tree [-S]` parented on the reviewed commit for a branch target, then §2.5 item 3), attaches Git Notes (`refs/notes/signoff`) on the reviewed commit and its tree, and SHOULD verify its own output with the reference verifier's head-mode check before reporting success (removing the commit and notes if the check fails; in target mode, before anything is published). For a branch target the stale-state check is that the remote tip still equals the recorded `reviewed_commit_sha` after a fetch.
 
 ---
 
@@ -179,6 +180,10 @@ To verify if a target commit or tree was attested:
 1. **Git Notes Lookup (`refs/notes/signoff`):** Check `git notes --ref=signoff show <commit-sha>` or `git notes --ref=signoff show <tree-sha>`. If a note exists, parse trailers directly.
 2. **Git Log Attestation Commit Lookup:** If notes are un-fetched, search git log for commit messages matching `[SIGNOFF *]`.
 3. **Tree-SHA Fallback:** If commit SHA is missing, compare `Signoff-Reviewed-Tree-SHA` against tree SHAs (`git rev-parse <commit>^{tree}`) in `refs/notes/signoff` or git log. If tree SHAs match, the attestation is verified valid for that exact code state.
+
+**Evidence, not trailers.** An attestation *commit* consulted in step 2 or 3 — in the target's own history or beyond it — is evidence only if the commit object corroborates its trailers: a verifier MUST require exactly one parent, an empty commit (its tree is the parent's), and the declared `Signoff-Reviewed-Commit-SHA` as that parent; the declared `Signoff-Reviewed-Tree-SHA` anchors only when it is the parent's actual tree. Without this an empty `[SIGNOFF]` commit on an unrelated tree whose trailer names a target's tree would pass that target with no hash collision. Notes are judged as before: a note is attached to the very object it describes.
+
+**Beyond the target's history.** A verifier MAY consult attestation commits reachable from refs other than the target's history — pull-request head refs, which survive branch deletion — only from refs the repository's write authority controls; by default the merged, same-repository pull request associated with the target, decided from the hosting platform's record of the pull request, never from a ref-name pattern. A match found this way establishes that the same tracked code state was attested; it does not establish that this pull request, this base, or this interview context was reviewed. Recovery tooling that reconstructs notes MUST apply the same integrity and eligibility rules before publishing a note.
 
 **One attestation, one anchor.** Every lookup above matches against the values of *one* attestation (§2.3 single-valued rule): a commit message or note block that repeats a single-valued trailer is malformed and anchors nothing. Notes are evaluated block by block (`git notes append` concatenates attestations; a re-attestation of the same commit first without and then with a transcript is two blocks with two statuses, not one contradictory payload). A `cat_sort_uniq`-merged note (§2.5) is the sorted union of several attestations' lines and cannot be split back into them; verifiers MAY accept such a blob — with the status/digest rule applied per status present — **only for the object the note is attached to**, never by tree- or commit-SHA membership for any other object, and never from a commit message, which is always exactly one attestation.
 

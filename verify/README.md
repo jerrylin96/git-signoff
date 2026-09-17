@@ -17,7 +17,7 @@ squash merges.
 
 Run inside your repository root:
 ```bash
-curl -fsSL https://raw.githubusercontent.com/jerrylin96/git-signoff/init-v7/init.py -o /tmp/signoff-init.py && python3 /tmp/signoff-init.py
+curl -fsSL https://raw.githubusercontent.com/jerrylin96/git-signoff/init-v8/init.py -o /tmp/signoff-init.py && python3 /tmp/signoff-init.py
 ```
 
 This automatically scaffolds the workflow, selects your domain interview profile, configures the README badge, configures GitHub ruleset protection, and creates a setup branch ready for `/git-signoff`.
@@ -43,7 +43,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0   # full history — attestations live in it
-      - uses: jerrylin96/git-signoff/verify@verify-v1.3
+      - uses: jerrylin96/git-signoff/verify@verify-v1.5
 ```
 
 **2.** (Recommended) Enforce signoff before merge with the preconfigured GitHub Ruleset:
@@ -69,13 +69,20 @@ repository's `verify-v*` tags after fetching notes and prints one line on
 stderr (visible in the CI log; stdout stays the verdict) when a newer pin exists:
 
 ```text
-warning: verifier pin verify-v1.4 is behind verify-v1.5; see verify/README.md
+warning: verifier pin verify-v1.5 is behind verify-v1.6; see verify/README.md
 ```
 
 It never changes the verdict, is skipped silently when the network is
 unavailable, and can be turned off with `GIT_SIGNOFF_NO_UPDATE_CHECK=1`.
 
-> **If you pinned `@verify-v1`, `@verify-v1.1`, `@verify-v1.2`, or `@verify-v1.3`, move to `@verify-v1.4`.**
+> **If you pinned `@verify-v1` through `@verify-v1.4`, move to `@verify-v1.5`.**
+> `verify-v1.5` makes the log lookup judge attestation *commits* by their
+> objects, not their trailers (an empty `[SIGNOFF]` commit naming a target's
+> tree no longer passes that target; a rebased attestation commit no longer
+> counts in history mode), adds `--scan-refs` so a squash or rebase merge
+> passes head mode via the merged pull request's head, and makes `auto` mode
+> `head` on every event, so an adopter with unattested history starts red
+> until the first attestation lands (the failure line names the command).
 > `verify-v1.4` moves the verifier into the skill folder
 > (`skills/git-signoff/verify_signoff.py`, vendored into every adopter
 > repository, so `--audit` runs locally without a download and the producer
@@ -99,8 +106,29 @@ unavailable, and can be turned off with `GIT_SIGNOFF_NO_UPDATE_CHECK=1`.
 
 | Event | Mode | Passes when |
 |---|---|---|
-| `pull_request` (or explicit `mode: head`) | `head` | The target commit is (or carries) a valid attestation: an **empty** attestation commit attesting its own parent's commit and tree — the normal shape of a branch ending in `/git-signoff`; a non-empty attestation commit fails, so trailers cannot smuggle unreviewed changes — a notes/log/tree-SHA match for the head commit, or (for a 2-parent PR merge commit) a clean 3-way merge (`git merge-tree --write-tree HEAD^1 HEAD^2`) where the merged PR branch head `HEAD^2` is validly attested. |
-| `push` / anything else (default `mode: auto`) | `history` | The ref's history carries at least `require` (default 1) structurally valid attestations. |
+| every event (default `mode: auto`, since `verify-v1.5`) | `head` | The target commit is (or carries) a valid attestation: an **empty** attestation commit attesting its own parent's commit and tree — the normal shape of a branch ending in `/git-signoff`; a non-empty attestation commit fails, so trailers cannot smuggle unreviewed changes — a note on the commit or its tree, a *sound* attestation commit in its history or under `scan-refs` whose earned anchor matches (see below), or (for a 2-parent PR merge commit) a clean 3-way merge (`git merge-tree --write-tree HEAD^1 HEAD^2`) where the merged PR branch head `HEAD^2` is validly attested. On `push`, the badge therefore means "the current tip of this branch is attested", not "this repository has used the tool". |
+| explicit `mode: history` | `history` | The ref's history carries at least `require` (default 1) valid attestations — notes, and attestation commits that corroborate their trailers. |
+
+**Evidence, not trailers (`verify-v1.5`).** An attestation *commit* found by the
+log lookup counts only if the commit object corroborates its trailers: exactly
+one parent, empty (its tree is the parent's), and that parent is the declared
+reviewed commit; its declared tree anchors only when it is the parent's actual
+tree. Without this, an empty `[SIGNOFF]` commit on an unrelated tree whose
+trailer named some target's tree passed that target. A consequence for
+history mode: a rebased attestation commit (parent rewritten) is reported,
+not counted — re-run `/git-signoff` after a rebase, as head mode always
+required.
+
+**`scan-refs` (`verify-v1.5`).** On `push`, `auto` asks the API for the merged
+pull request from *this* repository whose merge commit is the target, fetches
+exactly its `refs/pull/N/head`, and lets a sound attestation there anchor the
+target by tree. That is what makes a squash or rebase merge pass head mode
+even when the interview ran in a cloud session whose notes push was refused.
+A match by tree establishes that the same tracked code state was attested,
+not that this pull request, base, or interview context was reviewed. Fork
+pull requests are never fetched by `auto`; broader evidence is an explicit
+`scan-refs` value you choose. Requires the `gh` CLI (present on GitHub
+runners) and the workflow token; without them nothing is scanned.
 
 ### Supported Merge Strategies
 
@@ -108,17 +136,18 @@ unavailable, and can be turned off with `GIT_SIGNOFF_NO_UPDATE_CHECK=1`.
 
 - **Standard PR Merge (2-parent merge commit)**: When merging via GitHub's "Create a merge commit" button (or `git merge --no-ff`), `mode: head` verifies that `HEAD^{tree}` cleanly matches `git merge-tree --write-tree HEAD^1 HEAD^2` and that `HEAD^2` was validly attested. Any manual conflict resolution or unreviewed changes introduced during merge cause verification to fail.
 - **Fast-Forward Merge**: Preserves the attestation commit directly at the branch tip, passing `mode: head`.
-- **Squash Merge**: Survives in `mode: history` (attestation records reachable in history log). In `mode: head`, the reviewed **Tree SHA** lookup in `refs/notes/signoff` (gsa-core §2.5) passes if the base branch has not advanced; if the base has advanced, the squashed tree combines base and branch changes (a new code state), requiring `/git-signoff` to be re-run on the updated branch before merge.
-- **Rebase Merge**: Survives in `mode: history` (attestation commits reachable in history log). In `mode: head`, rebasing onto an advanced base rewrites commit SHAs, requiring `/git-signoff` to be re-run on the rebased branch before merge.
+- **Squash Merge**: In `mode: head`, the squashed tip passes when its tree was attested — via the note on the reviewed **tree** (gsa-core §2.5) or, since `verify-v1.5`, via the merged pull request's head under `scan-refs` — which holds when the base branch has not advanced. If the base has advanced, the squashed tree combines base and branch changes (a new code state), requiring `/git-signoff` to be re-run on the updated branch before merge.
+- **Rebase Merge**: GitHub drops intentionally empty commits during rebase-and-merge, so the attestation commit itself does not land; the rebased tip passes `mode: head` only via the reviewed tree (note or `scan-refs`), which holds when the base has not advanced. Rebasing onto an advanced base rewrites the code state, requiring `/git-signoff` to be re-run on the rebased branch before merge.
 
 Override with inputs:
 
 ```yaml
-      - uses: jerrylin96/git-signoff/verify@verify-v1.3
+      - uses: jerrylin96/git-signoff/verify@verify-v1.5
         with:
-          mode: history      # or: head
+          mode: history      # or: head (the default on every event)
           target: main       # commit (head) or ref (history)
           require: '1'       # history mode: minimum valid attestations
+          scan-refs: auto    # head mode: auto | none | explicit refs (see above)
 ```
 
 The verifier is a single stdlib-only Python file

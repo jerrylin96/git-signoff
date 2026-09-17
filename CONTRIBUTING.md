@@ -109,7 +109,7 @@ rebuilds the notes ref from the attestation commits on merge.
 ## Licensing of contributions
 
 Code (everything except the documents under `skills/git-signoff/specs/`) is
-MIT. The specification documents are under the Community Specification
-License 1.0 (`LICENSE-SPEC`); contributing to them means agreeing to that
-license's terms for specification contributions. Neither license covers the
-other set of files.
+MIT (`LICENSE`). The specification documents are under the Apache License
+2.0 (`skills/git-signoff/specs/LICENSE`); a contribution to them is
+licensed under Apache-2.0 per its section 5, including the patent grant.
+Neither license covers the other set of files.

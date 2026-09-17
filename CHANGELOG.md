@@ -5,6 +5,111 @@ the composite action (`verify-vX.Y`) and the initializer (`init-vN`) never
 move and are listed with the release that introduced them. Dates are the tag
 dates on `origin`.
 
+## Unreleased (`verify-v1.5`, `init-v8`, spec 3.8.0)
+
+- **Added** notes recovery for adopters: `init.py` scaffolds
+  `.github/workflows/git-signoff-notes.yml`, which runs the new composite
+  action `jerrylin96/git-signoff/recover` on every push to the integration
+  branch. It rebuilds `refs/notes/signoff` from attestation commits in the
+  branch's history and in the heads of merged, same-repository pull requests
+  (the same eligibility the verifier applies), then pushes it. Only this
+  repository had a recovery workflow before; `scripts/recover_notes.py`
+  accepts repeated `--ref`. This repository's own workflow now uses the
+  action.
+- **Changed** `gsa-core.md` to 3.8.0: attestations are recorded on the
+  branch whose tip is the reviewed commit, from any checkout (§2, §2.5 item
+  3, §4.1); §5.1 gains the evidence rules — object integrity for attestation
+  commits, source eligibility beyond the target's history, and what a
+  cross-history match establishes. No trailer changes.
+- **Fetch assumption behind `scan-refs: auto` and the recover action:**
+  `refs/pull/N/head` must stay fetchable after the pull request's branch is
+  deleted. Confirmed on this repository on 2026-09-17: origin retains only
+  `main` and the feature branch, yet advertises and serves the head ref of
+  all 22 merged pull requests over `git fetch`. `tag.yml` creates
+  `verify-v1.5` at merge, so the remaining end-to-end confirmation is the
+  first `notes-recovery` run after merge, whose log lists each eligible pull
+  request it fetched. If the fetch ever fails, the guard skips that ref and
+  the verifier scans nothing: squash merges without a pushed note fail
+  loudly, never pass falsely.
+- **Changed** the verifier (`verify-v1.5`): an attestation *commit* found by
+  the log lookup counts only if its object corroborates its trailers — one
+  parent, empty, parent is the declared reviewed commit; the declared tree
+  anchors only when it is the parent's tree. Closes the forgery an external
+  review constructed (an empty `[SIGNOFF]` commit naming a later tree passed
+  that tree). History mode no longer counts a rebased attestation commit.
+  Added `--scan-refs REF ...`: sound attestation commits under the given
+  refs may anchor the target by tree, which establishes that the same code
+  state was attested, not that this PR or interview was reviewed. The
+  composite action's `auto` mode is now `head` on every event (the badge
+  means "the current tip is attested"), and on `push` it resolves the merged
+  same-repository pull request whose merge commit is the target via the API
+  and scans exactly its `refs/pull/N/head`; forks are never fetched by
+  `auto`. New input `scan-refs` (`auto` | `none` | explicit). Adopters with
+  unattested history start red until the first attestation lands.
+- **Added** target mode: `attest.py prepare --target <branch>` reviews
+  `origin/<branch>`'s tip from any checkout (the working tree is not read),
+  and `commit` builds the attestation object with `commit-tree`,
+  self-checks it, publishes the notes, then pushes it to the branch under a
+  lease on the reviewed tip — no local ref moves, and a rejected push
+  leaves the branch untouched with the already-published notes named.
+  `attest.py targets` lists fetched remote branches awaiting review (not
+  merged into the integration branch, not already attested; ten most recent
+  by default). The integration branch is never a target. `/git-signoff
+  <branch>` in SKILL.md; the Worktree Target Mandate is rewritten around it.
+  Not available from web sessions, whose git proxy pushes only to the
+  session's branch (HARNESSES.md).
+- **Added** `.git-signoff/config.json` with `integration_branch`, written by
+  `init.py` (`--integration-branch`, else detected and confirmed). One
+  choice read by the workflow's push filter, the rendered ruleset
+  (`refs/heads/<name>` instead of `~DEFAULT_BRANCH`), the setup branch's
+  base, and `attest.py`. The producer's reference precedence is now
+  `--reference`, a usable upstream, the configured branch, `origin/HEAD`,
+  then `main`/`master`; the `origin/HEAD` step is a behaviour change for
+  repositories without a config whose default branch is neither. On the
+  integration branch, an unpushed range is attested as the reviewer's own
+  (direct-push case), a diverged upstream is exit 3, and nothing unpushed
+  is exit 2. An installed GitHub ruleset targeting a different branch is
+  reported with the manual step and never edited (`mismatch`).
+- **Added** interview scaling for expansive ranges: `prepare` reports
+  `components` and `skeptical_min_probes` (`max(8, 4 + 2 × components)`),
+  and SKILL.md's Tier 2 floor uses it, with one probe per component.
+- **Changed** `scripts/recover_notes.py` to attach a note only where the
+  attestation commit object backs the trailer: one parent, empty commit,
+  parent is the declared reviewed commit (else skipped), and the declared
+  tree is the parent's tree (else the commit anchor only). A `[SIGNOFF]`
+  commit on an unrelated tree naming a target's tree could otherwise mint a
+  tree note and turn an unattested target green (constructed in external
+  review, 2026-09-16). Eight attestations from 2026-08-01..05 in this
+  repository's own history declare a tree no reviewed commit has; they now
+  recover on their commit anchor only. Payload files remain trusted as
+  committed fixtures.
+- **Fixed** `attest.py commit` attesting a commit the interview never covered
+  when no transcript was available. `commit` re-ran `prepare` and took
+  whatever HEAD was; only the transcript's approval marker tied it to the
+  reviewed commit, so with `--ack-no-transcript` a commit added after the
+  interview was attested with exit 0 (reproduced; found in external review
+  2026-09-16). `prepare` now writes `.git/git-signoff/prepared.json`
+  (reviewed, base and tree SHAs, reference, timestamp, resolved profile) and
+  `commit` attests exactly that record: no record, a moved HEAD or tree, or a
+  changed interview profile is exit 3, with or without a transcript; a
+  `--reference` at commit must resolve to the recorded one (else exit 2); the
+  base in the trailers is the recorded one even if the reference moved during
+  the interview. A successful commit removes the record; `marker` reprints the
+  recorded marker and is read-only (a stale or missing record is exit 3, so it
+  cannot restart a review the way a silent re-prepare would; caught in the
+  second external review pass). Spec `gsa-core.md` 3.7.2 (informative §4.1).
+- **Changed** the license of the three specification documents under
+  `skills/git-signoff/specs/` from the Community Specification License 1.0
+  to the Apache License 2.0 (`gsa-core.md` 3.7.1, since superseded by 3.7.2 above, `gsa-escrow.md` 1.0.1,
+  `gsa-in-toto-predicate.md` 0.1.1; no normative change). `LICENSE-SPEC` is
+  removed; the Apache text lives at `skills/git-signoff/specs/LICENSE` and a
+  copy of the MIT `LICENSE` at `skills/git-signoff/LICENSE`, so the vendored
+  folder carries both notices. Code was and remains MIT.
+- **Changed** `LICENSE` copyright holder to the author's name; `CITATION.cff`
+  gains the author's affiliation and lists both licenses.
+- **Changed** README: "Who it's for" is now "Statement of need"; the
+  License section names which files fall under which license.
+
 ## v0.5.0 — 2026-09-10 (`verify-v1.4`, `init-v7`, spec 3.7.0)
 
 The deterministic-producer release: the agent conducts the interview, a

@@ -34,6 +34,7 @@ def _attest(path, tmp_path, who, timestamp):
     f = tmp_path / f"{who}.log"
     f.write_bytes(f"{who} transcript\nGSA-APPROVAL {head} 2026-01-01T00:00:00Z\n".encode())
     adapter = core.GenericFileAdapter(str(f), conversation_id=who)
+    core.prepare(str(path), "origin/main", env={}, adapter=adapter)
     opts = core.CommitOptions(
         email=f"{who}@example.com", level="standard", reference="origin/main", push=False, timestamp=timestamp
     )

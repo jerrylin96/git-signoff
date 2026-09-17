@@ -2,10 +2,12 @@ name: notes-recovery
 
 # Phase 5 Gate 0 (docs/roadmap.md): cloud sessions cannot push refs/notes/signoff
 # through the session git proxy (403), so this workflow reconstructs the ref
-# from the [SIGNOFF *] attestation messages already in main's history — plus
-# the pre-extraction production-attestation fixture — and pushes it from
-# Actions, where pushes are unrestricted. Idempotent: an up-to-date ref
-# produces no new commit and the push is a no-op.
+# from the [SIGNOFF *] attestation commits in main's history and in the heads
+# of merged, same-repository pull requests (the attestation of a squash- or
+# rebase-merged branch lives only there) — plus the pre-extraction
+# production-attestation fixture — and pushes it from Actions, where pushes
+# are unrestricted. Idempotent: an up-to-date ref produces no new commit.
+# Uses this repository's own composite action, the one adopters scaffold.
 
 on:
   push:
@@ -14,6 +16,7 @@ on:
 
 permissions:
   contents: write
+  pull-requests: read
 
 jobs:
   recover:
@@ -23,15 +26,7 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Fetch existing signoff notes
-        run: git fetch origin +refs/notes/signoff:refs/notes/signoff || true
-
-      - name: Reconstruct notes from attestation history
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          python3 scripts/recover_notes.py --ref origin/main \
-            --payload-file scripts/tests/fixtures/production_attestation.txt
-
-      - name: Push notes ref
-        run: git push origin refs/notes/signoff
+      - uses: ./recover
+        with:
+          branch: main
+          payload-file: scripts/tests/fixtures/production_attestation.txt

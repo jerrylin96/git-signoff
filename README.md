@@ -35,7 +35,7 @@ which state of the code — a record that survives squash merges and branch
 deletion. The goal is preventing *cognitive surrender*: rubber-stamping AI
 output nobody actually understands.
 
-## Who it's for
+## Statement of need
 
 **Software engineers** — the default interview profile emphasizes algorithmic
 complexity, data-structure invariants, and API contract changes.
@@ -59,10 +59,10 @@ Inside your repository root, run the zero-touch initializer (Python 3.10+ stdlib
 
 ```bash
 # Standard software engineering profile:
-curl -fsSL https://raw.githubusercontent.com/jerrylin96/git-signoff/init-v7/init.py -o /tmp/signoff-init.py && python3 /tmp/signoff-init.py
+curl -fsSL https://raw.githubusercontent.com/jerrylin96/git-signoff/init-v8/init.py -o /tmp/signoff-init.py && python3 /tmp/signoff-init.py
 
 # Scientific & research computing profile (math, physics, bio, climate, ML):
-curl -fsSL https://raw.githubusercontent.com/jerrylin96/git-signoff/init-v7/init.py -o /tmp/signoff-init.py && python3 /tmp/signoff-init.py --profile domain-science
+curl -fsSL https://raw.githubusercontent.com/jerrylin96/git-signoff/init-v8/init.py -o /tmp/signoff-init.py && python3 /tmp/signoff-init.py --profile domain-science
 ```
 
 The script automatically:
@@ -94,7 +94,7 @@ AI: ✅ Attestation commit [SIGNOFF a1b2c3d] created! Your badge is green.
 
 1. **Install** — run the 60-second initializer above, or pick the one row for your harness below.
 2. **Open the PR** — review the diff as usual (when the branch's commits are well-structured, reading them one at a time shows what changed when and why far better than one squashed diff); the `verify-signoff` check runs red until the branch ends in a valid attestation. Attest *after* the diff is final: the attestation must be the last commit on the branch, so pushing anything after it turns the check red again (just re-run `/git-signoff`).
-3. **Run** — from the branch you want to merge, type `/git-signoff` (adaptive default auto-selects intensity from diff; `--deep` for skeptical rigor, `--quick` for low-risk diffs subject to safety clamps).
+3. **Run** — from the branch you want to merge, type `/git-signoff`; or, from wherever you sit (typically the integration branch), `/git-signoff <branch>` — the attestation is pushed to that branch and your checkout is not touched. With no branch named on the integration branch, the agent lists the branches awaiting review for you to pick. (Adaptive default auto-selects intensity from the diff; `--deep` for skeptical rigor, `--quick` for low-risk diffs subject to safety clamps.)
 4. **Answer, confirm, merge** — respond in your own words, acknowledge the named trade-offs and risks, confirm your email. The attestation commit and note are created and pushed with your branch; when `verify-signoff` turns green, merge as usual.
 
 ---
@@ -162,13 +162,14 @@ account-scoped, nothing to pip-install.
 
 | Where you work | One-time action |
 |---|---|
-| **Any repository (Zero-touch)** | `curl -fsSL https://raw.githubusercontent.com/jerrylin96/git-signoff/init-v7/init.py -o /tmp/signoff-init.py && python3 /tmp/signoff-init.py` (use `--skill-target {auto,claude,agents,both}` to control destinations) |
+| **Any repository (Zero-touch)** | `curl -fsSL https://raw.githubusercontent.com/jerrylin96/git-signoff/init-v8/init.py -o /tmp/signoff-init.py && python3 /tmp/signoff-init.py` (use `--skill-target {auto,claude,agents,both}` to control destinations) |
 | **Any repository (manual)** | Copy this repo's `skills/git-signoff/` folder to `<your-repo>/.claude/skills/git-signoff/` (Claude Code) or `<your-repo>/.agents/skills/git-signoff/` (Antigravity, Codex, Cursor, etc.) and commit before running the initializer; an untracked skill destination now aborts as an unrelated working-tree change. Update by re-copying (or re-running the initializer) on new releases. |
 | **Other harnesses (Antigravity, Codex, Cursor, …)** | Same folder, cross-client convention: copy `skills/git-signoff/` into `.agents/skills/git-signoff` (or `.claude/skills/git-signoff`) and set the transcript adapter env vars — full matrix in [HARNESSES.md](skills/git-signoff/HARNESSES.md). |
 
 > [!NOTE]
 > **Initializer Flags & Policy A:**
 > - `--skill-target {auto,claude,agents,both}`: Selects target client destinations (defaults to auto-detect based on repo markers).
+> - `--integration-branch NAME`: The branch pull requests merge into (default: detected, confirmed interactively). Written once to `.git-signoff/config.json` and read by the workflow, the ruleset, and `attest.py`, so a `dev`-based team never has three components disagreeing about the base.
 > - `--allow-dirty`: Permits unrelated unstaged/untracked work to remain in place. It still refuses any pre-staged change, any uncommitted or ignored state under paths the initializer manages, and all Policy A violations (symbolic links, parent-path collisions, unrelated non-empty directories, and destination-level `.gitignore` rules). This boundary prevents user work from being swept into the scaffold commit or overwritten during vendoring/rollback.
 
 ## Make it yours: changing what gets asked
@@ -273,7 +274,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0   # full history — attestations live in it
-      - uses: jerrylin96/git-signoff/verify@verify-v1.4
+      - uses: jerrylin96/git-signoff/verify@verify-v1.5
 ```
 
 Supports standard merge strategies: **2-parent PR merges** (verifies clean merge tree & attested PR head in `head` mode), **fast-forward merges** (`head` mode), **squash merges** (`history` mode; in `head` mode when base is unchanged), and **rebase merges** (`history` mode; in `head` mode, re-run `/git-signoff` after rebase). Enforce strictly with preconfigured [`ruleset.json`](verify/ruleset.json). Full setup & badge markdown: [`verify/`](verify/README.md).
@@ -316,9 +317,9 @@ are in its history (`git log --grep='SIGNOFF'`).
 Phase 5 (tracked in [docs/roadmap.md](docs/roadmap.md))
 adds the production surface: a [project website](https://jerrylin96.github.io/git-signoff/),
 the [attested-by-humans badge + CI verifier](verify/README.md),
-automated `refs/notes/signoff` recovery, an open
-[spec license](LICENSE-SPEC) with [conformance vectors](conformance/README.md)
-for third-party implementations, and a reviewed
+automated `refs/notes/signoff` recovery, an openly licensed
+[protocol specification](skills/git-signoff/specs/gsa-core.md) with
+[conformance vectors](conformance/README.md) for third-party implementations, and a reviewed
 [transcript-escrow spec](skills/git-signoff/specs/gsa-escrow.md) whose
 privacy baseline is user-owned storage with client-side encryption.
 Cloud escrow implementation remains next.
@@ -352,6 +353,12 @@ Lin, J. (2026). git-signoff: Git Signoff Attestation (GSA) (v0.5.0) [Computer so
 
 ## License
 
-Code is MIT licensed; the GSA specifications are licensed under the
-[Community Specification License 1.0](LICENSE-SPEC), so anyone can implement,
-verify, or extend the protocol.
+All software in this repository — `init.py`, the vendored skill folder
+(`attest.py`, `verify_signoff.py`, `SKILL.md`, profiles), the composite
+action under `verify/`, the conformance vectors, tests, and site — is
+[MIT](LICENSE) licensed. The three protocol documents under
+`skills/git-signoff/specs/` are licensed under the
+[Apache License 2.0](skills/git-signoff/specs/LICENSE), which adds an
+explicit patent grant for anyone implementing the protocol. Both licenses
+are OSI-approved, and both texts ship inside the vendored skill folder so
+every adopter's copy carries its notices.

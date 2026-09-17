@@ -21,6 +21,18 @@ Idempotent: payloads already present in a note — including notes rewritten
 by a cat_sort_uniq merge (gsa-core.md §2.5), which sorts lines — are
 detected by line-set containment and skipped; an up-to-date ref produces no
 new commit. Appends use the blank-line separator of `git notes append`.
+
+Evidence, not trailers (external review, 2026-09-16): a note is what makes
+a tree "attested" to every verifier that reads notes, so recovery attaches
+one only where the *commit object* backs the claim, never on the trailer's
+say-so. A commit-sourced payload attaches to its reviewed commit only if the
+attestation commit is empty and that reviewed commit is its sole parent — the
+shape the producer writes and check_head verifies at HEAD — and to its
+declared tree only if that tree is the parent's actual tree. A [SIGNOFF]
+commit on an unrelated tree whose trailer names some target's tree would
+otherwise mint a tree note that turns an unattested target green.
+Payload files are the explicit exception: they exist for attestations whose
+objects are gone, are committed to this repository, and are trusted as such.
 """
 
 import argparse
@@ -44,14 +56,14 @@ def git(repo, *args, check=True, data=None):
 
 
 def attestation_payloads(repo, ref):
-    """Yield (label, payload) for every attestation commit in ref's history."""
+    """Yield (label, payload, sha) for every attestation commit in ref's history."""
     shas = git(
         repo, "log", ref, "--format=%H", r"--grep=^\[SIGNOFF "
     ).stdout.split()
     for sha in shas:
         payload = git(repo, "log", "-1", "--format=%B", sha).stdout.strip("\n")
         if SUBJECT_RE.match(payload):
-            yield sha[:7], payload
+            yield sha[:7], payload, sha
 
 
 def payload_targets(label, payload):
@@ -80,6 +92,57 @@ def payload_targets(label, payload):
             elif sha not in targets:
                 targets.append(sha)
     return targets
+
+
+def _tree_of(repo, obj):
+    proc = git(repo, "rev-parse", "-q", "--verify", f"{obj}^{{tree}}", check=False)
+    return proc.stdout.strip() if proc.returncode == 0 else None
+
+
+def commit_anchors(repo, label, sha, payload):
+    """Anchors a commit-sourced payload has *earned*: the subset of its declared
+    targets that the attestation commit object itself corroborates.
+
+    Rules (the shape the producer writes and the verifier's head-mode check
+    demands): exactly one parent; the attestation commit is empty (its tree
+    is its parent's); the declared reviewed commit is that parent. A payload
+    failing any of these is skipped whole. The declared tree is attached only
+    when it is the parent's actual tree; otherwise the note goes on the commit
+    alone and the mismatch is reported — a tree note is a claim about a code
+    state, and only the object can back it.
+    """
+    declared = payload_targets(label, payload)
+    if not declared:
+        return []
+    reviewed = re.search(r"^Signoff-Reviewed-Commit-SHA: (\S+)$", payload, re.MULTILINE)
+    tree = re.search(r"^Signoff-Reviewed-Tree-SHA: (\S+)$", payload, re.MULTILINE)
+    reviewed = reviewed.group(1) if reviewed and reviewed.group(1) in declared else None
+    tree = tree.group(1) if tree and tree.group(1) in declared else None
+    parents = git(repo, "log", "-1", "--format=%P", sha).stdout.split()
+    if len(parents) != 1:
+        print(f"skip {label}: {len(parents)} parents (an attestation commit has exactly one)")
+        return []
+    parent = parents[0]
+    parent_tree = _tree_of(repo, parent)
+    if _tree_of(repo, sha) != parent_tree:
+        print(f"skip {label}: not an empty commit (its tree differs from its parent's)")
+        return []
+    if reviewed != parent:
+        print(
+            f"skip {label}: parent is {parent[:7]}, not the declared reviewed commit "
+            f"{(reviewed or 'none')[:7]} (an attestation sits on the commit it attests)"
+        )
+        return []
+    anchors = [reviewed]
+    if tree is not None:
+        if tree == parent_tree:
+            anchors.append(tree)
+        else:
+            print(
+                f"tree-only-skip {label}: declared Reviewed-Tree-SHA {tree[:7]} is not the reviewed "
+                f"commit's tree {parent_tree[:7]}; attaching to the commit only"
+            )
+    return anchors
 
 
 def read_notes(repo):
@@ -122,19 +185,31 @@ def write_notes(repo, notes, message):
 
 
 def recover(repo, ref, payload_files):
-    payloads = list(attestation_payloads(repo, ref))
+    """`ref` may be one ref or a list: the integration branch plus the heads of
+    eligible (merged, same-repository) pull requests — see recover/action.yml,
+    which decides eligibility; this script scans what it is given."""
+    refs = [ref] if isinstance(ref, str) else list(ref)
+    # (label, payload, anchors): anchors are earned for commit-sourced payloads
+    # (commit_anchors) and taken from the trailers for trusted payload files.
+    payloads, seen = [], set()
+    for one in refs:
+        for label, payload, sha in attestation_payloads(repo, one):
+            if sha in seen:
+                continue
+            seen.add(sha)
+            payloads.append((label, payload, commit_anchors(repo, label, sha, payload)))
     for path in payload_files:
         with open(path, encoding="utf-8") as f:
             text = f.read().strip("\n")
         if SUBJECT_RE.match(text):
-            payloads.append((path, text))
+            payloads.append((path, text, payload_targets(path, text)))
         else:
             print(f"skip {path}: not an attestation payload")
 
     notes = read_notes(repo)
     attached = 0
-    for label, payload in payloads:
-        for target in payload_targets(label, payload):
+    for label, payload, anchors in payloads:
+        for target in anchors:
             note = notes.get(target)
             if note is not None and contains(note, payload):
                 print(f"present {target[:7]} <- {label}")
@@ -151,7 +226,7 @@ def recover(repo, ref, payload_files):
         print("no attestation payloads found; nothing to do")
         return 0
     commit = write_notes(
-        repo, notes, f"Recover signoff notes from attestation messages in {ref}"
+        repo, notes, f"Recover signoff notes from attestation messages in {', '.join(refs)}"
     )
     print(
         f"{NOTES_REF} -> {commit[:12]} ({attached} attachment(s))"
@@ -164,7 +239,12 @@ def recover(repo, ref, payload_files):
 def main(argv=None):
     p = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     p.add_argument("--repo", default=".", help="repository to operate on")
-    p.add_argument("--ref", default="HEAD", help="history to scan for [SIGNOFF *] commits")
+    p.add_argument(
+        "--ref",
+        action="append",
+        default=None,
+        help="history to scan for [SIGNOFF *] commits (repeatable; default HEAD)",
+    )
     p.add_argument(
         "--payload-file",
         action="append",
@@ -172,7 +252,7 @@ def main(argv=None):
         help="extra attestation payload file (repeatable)",
     )
     args = p.parse_args(argv)
-    return recover(args.repo, args.ref, args.payload_file)
+    return recover(args.repo, args.ref or ["HEAD"], args.payload_file)
 
 
 if __name__ == "__main__":

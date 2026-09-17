@@ -2,7 +2,7 @@
 
 A small, executable seed suite for third-party implementations of the
 [Git Signoff Attestation core spec](../skills/git-signoff/specs/gsa-core.md)
-(licensed under the [Community Specification License 1.0](../LICENSE-SPEC)).
+(licensed under the [Apache License 2.0](../skills/git-signoff/specs/LICENSE)).
 If your verifier reaches the verdicts in [`expected.json`](expected.json)
 on every payload in [`vectors/`](vectors/), it agrees with the reference
 implementation on the structural layer of the protocol.
@@ -41,6 +41,14 @@ Scope notes:
   its parent; the §5.1 lookup order) require a repository and are
   exercised by the reference verifier's test suite
   (`scripts/tests/test_verify_signoff.py`).
+- **Object integrity (§5.1, since gsa-core 3.8.0).** A conforming verifier
+  that consults attestation *commits* (in the target's history or beyond it)
+  MUST require the commit object to corroborate the trailers: exactly one
+  parent, an empty commit, and the declared reviewed commit as that parent;
+  the declared tree anchors only when it is the parent's actual tree. A
+  payload-level vector cannot express this; the reference suite's
+  `test_log_lookup_*` and `test_scan_refs_*` cases are the executable
+  statement of it, and a third-party implementation should reproduce them.
 - Per gsa-core §2.3, `Signoff-Agent` values that don't match the token
   grammar remain valid opaque strings; no vector may require rejecting on
   `Signoff-Agent` format.

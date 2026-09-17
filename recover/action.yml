@@ -1,0 +1,73 @@
+name: 'Recover Git Signoff Notes'
+description: >-
+  Rebuilds refs/notes/signoff from the attestation commits in a branch's
+  history and in the heads of merged, same-repository pull requests, then
+  pushes it. Cloud sessions cannot push notes refs; this runs where pushes are
+  unrestricted. Idempotent.
+branding:
+  icon: 'refresh-cw'
+  color: 'green'
+
+inputs:
+  branch:
+    description: 'Integration branch whose history is scanned (default: the pushed branch).'
+    default: ''
+  payload-file:
+    description: 'Optional attestation payload file for an attestation whose objects are gone (trusted as committed).'
+    default: ''
+  pull-requests:
+    description: >-
+      'auto' (default) also scans the heads of merged pull requests into the
+      branch that came from this repository (needs the gh CLI and the
+      workflow token); 'none' scans the branch only.
+    default: 'auto'
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Fetch existing signoff notes
+      shell: bash
+      run: git fetch origin +refs/notes/signoff:refs/notes/signoff || true
+
+    - name: Resolve eligible pull-request heads
+      id: eligible
+      shell: bash
+      env:
+        GH_TOKEN: ${{ github.token }}
+        BRANCH_INPUT: ${{ inputs.branch }}
+        PRS: ${{ inputs.pull-requests }}
+      run: |
+        # Same eligibility as the verifier (docs/attest-any-target.md §2.13):
+        # merged pull requests into this branch whose head repository is this
+        # repository. Fork heads are never fetched.
+        BRANCH="${BRANCH_INPUT:-$GITHUB_REF_NAME}"
+        REFS="--ref origin/$BRANCH"
+        if [ "$PRS" = auto ] && command -v gh >/dev/null 2>&1; then
+          NUMBERS=$(gh pr list --state merged --base "$BRANCH" --limit 100 \
+            --json number,headRepository,headRepositoryOwner \
+            --jq ".[] | select((.headRepositoryOwner.login + \"/\" + .headRepository.name) == \"$GITHUB_REPOSITORY\") | .number" \
+            2>/dev/null || true)
+          for N in $NUMBERS; do
+            if git fetch -q origin "+refs/pull/$N/head:refs/remotes/pull/$N/head"; then
+              REFS="$REFS --ref refs/remotes/pull/$N/head"
+            fi
+          done
+        fi
+        echo "refs=$REFS" >> "$GITHUB_OUTPUT"
+        echo "branch=$BRANCH" >> "$GITHUB_OUTPUT"
+
+    - name: Reconstruct notes from attestation commits
+      shell: bash
+      env:
+        REFS: ${{ steps.eligible.outputs.refs }}
+        PAYLOAD: ${{ inputs.payload-file }}
+      run: |
+        git config user.name "github-actions[bot]"
+        git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+        # shellcheck disable=SC2086  # REFS is a list of --ref arguments
+        python3 "${GITHUB_ACTION_PATH}/../scripts/recover_notes.py" $REFS \
+          ${PAYLOAD:+--payload-file "$PAYLOAD"}
+
+    - name: Push notes ref
+      shell: bash
+      run: git push origin refs/notes/signoff

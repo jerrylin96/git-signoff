@@ -535,6 +535,8 @@ def test_signoff_phase3f_adaptive_intensity_contract():
     assert "2 (one turn)" in signoff_content, "Tier 0 / cursory probe count must be 2"
     assert "4–6 (2–3 turns)" in signoff_content, "Tier 1 / standard probe count must be 4–6"
     assert "8+ (4+ turns)" in signoff_content, "Tier 2 / skeptical probe count must be 8+"
+    assert "max(8, 4 + 2 × components)" in signoff_content, "Tier 2 floor must scale with components"
+    assert "skeptical_min_probes" in signoff_content, "SKILL.md must name the helper hint for the scaled floor"
 
     # (4) Pass criteria invariants
     assert "riskiest consequence" in signoff_content, "Tier 0 must require riskiest consequence acceptance"

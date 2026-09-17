@@ -13,9 +13,10 @@ initializer, the producer, and the verifier are standard-library scripts
    and `verify_signoff.py`, so relative links (e.g. `specs/gsa-core.md`) keep
    resolving and the helper finds its sibling verifier. Never copy `SKILL.md`
    alone. Licensing inside the folder: `attest.py`, `verify_signoff.py`, and
-   the Markdown guidance are MIT like the rest of the repository's code; the
-   documents under `specs/` are under the Community Specification License 1.0
-   (stated in each file). Neither license covers the other's files.
+   the Markdown guidance are MIT like the rest of the repository's code
+   (`LICENSE` in this folder); the documents under `specs/` are under the
+   Apache License 2.0 (`specs/LICENSE`, stated in each file). Neither license
+   covers the other's files.
 2. **All links are relative** — enforced by `scripts/tests/test_skill_references.py`
    (no `file://` links).
 3. **Cross-skill references degrade gracefully outside Antigravity.** On
@@ -82,6 +83,13 @@ dogfoods via symlinks at both `.claude/skills/git-signoff` and
 `.agents/skills/git-signoff` to its own `skills/git-signoff/`; that symlink pattern is
 for this repo only.
 
+**Migration note (2026-09, `init-v8`):** re-running the initializer adds
+`.git-signoff/config.json` (the integration branch, confirmed once), renders
+the ruleset for that branch, and scaffolds the notes-recovery workflow; the
+vendored `attest.py` gains target mode (`prepare --target <branch>`,
+`targets`) and the preparation record; `verify@verify-v1.5` is the matching
+verifier pin. Existing attestations verify as before.
+
 **Migration note (2026-09, `init-v7`):** the skill folder, command, config
 directory, workflow file, and environment variables were renamed from
 `signoff` to `git-signoff` (`.claude/skills/git-signoff`,
@@ -116,6 +124,11 @@ Web-specific caveats:
 - **Weaker append-only assumption** (GSA §2.3): web sessions sync and compact
   transcripts, so first-N-bytes re-verification is less reliable than on
   local CLI harnesses.
+- **Target mode is for local harnesses.** `attest.py prepare --target <branch>`
+  pushes the attestation to `origin/<branch>`; the web session's git proxy
+  allows pushes only to the session's own working branch, so that push is
+  refused there (exit 3, nothing on the branch, notes reported). From a web
+  session, check the branch out and use HEAD mode as before.
 - **`refs/notes/signoff` cannot be pushed from a web session** (verified
   2026-08-05): the cloud GitHub proxy restricts pushes to the session's
   working branch and returns HTTP 403 for notes refs (misreported by git as

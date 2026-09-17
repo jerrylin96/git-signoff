@@ -18,6 +18,7 @@ if sys.version_info < (3, 10):  # loud, before anything that only runs on newer 
     )
 
 import argparse  # noqa: E402
+import copy  # noqa: E402
 import json  # noqa: E402
 import os  # noqa: E402
 import re  # noqa: E402
@@ -96,7 +97,35 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0   # full history — attestations live in it
-      - uses: jerrylin96/git-signoff/verify@verify-v1.4
+      - uses: jerrylin96/git-signoff/verify@verify-v1.5
+"""
+
+NOTES_WORKFLOW_TEMPLATE = """name: git-signoff notes
+
+# Rebuilds refs/notes/signoff from attestation commits — in {default_branch}'s
+# history and in the heads of merged pull requests from this repository — and
+# pushes it. Interviews run in cloud sessions cannot push notes themselves; this
+# is what lets a squash- or rebase-merged branch's attestation survive.
+
+on:
+  push:
+    branches: [ {default_branch} ]
+  workflow_dispatch: {{}}
+
+permissions:
+  contents: write
+  pull-requests: read
+
+jobs:
+  recover-notes:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: jerrylin96/git-signoff/recover@verify-v1.5
+        with:
+          branch: {default_branch}
 """
 
 RULESET_PAYLOAD = {
@@ -144,6 +173,30 @@ RULESET_PAYLOAD = {
 }
 
 
+CONFIG_RELPATH = Path(".git-signoff") / "config.json"
+
+
+def ruleset_payload(integration_branch: str) -> dict:
+    """RULESET_PAYLOAD (the portable template kept in verify/ruleset.json, which
+    targets GitHub's default branch) rendered for one explicit integration
+    branch, so the ruleset protects the branch the workflow and the producer
+    use even when it is not the repository's default branch."""
+    payload = copy.deepcopy(RULESET_PAYLOAD)
+    payload["conditions"]["ref_name"]["include"] = [f"refs/heads/{integration_branch}"]
+    return payload
+
+
+def scaffold_config(repo_root: Path, integration_branch: str) -> Path:
+    """.git-signoff/config.json: the one place the integration branch is chosen.
+    Read by attest.py (fallback reference, direct-push detection) and rendered
+    into the workflow's push filter and the ruleset's target branch."""
+    config_file = repo_root / CONFIG_RELPATH
+    ensure_no_symlink_in_path(repo_root, config_file)
+    config_file.parent.mkdir(parents=True, exist_ok=True)
+    config_file.write_text(json.dumps({"integration_branch": integration_branch}, indent=2) + "\n", encoding="utf-8")
+    return config_file
+
+
 @dataclass
 class GitContext:
     root: Path
@@ -157,6 +210,7 @@ class GitContext:
 class RulesetResult:
     status: str
     rules_url: Optional[str] = None
+    detail: Optional[str] = None
 
 
 @dataclass
@@ -325,6 +379,17 @@ def scaffold_workflow(repo_root: Path, default_branch: str = "main") -> Path:
     return wf_file
 
 
+def scaffold_notes_workflow(repo_root: Path, default_branch: str = "main") -> Path:
+    """The recovery workflow adopters did not get before init-v8 (only this
+    repository had one), so the notes path did not exist outside it."""
+    wf_dir = repo_root / ".github" / "workflows"
+    wf_file = wf_dir / "git-signoff-notes.yml"
+    ensure_no_symlink_in_path(repo_root, wf_file)
+    wf_dir.mkdir(parents=True, exist_ok=True)
+    wf_file.write_text(NOTES_WORKFLOW_TEMPLATE.format(default_branch=default_branch), encoding="utf-8")
+    return wf_file
+
+
 def scaffold_profile(repo_root: Path, profile_id: str = "domain-science") -> Path:
     profile_dir = repo_root / ".git-signoff"
     profile_file = profile_dir / "profile.md"
@@ -341,7 +406,7 @@ SKILL_SOURCE_REPO = "https://github.com/jerrylin96/git-signoff"
 # script version instead of silently tracking the default branch. Pin tags
 # never move; bump this together with the install snippets (README,
 # verify/README.md, site/index.html) and tag.yml's PINS list.
-SKILL_SOURCE_REF = "init-v7"
+SKILL_SOURCE_REF = "init-v8"
 VENDOR_STAMP_FILENAME = "VENDORED-FROM"
 BENIGN_METADATA_FILES: set[str] = {".DS_Store", "Thumbs.db", "desktop.ini"}
 
@@ -831,7 +896,9 @@ def stage_signoff_files(
     dests = _normalize_skill_destinations(repo_root, destinations)
     files = [
         ".github/workflows/git-signoff.yml",
+        ".github/workflows/git-signoff-notes.yml",
         ".git-signoff/profile.md",
+        CONFIG_RELPATH.as_posix(),
         ".git-signoff/ruleset.json",
         "README.md",
     ]
@@ -873,16 +940,40 @@ def _open_settings(url: str, open_browser: bool) -> None:
         _log(f"could not open a browser for {url}: {exc}")
 
 
+def _installed_ruleset_matches(slug: str, ruleset: dict, integration_branch: str) -> tuple[bool, str]:
+    """(matches, detail) for an installed 'Signoff Enforcement' ruleset. It
+    matches when it targets refs/heads/<integration_branch> explicitly, or
+    targets ~DEFAULT_BRANCH and GitHub's default branch *is* the integration
+    branch. Anything else is a mismatch the caller reports (never fixes)."""
+    include = ruleset.get("conditions", {}).get("ref_name", {}).get("include", [])
+    wanted = f"refs/heads/{integration_branch}"
+    if include == [wanted]:
+        return True, f"targets {wanted}"
+    if include == ["~DEFAULT_BRANCH"]:
+        probe = subprocess.run(["gh", "api", f"repos/{slug}", "--jq", ".default_branch"], capture_output=True, text=True)
+        default = probe.stdout.strip() if probe.returncode == 0 else ""
+        if default == integration_branch:
+            return True, f"targets ~DEFAULT_BRANCH, which is '{default}'"
+        return False, (
+            f"targets ~DEFAULT_BRANCH ({default or 'unknown'}) but the integration branch is '{integration_branch}'"
+        )
+    return False, f"targets {include or 'nothing'} but the integration branch is '{integration_branch}'"
+
+
 def setup_ruleset(
     repo_root: Path,
     slug: Optional[str],
     open_browser: bool = False,
     skip_ruleset: bool = False,
+    integration_branch: str = "main",
 ) -> RulesetResult:
-    """Write .git-signoff/ruleset.json and try to create the GitHub ruleset via gh.
+    """Write .git-signoff/ruleset.json (rendered for the integration branch) and
+    try to create the GitHub ruleset via gh.
 
     Every path that cannot automate falls back to the manual settings URL and
-    says why on stderr; nothing here is silently swallowed.
+    says why on stderr; nothing here is silently swallowed. An installed
+    ruleset that targets a different branch is reported as `mismatch` with the
+    manual step — it is never edited in place (docs/attest-any-target.md §2.3).
     """
     if skip_ruleset:
         return RulesetResult(status="skipped")
@@ -890,7 +981,8 @@ def setup_ruleset(
     ruleset_path = repo_root / ".git-signoff" / "ruleset.json"
     ensure_no_symlink_in_path(repo_root, ruleset_path)
     ruleset_path.parent.mkdir(parents=True, exist_ok=True)
-    ruleset_path.write_text(json.dumps(RULESET_PAYLOAD, indent=2) + "\n", encoding="utf-8")
+    payload = ruleset_payload(integration_branch)
+    ruleset_path.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
 
     url = f"https://github.com/{slug}/settings/rules" if slug else "https://github.com"
     if not slug:
@@ -918,7 +1010,25 @@ def setup_ruleset(
             existing = []
         for r in existing:
             if isinstance(r, dict) and r.get("name") == "Signoff Enforcement":
-                return RulesetResult(status="already_exists")
+                # The listing omits conditions; fetch the ruleset itself when it has an id.
+                installed = r
+                if r.get("id") is not None and "conditions" not in r:
+                    show = subprocess.run(["gh", "api", f"repos/{slug}/rulesets/{r['id']}"], capture_output=True, text=True)
+                    if show.returncode == 0:
+                        try:
+                            installed = json.loads(show.stdout)
+                        except ValueError:
+                            installed = r
+                ok, detail = _installed_ruleset_matches(slug, installed, integration_branch)
+                if ok:
+                    return RulesetResult(status="already_exists", detail=detail)
+                _log(
+                    f"GitHub ruleset 'Signoff Enforcement' exists but {detail}. Not edited: open {url}, edit the "
+                    f"ruleset's target branches to include refs/heads/{integration_branch} (or import the rendered "
+                    f".git-signoff/ruleset.json), so the ruleset, the workflow, and the producer agree."
+                )
+                _open_settings(url, open_browser)
+                return RulesetResult(status="mismatch", rules_url=url, detail=detail)
     else:
         detail = list_check.stderr.strip().splitlines()[-1] if list_check.stderr.strip() else f"exit {list_check.returncode}"
         if "HTTP 403" in list_check.stderr or "Resource not accessible" in list_check.stderr:
@@ -929,7 +1039,7 @@ def setup_ruleset(
 
     create_check = subprocess.run(
         ["gh", "api", f"repos/{slug}/rulesets", "--method", "POST", "--input", "-"],
-        input=json.dumps(RULESET_PAYLOAD),
+        input=json.dumps(payload),
         capture_output=True,
         text=True,
     )
@@ -1192,10 +1302,26 @@ def run_init(
     open_browser: bool = False,
     skill_source: Optional[Path] = None,
     skill_target: str = "auto",
+    integration_branch: Optional[str] = None,
 ) -> InitResult:
     ctx = detect_git_context(repo_root)
     root = ctx.root
     effective_slug = slug or ctx.slug
+    # The integration branch (what pull requests merge into) is chosen once,
+    # here, and written to .git-signoff/config.json; the workflow's push
+    # filter, the ruleset's target, the setup branch's base, and attest.py's
+    # fallback reference all read that one choice.
+    if integration_branch:
+        chosen_integration = integration_branch
+    else:
+        chosen_integration = prompt_user(
+            "Integration branch (the branch pull requests merge into)",
+            default=ctx.default_branch,
+            non_interactive=non_interactive,
+        )
+    if not re.match(r"^[A-Za-z0-9][A-Za-z0-9._/-]*$", chosen_integration):
+        raise RuntimeError(f"Invalid integration branch name: {chosen_integration!r}")
+    ctx.default_branch = chosen_integration
 
     if ctx.is_unborn:
         staged = subprocess.run(
@@ -1221,7 +1347,9 @@ def run_init(
 
     scaffold_paths = [
         root / ".github" / "workflows" / "git-signoff.yml",
+        root / ".github" / "workflows" / "git-signoff-notes.yml",
         root / ".git-signoff" / "profile.md",
+        root / CONFIG_RELPATH,
         root / ".git-signoff" / "ruleset.json",
         *resolved_dests,
         root / "README.md",
@@ -1234,7 +1362,9 @@ def run_init(
     # refuse here so nothing (no branch, no bootstrap commit) is created first.
     symlink_checked = [
         root / ".github" / "workflows" / "git-signoff.yml",
+        root / ".github" / "workflows" / "git-signoff-notes.yml",
         root / ".git-signoff" / "profile.md",
+        root / CONFIG_RELPATH,
     ]
     if not skip_ruleset:
         symlink_checked.append(root / ".git-signoff" / "ruleset.json")
@@ -1334,7 +1464,9 @@ def run_init(
         # Step 4: Scaffold files
         scaffold_started = True
         scaffold_workflow(root, default_branch=ctx.default_branch)
+        scaffold_notes_workflow(root, default_branch=ctx.default_branch)
         scaffold_profile(root, profile_id=effective_profile)
+        scaffold_config(root, integration_branch=ctx.default_branch)
         vendor_skill(root, source=skill_source, destinations=resolved_dests, allow_dirty=allow_dirty)
         if effective_slug and not skip_badge:
             inject_readme_badge(root, slug=effective_slug)
@@ -1345,6 +1477,7 @@ def run_init(
             slug=effective_slug,
             open_browser=open_browser,
             skip_ruleset=skip_ruleset,
+            integration_branch=ctx.default_branch,
         )
 
         # Step 6: Stage and commit
@@ -1402,6 +1535,11 @@ def parse_args(args: Optional[list[str]] = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Zero-touch repository initializer for /git-signoff.")
     parser.add_argument("--profile", choices=["domain-science", "software-general"], help="Interview profile ID")
     parser.add_argument("--branch", default="git-signoff/init", help="Feature branch name (default: git-signoff/init)")
+    parser.add_argument(
+        "--integration-branch",
+        help="Branch pull requests merge into; written to .git-signoff/config.json and used by the workflow, "
+        "the ruleset, and attest.py (default: detected, confirmed interactively)",
+    )
     parser.add_argument("--skip-ruleset", action="store_true", help="Skip GitHub Ruleset creation")
     parser.add_argument("--skip-badge", action="store_true", help="Skip README badge injection")
     parser.add_argument("--allow-dirty", action="store_true", help="Allow running on dirty working tree")
@@ -1431,6 +1569,7 @@ def main() -> int:
             open_browser=args.open_browser,
             skill_source=args.skill_source,
             skill_target=args.skill_target,
+            integration_branch=args.integration_branch,
         )
         print(f"\n[3/5] 🌿 Created feature branch '{res.branch}' with scaffold commit.")
         root_dir = Path.cwd()
@@ -1439,7 +1578,7 @@ def main() -> int:
         except Exception:
             pass
         dests_str = ", ".join(str(d.relative_to(root_dir)) for d in res.destinations) or ".claude/skills/git-signoff"
-        print(f"[4/5] 📝 Scaffolded workflow, profile, and vendored the /git-signoff skill into {dests_str}.")
+        print(f"[4/5] 📝 Scaffolded the verify and notes-recovery workflows, the profile and config, and vendored the /git-signoff skill into {dests_str}.")
         hint = single_destination_hint(root_dir, res.destinations, args.skill_target)
         if hint:
             print(f"  ℹ️  {hint}")
@@ -1453,6 +1592,11 @@ def main() -> int:
             print("[5/5] 🛡️  GitHub ruleset setup skipped.")
         elif res.ruleset.status == "fallback_manual":
             print(f"[5/5] 🛡️  Manual Ruleset Setup Required: Open {res.ruleset.rules_url} to import .git-signoff/ruleset.json")
+        elif res.ruleset.status == "mismatch":
+            print(
+                f"[5/5] 🛡️  GitHub ruleset 'Signoff Enforcement' {res.ruleset.detail}. Not edited — open "
+                f"{res.ruleset.rules_url} and retarget it (or import .git-signoff/ruleset.json)."
+            )
 
         print("\n" + "=" * 60)
         print("✅ Signoff initialization complete!")
