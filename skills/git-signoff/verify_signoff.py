@@ -90,7 +90,7 @@ from pathlib import Path  # noqa: E402
 # The pin tag this file ships under. tag.yml's PINS list and the install
 # snippets must carry the same value (pinned by tests); the stale-pin warning
 # compares it against the tags published upstream.
-VERIFIER_PIN = "verify-v1.5"
+VERIFIER_PIN = "verify-v1.6"
 PIN_REMOTE = "https://github.com/jerrylin96/git-signoff"
 PIN_TAG_RE = re.compile(r"refs/tags/verify-v(\d+)(?:\.(\d+))?$")
 
@@ -502,6 +502,15 @@ def check_history(repo, ref, require):
                     continue
             for block in blocks:
                 payloads.append((f"note on {target[:7]}", block, None))
+    # One reviewed commit counts once, however many copies of its attestation
+    # exist (commit in history, note on the commit, note on the tree). Only a
+    # *valid* payload claims the key: an invalid copy — a rebased or
+    # cherry-picked attestation commit whose parent is no longer the commit it
+    # names — is reported but must not shadow sound evidence for the same
+    # reviewed commit that happens to be listed after it (verify-v1.6; before,
+    # the first copy seen claimed the key whatever its verdict, so the badge
+    # could report zero attestations over a valid note).
+    reported = set()
     for source, payload, precomputed in payloads:
         trailers = parse_trailers(payload)
         if precomputed is not None:
@@ -511,10 +520,12 @@ def check_history(repo, ref, require):
         key = tuple(trailers.get("Signoff-Reviewed-Commit-SHA", [source]))
         if key in seen:
             continue
-        seen.add(key)
         if problems:
-            lines.append(f"  invalid ({source}): " + "; ".join(problems))
+            if (key, tuple(problems)) not in reported:
+                reported.add((key, tuple(problems)))
+                lines.append(f"  invalid ({source}): " + "; ".join(problems))
             continue
+        seen.add(key)
         valid += 1
         lines.append(f"  valid ({source}): {describe(trailers)}")
     verdict = "PASS" if valid >= require else "FAIL"

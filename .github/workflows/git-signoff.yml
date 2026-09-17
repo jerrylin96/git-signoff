@@ -9,6 +9,10 @@ on:
   push:
     branches: [ main ]
 
+permissions:
+  contents: read
+  pull-requests: read   # scan-refs: auto asks which merged pull request produced the pushed merge
+
 jobs:
   verify-signoff:
     runs-on: ubuntu-latest

@@ -18,8 +18,8 @@ inputs:
   pull-requests:
     description: >-
       'auto' (default) also scans the heads of merged pull requests into the
-      branch that came from this repository (needs the gh CLI and the
-      workflow token); 'none' scans the branch only.
+      branch that came from this repository (needs the gh CLI and a workflow
+      token with pull-requests: read); 'none' scans the branch only.
     default: 'auto'
 
 runs:
@@ -39,13 +39,16 @@ runs:
       run: |
         # Same eligibility as the verifier (docs/attest-any-target.md §2.13):
         # merged pull requests into this branch whose head repository is this
-        # repository. Fork heads are never fetched.
+        # repository. Fork heads are never fetched. Every page is read: a
+        # first run over a long history must reach every merged pull request,
+        # not the hundred most recent (verify-v1.5 stopped at 100, so an older
+        # pull request merged late was never recovered). Needs
+        # `pull-requests: read` on the workflow token.
         BRANCH="${BRANCH_INPUT:-$GITHUB_REF_NAME}"
         REFS="--ref origin/$BRANCH"
         if [ "$PRS" = auto ] && command -v gh >/dev/null 2>&1; then
-          NUMBERS=$(gh pr list --state merged --base "$BRANCH" --limit 100 \
-            --json number,headRepository,headRepositoryOwner \
-            --jq ".[] | select((.headRepositoryOwner.login + \"/\" + .headRepository.name) == \"$GITHUB_REPOSITORY\") | .number" \
+          NUMBERS=$(gh api --paginate "repos/$GITHUB_REPOSITORY/pulls?state=closed&base=$BRANCH&sort=updated&direction=desc&per_page=100" \
+            --jq ".[] | select(.merged_at != null and .head.repo.full_name == \"$GITHUB_REPOSITORY\") | .number" \
             2>/dev/null || true)
           for N in $NUMBERS; do
             if git fetch -q origin "+refs/pull/$N/head:refs/remotes/pull/$N/head"; then

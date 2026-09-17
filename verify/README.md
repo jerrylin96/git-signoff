@@ -17,7 +17,7 @@ squash merges.
 
 Run inside your repository root:
 ```bash
-curl -fsSL https://raw.githubusercontent.com/jerrylin96/git-signoff/init-v8/init.py -o /tmp/signoff-init.py && python3 /tmp/signoff-init.py
+curl -fsSL https://raw.githubusercontent.com/jerrylin96/git-signoff/init-v9/init.py -o /tmp/signoff-init.py && python3 /tmp/signoff-init.py
 ```
 
 This automatically scaffolds the workflow, selects your domain interview profile, configures the README badge, configures GitHub ruleset protection, and creates a setup branch ready for `/git-signoff`.
@@ -36,6 +36,10 @@ on:
   push:
     branches: [ main ]
 
+permissions:
+  contents: read
+  pull-requests: read   # scan-refs: auto asks which merged pull request produced the pushed merge
+
 jobs:
   verify-signoff:
     runs-on: ubuntu-latest
@@ -43,7 +47,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0   # full history — attestations live in it
-      - uses: jerrylin96/git-signoff/verify@verify-v1.5
+      - uses: jerrylin96/git-signoff/verify@verify-v1.6
 ```
 
 **2.** (Recommended) Enforce signoff before merge with the preconfigured GitHub Ruleset:
@@ -69,12 +73,26 @@ repository's `verify-v*` tags after fetching notes and prints one line on
 stderr (visible in the CI log; stdout stays the verdict) when a newer pin exists:
 
 ```text
-warning: verifier pin verify-v1.5 is behind verify-v1.6; see verify/README.md
+warning: verifier pin verify-v1.6 is behind verify-v1.7; see verify/README.md
 ```
 
 It never changes the verdict, is skipped silently when the network is
 unavailable, and can be turned off with `GIT_SIGNOFF_NO_UPDATE_CHECK=1`.
 
+> **If you pinned `@verify-v1.5`, move to `@verify-v1.6`** and add
+> `permissions: { contents: read, pull-requests: read }` to the workflow if
+> it has no `permissions:` block. `verify-v1.6` fixes three fail-closed gaps
+> found in review of `verify-v1.5`: history mode let an invalid copy of an
+> attestation commit (rebased or cherry-picked, so its parent is not the
+> commit it names) hide a valid note or commit for the same reviewed commit
+> and report zero attestations; `scan-refs: auto` and the recover action
+> listed pull requests by creation date and stopped at 100, so a long-lived
+> pull request merged late was never found (the verifier now reads the 100
+> most recently updated, which always holds the pull request whose merge was
+> just pushed, and recovery reads every page); and GitHub's restricted
+> default token has no `pull-requests` scope, so the lookup silently scanned
+> nothing (`init-v9` scaffolds the permissions block). Verdicts on sound
+> evidence are unchanged.
 > **If you pinned `@verify-v1` through `@verify-v1.4`, move to `@verify-v1.5`.**
 > `verify-v1.5` makes the log lookup judge attestation *commits* by their
 > objects, not their trailers (an empty `[SIGNOFF]` commit naming a target's
@@ -128,7 +146,13 @@ A match by tree establishes that the same tracked code state was attested,
 not that this pull request, base, or interview context was reviewed. Fork
 pull requests are never fetched by `auto`; broader evidence is an explicit
 `scan-refs` value you choose. Requires the `gh` CLI (present on GitHub
-runners) and the workflow token; without them nothing is scanned.
+runners) and a workflow token with `pull-requests: read` — the scaffolded
+workflow sets it; GitHub's restricted default token (the default for
+repositories created since 2023) does not include it — and without either
+nothing is scanned, which the log says in so many words. The lookup reads the
+100 most recently *updated* closed pull requests into the pushed branch
+(since `verify-v1.6`), so the pull request whose merge triggered the run is
+always on the page, however old it is.
 
 ### Supported Merge Strategies
 
@@ -142,7 +166,7 @@ runners) and the workflow token; without them nothing is scanned.
 Override with inputs:
 
 ```yaml
-      - uses: jerrylin96/git-signoff/verify@verify-v1.5
+      - uses: jerrylin96/git-signoff/verify@verify-v1.6
         with:
           mode: history      # or: head (the default on every event)
           target: main       # commit (head) or ref (history)

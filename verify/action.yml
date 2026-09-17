@@ -27,8 +27,9 @@ inputs:
     description: >-
       Head mode: refs whose sound attestation commits may anchor the target by
       tree. 'auto' (default) resolves the merged, same-repository pull request
-      whose merge commit is the target (push events; needs the gh CLI and the
-      workflow token) and fetches exactly its refs/pull/N/head; 'none' scans
+      whose merge commit is the target (push events; needs the gh CLI and a
+      workflow token with pull-requests: read) and fetches exactly its
+      refs/pull/N/head; 'none' scans
       nothing; any other value is passed through verbatim. Evidence from a
       fork is never fetched by 'auto'.
     default: 'auto'
@@ -68,13 +69,22 @@ runs:
         # merged, same-repository pull request whose merge commit is the
         # target may supply an attestation for it. Eligibility is an API fact
         # about the PR, never a ref-name pattern; nothing is fetched otherwise.
+        #
+        # The pull requests into the pushed branch, most recently updated
+        # first: the merge that produced this push is the latest update to its
+        # pull request, so the page of 100 always holds it, however old the
+        # pull request is (verify-v1.5 listed by creation date, where a
+        # long-lived pull request merged after a hundred newer ones fell off
+        # the page). `merge_commit_sha` of a merged pull request is the merge,
+        # squash, or rebased-tip commit; `head.repo` is null for a deleted fork.
+        # Needs `pull-requests: read` on the workflow token; a 403 is swallowed
+        # and reported below as "nothing scanned", never as a pass.
         SCAN=""
         if [ "$MODE" = head ] && [ "$SCAN_INPUT" = auto ] && [ "$GITHUB_EVENT_NAME" = push ]; then
           if command -v gh >/dev/null 2>&1; then
             SHA=$(git rev-parse "$TARGET^{commit}")
-            NUMBERS=$(gh pr list --state merged --base "$GITHUB_REF_NAME" --limit 100 \
-              --json number,mergeCommit,headRepository,headRepositoryOwner \
-              --jq ".[] | select(.mergeCommit.oid == \"$SHA\" and (.headRepositoryOwner.login + \"/\" + .headRepository.name) == \"$GITHUB_REPOSITORY\") | .number" \
+            NUMBERS=$(gh api "repos/$GITHUB_REPOSITORY/pulls?state=closed&base=$GITHUB_REF_NAME&sort=updated&direction=desc&per_page=100" \
+              --jq ".[] | select(.merged_at != null and .merge_commit_sha == \"$SHA\" and .head.repo.full_name == \"$GITHUB_REPOSITORY\") | .number" \
               2>/dev/null || true)
             for N in $NUMBERS; do
               if git fetch -q origin "+refs/pull/$N/head:refs/remotes/pull/$N/head"; then

@@ -5,7 +5,47 @@ the composite action (`verify-vX.Y`) and the initializer (`init-vN`) never
 move and are listed with the release that introduced them. Dates are the tag
 dates on `origin`.
 
-## Unreleased (`verify-v1.5`, `init-v8`, spec 3.8.0)
+## Unreleased (`verify-v1.5` → `verify-v1.6`, `init-v8` → `init-v9`, spec 3.8.0)
+
+Three fixes from an external review of the merged `verify-v1.5` range, shipped
+as `verify-v1.6` and `init-v9` (pins never move; `tag.yml` creates both at
+merge). Verdicts on sound evidence are unchanged; each fix turns a false
+"nothing found" into the evidence being found.
+
+- **Fixed** history mode letting an invalid copy of an attestation commit
+  hide valid evidence for the same reviewed commit. Payloads are deduplicated
+  by reviewed commit, and the first copy `git log` listed claimed the key
+  before it was judged: a rebased or cherry-picked attestation commit (its
+  parent is no longer the commit it names, so `verify-v1.5` rightly rejects
+  it) shadowed a sound note or the sound original reachable through a merge,
+  and the badge reported zero attestations. Reproduced; now only a valid
+  payload claims the key and the invalid copy is still reported.
+- **Fixed** the pull-request lookup behind `scan-refs: auto` and the recover
+  action stopping at the 100 most recently *created* pull requests (`gh pr
+  list`, which has no sort option). A long-lived pull request merged after a
+  hundred newer ones had been opened was never found: the verifier failed a
+  legitimate squash or rebase merge until notes existed, and recovery — which
+  uses the same window on every run — never rebuilt its note. The verifier
+  now reads the 100 most recently *updated* closed pull requests into the
+  pushed branch (`GET /repos/{owner}/{repo}/pulls?state=closed&base=…&sort=updated`),
+  which always holds the pull request whose merge was just pushed; recovery
+  reads every page. The filters are unchanged (merged, merge commit is the
+  target, head repository is this repository) and are now executed by the
+  tests against fixture pull requests, not only asserted as text.
+- **Fixed** the scaffolded verify workflow carrying no `permissions:` block.
+  GitHub's restricted default token — the default for repositories and
+  organizations created since 2023, not only private ones — has no
+  `pull-requests` scope, so the lookup got a 403 that the action swallows
+  as "nothing scanned", and every squash or rebase merge failed until
+  recovery ran. `init.py` (`init-v9`) writes `contents: read` and
+  `pull-requests: read`; existing adopters add the block by hand (the README
+  and `verify/README.md` snippets show it). This repository's own workflow
+  carries it too.
+- **Confirmed** end to end: the first `notes-recovery` run after the
+  `verify-v1.5` merge fetched all 22 merged pull-request heads from Actions
+  with the default token while only `main` remained on origin, rebuilt the
+  new attestation's notes, and pushed them. The fetch assumption below is
+  closed; the third `Signoff-Risk` of the attestation on `480b410` is retired.
 
 - **Added** notes recovery for adopters: `init.py` scaffolds
   `.github/workflows/git-signoff-notes.yml`, which runs the new composite
@@ -25,10 +65,10 @@ dates on `origin`.
   `refs/pull/N/head` must stay fetchable after the pull request's branch is
   deleted. Confirmed on this repository on 2026-09-17: origin retains only
   `main` and the feature branch, yet advertises and serves the head ref of
-  all 22 merged pull requests over `git fetch`. `tag.yml` creates
-  `verify-v1.5` at merge, so the remaining end-to-end confirmation is the
-  first `notes-recovery` run after merge, whose log lists each eligible pull
-  request it fetched. If the fetch ever fails, the guard skips that ref and
+  all 22 merged pull requests over `git fetch`; the first `notes-recovery`
+  run after merge then fetched all 22 from Actions and pushed the rebuilt
+  notes (see the **Confirmed** entry above). If the fetch ever fails, the
+  guard skips that ref and
   the verifier scans nothing: squash merges without a pushed note fail
   loudly, never pass falsely.
 - **Changed** the verifier (`verify-v1.5`): an attestation *commit* found by

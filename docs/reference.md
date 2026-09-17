@@ -19,7 +19,7 @@ end-to-end example is [`walkthrough.md`](walkthrough.md).
 ## `init.py` — repository initializer
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/jerrylin96/git-signoff/init-v8/init.py -o /tmp/signoff-init.py
+curl -fsSL https://raw.githubusercontent.com/jerrylin96/git-signoff/init-v9/init.py -o /tmp/signoff-init.py
 python3 /tmp/signoff-init.py [options]
 ```
 
@@ -245,7 +245,7 @@ Tests: `scripts/tests/test_attest.py`, `test_attest_adapters.py`,
 ## `verify_signoff.py` — verifier
 
 Same file at `skills/git-signoff/verify_signoff.py` (vendored) and behind the
-composite action `jerrylin96/git-signoff/verify@verify-v1.5`.
+composite action `jerrylin96/git-signoff/verify@verify-v1.6`.
 
 ```
 verify_signoff.py [--repo PATH] [--mode {head,history}] [--target REV] [--require N] [--scan-refs REF ...]
@@ -261,13 +261,13 @@ verify_signoff.py --version
 | `--scan-refs REF ...` | Head mode: also consider sound attestation commits reachable from these refs (patterns expand via `for-each-ref`); a tree match proves the same code state was attested, not that this PR, base, or interview was reviewed. The composite action passes the merged same-repository pull request's head for the target; the verifier trusts no ref it was not given. |
 | `--audit [COMMIT]` | Re-hash the local transcript for the attestation covering `COMMIT` (default `HEAD`) against `Signoff-Transcript-Digest` over the first `Signoff-Transcript-Bytes` bytes. The transcript is resolved from the harness id and conversation id, or from `GIT_SIGNOFF_TRANSCRIPT_FILE`. |
 | `--export PATH` | With `--audit`: write the audited byte snapshot to `PATH`. |
-| `--version` | Prints the pin (`verify-v1.5`). |
+| `--version` | Prints the pin (`verify-v1.6`). |
 
 Before checking, the verifier fetches `origin`'s notes into its own mirror
 ref `refs/notes/signoff-verify` and never writes `refs/notes/signoff`, so an
 unpushed local attestation survives verification. Then it lists this
 repository's `verify-v*` tags and prints
-`warning: verifier pin verify-v1.5 is behind verify-vX.Y; see verify/README.md`
+`warning: verifier pin verify-v1.6 is behind verify-vX.Y; see verify/README.md`
 on stderr when a newer pin exists (never changes the verdict; stdout carries
 only the verdict; silent on network failure).
 
@@ -298,8 +298,9 @@ no longer exist locally. The composite action `jerrylin96/git-signoff/recover`
 runs it in Actions, where pushes are unrestricted (cloud sessions cannot push
 notes refs): it fetches the existing notes, resolves the merged pull requests
 into the branch that came from this repository (`pull-requests: auto`; the
-same eligibility the verifier's `scan-refs: auto` applies; forks are never
-fetched), passes `--ref origin/<branch>` plus `--ref refs/remotes/pull/N/head`
+same eligibility the verifier's `scan-refs: auto` applies; every page of the
+pull-request list is read, since `verify-v1.6`; forks are never fetched;
+needs `pull-requests: read` on the token), passes `--ref origin/<branch>` plus `--ref refs/remotes/pull/N/head`
 for each, and pushes. `init.py` scaffolds it as
 `.github/workflows/git-signoff-notes.yml`; this repository's
 `notes-recovery.yml` uses the same action. Idempotent.

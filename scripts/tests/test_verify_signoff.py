@@ -144,6 +144,49 @@ def test_history_mode_dedupes_note_and_commit_payloads(repo):
     assert "1 valid attestation(s)" in lines[0]
 
 
+def test_history_mode_invalid_copy_does_not_shadow_the_valid_original(repo):
+    """verify-v1.6: dedup by reviewed commit lets only a *valid* payload claim
+    the key. A cherry-picked copy of an attestation commit (parent is main's
+    tip, not the commit it names) is listed first by `git log`; before, it
+    claimed the key and the sound original reachable through the merge was
+    skipped unjudged, so the badge reported zero attestations."""
+    git(repo, "checkout", "-q", "-b", "feature")
+    commit_file(repo, "b.txt", "feature work", "add b.txt")
+    reviewed, _ = attest_head(repo)
+    attestation = git(repo, "rev-parse", "HEAD").stdout.strip()
+    git(repo, "checkout", "-q", "main")
+    commit_file(repo, "c.txt", "main work", "advance main")
+    git(repo, "cherry-pick", "--allow-empty", attestation)  # invalid copy: parent is c.txt's commit
+    git(repo, "merge", "-q", "--no-ff", "-m", "merge feature", "feature")  # original stays reachable
+    ok, lines = verify_signoff.check_history(str(repo), "HEAD", require=1)
+    text = "\n".join(lines)
+    assert ok, text
+    assert "1 valid attestation(s)" in lines[0]
+    assert f"reviewed={reviewed[:7]}" in text
+    # the invalid copy is still reported — once — not hidden by the valid one
+    assert text.count("not the declared reviewed commit") == 1
+
+
+def test_history_mode_rebased_commit_does_not_shadow_the_note_for_the_same_commit(repo):
+    """The reviewer-reported shape: a note published for the reviewed commit
+    before the branch was rebased. The rebased attestation commit is invalid
+    and reported; the note is judged on its own and counts."""
+    git(repo, "checkout", "-q", "-b", "feature")
+    commit_file(repo, "b.txt", "feature work", "add b.txt")
+    reviewed, tree = attest_head(repo)
+    git(repo, "notes", "--ref=refs/notes/signoff", "add", "-m", attestation_message(reviewed, tree), reviewed)
+    git(repo, "checkout", "-q", "main")
+    commit_file(repo, "c.txt", "main work", "advance main")
+    git(repo, "checkout", "-q", "feature")
+    git(repo, "rebase", "-q", "main")
+    ok, lines = verify_signoff.check_history(str(repo), "HEAD", require=1)
+    text = "\n".join(lines)
+    assert ok, text
+    assert "1 valid attestation(s)" in lines[0]
+    assert "not the declared reviewed commit" in text
+    assert f"valid (note on {reviewed[:7]})" in text
+
+
 REPO_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
 
 
@@ -1181,7 +1224,7 @@ def test_pin_version_parsing():
 
 
 def test_stale_pin_warning_when_upstream_has_newer_tag(repo, tmp_path, monkeypatch, capsys):
-    remote = _fake_pin_remote(tmp_path, ["verify-v1", "verify-v1.5", "verify-v1.6", "init-v9"])
+    remote = _fake_pin_remote(tmp_path, ["verify-v1", "verify-v1.6", "verify-v1.7", "init-v10"])
     monkeypatch.delenv("GIT_SIGNOFF_NO_UPDATE_CHECK", raising=False)
     monkeypatch.setenv("GIT_SIGNOFF_PIN_REMOTE", remote)
     attest_head(repo)
@@ -1189,7 +1232,7 @@ def test_stale_pin_warning_when_upstream_has_newer_tag(repo, tmp_path, monkeypat
     captured = capsys.readouterr()
     assert rc == 0, captured.out  # the warning never changes the verdict
     # stderr carries the warning so stdout stays the verdict for pipelines
-    assert f"warning: verifier pin {verify_signoff.VERIFIER_PIN} is behind verify-v1.6" in captured.err
+    assert f"warning: verifier pin {verify_signoff.VERIFIER_PIN} is behind verify-v1.7" in captured.err
     assert "see verify/README.md" in captured.err
     assert "warning: verifier pin" not in captured.out
     assert captured.out.startswith("PASS")
