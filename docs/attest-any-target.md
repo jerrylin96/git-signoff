@@ -375,9 +375,10 @@ branch they cannot push to. So:
   nothing for a `dev`-based repository; and `gh pr list`, which orders by
   creation date with no sort option, so a long-lived pull request merged
   after a hundred newer ones fell outside its window (`verify-v1.5`; fixed
-  in `verify-v1.6`). Ordering by update time makes the window irrelevant
-  for the verifier: the merge that triggered the push is the latest update
-  to its pull request. Recovery walks every page. The lookup needs
+  in `verify-v1.6`). Both now walk every page, most recently updated
+  first: the pull request whose merge was just pushed is on the first page,
+  and a delayed or re-run workflow still reaches it further down. The
+  lookup needs
   `pull-requests: read` on the workflow token, which GitHub's restricted
   default token lacks; `init-v9` writes it into the scaffolded workflow.
 - Recovery applies the same eligibility: it walks the integration branch,

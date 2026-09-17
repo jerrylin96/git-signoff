@@ -70,20 +70,21 @@ runs:
         # target may supply an attestation for it. Eligibility is an API fact
         # about the PR, never a ref-name pattern; nothing is fetched otherwise.
         #
-        # The pull requests into the pushed branch, most recently updated
-        # first: the merge that produced this push is the latest update to its
-        # pull request, so the page of 100 always holds it, however old the
-        # pull request is (verify-v1.5 listed by creation date, where a
-        # long-lived pull request merged after a hundred newer ones fell off
-        # the page). `merge_commit_sha` of a merged pull request is the merge,
-        # squash, or rebased-tip commit; `head.repo` is null for a deleted fork.
-        # Needs `pull-requests: read` on the workflow token; a 403 is swallowed
-        # and reported below as "nothing scanned", never as a pass.
+        # Every page of the closed pull requests into the pushed branch, most
+        # recently updated first, so the pull request whose merge was just
+        # pushed is on the first page and a delayed or re-run workflow still
+        # reaches it further down (verify-v1.5 read one page of 100 by creation
+        # date, where a long-lived pull request merged after a hundred newer
+        # ones was never found). `merge_commit_sha` of a merged pull request is
+        # the merge, squash, or rebased-tip commit; `head.repo` is null for a
+        # deleted fork. Needs `pull-requests: read` on the workflow token; a
+        # 403 is swallowed and reported below as "nothing scanned", never as a
+        # pass.
         SCAN=""
         if [ "$MODE" = head ] && [ "$SCAN_INPUT" = auto ] && [ "$GITHUB_EVENT_NAME" = push ]; then
           if command -v gh >/dev/null 2>&1; then
             SHA=$(git rev-parse "$TARGET^{commit}")
-            NUMBERS=$(gh api "repos/$GITHUB_REPOSITORY/pulls?state=closed&base=$GITHUB_REF_NAME&sort=updated&direction=desc&per_page=100" \
+            NUMBERS=$(gh api --paginate "repos/$GITHUB_REPOSITORY/pulls?state=closed&base=$GITHUB_REF_NAME&sort=updated&direction=desc&per_page=100" \
               --jq ".[] | select(.merged_at != null and .merge_commit_sha == \"$SHA\" and .head.repo.full_name == \"$GITHUB_REPOSITORY\") | .number" \
               2>/dev/null || true)
             for N in $NUMBERS; do

@@ -25,13 +25,16 @@ merge). Verdicts on sound evidence are unchanged; each fix turns a false
   list`, which has no sort option). A long-lived pull request merged after a
   hundred newer ones had been opened was never found: the verifier failed a
   legitimate squash or rebase merge until notes existed, and recovery — which
-  uses the same window on every run — never rebuilt its note. The verifier
-  now reads the 100 most recently *updated* closed pull requests into the
-  pushed branch (`GET /repos/{owner}/{repo}/pulls?state=closed&base=…&sort=updated`),
-  which always holds the pull request whose merge was just pushed; recovery
-  reads every page. The filters are unchanged (merged, merge commit is the
-  target, head repository is this repository) and are now executed by the
-  tests against fixture pull requests, not only asserted as text.
+  uses the same window on every run — never rebuilt its note. Both now read
+  every page of the closed pull requests into the branch, most recently
+  updated first (`GET /repos/{owner}/{repo}/pulls?state=closed&base=…&sort=updated`,
+  paginated), so a delayed or re-run workflow finds the pull request too.
+  The filters are unchanged (merged, merge commit is the target, head
+  repository is this repository). The tests now execute each action's
+  eligibility step in bash against a real `origin` and a stand-in `gh` that
+  serves fixture pages — the eligible pull request on page two, ineligible
+  ones (unmerged, fork, deleted fork) on later pages — instead of asserting
+  the step's text.
 - **Fixed** the scaffolded verify workflow carrying no `permissions:` block.
   GitHub's restricted default token — the default for repositories and
   organizations created since 2023, not only private ones — has no

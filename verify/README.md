@@ -87,9 +87,8 @@ unavailable, and can be turned off with `GIT_SIGNOFF_NO_UPDATE_CHECK=1`.
 > commit it names) hide a valid note or commit for the same reviewed commit
 > and report zero attestations; `scan-refs: auto` and the recover action
 > listed pull requests by creation date and stopped at 100, so a long-lived
-> pull request merged late was never found (the verifier now reads the 100
-> most recently updated, which always holds the pull request whose merge was
-> just pushed, and recovery reads every page); and GitHub's restricted
+> pull request merged late was never found (both now read every page, most
+> recently updated first); and GitHub's restricted
 > default token has no `pull-requests` scope, so the lookup silently scanned
 > nothing (`init-v9` scaffolds the permissions block). Verdicts on sound
 > evidence are unchanged.
@@ -149,10 +148,10 @@ pull requests are never fetched by `auto`; broader evidence is an explicit
 runners) and a workflow token with `pull-requests: read` — the scaffolded
 workflow sets it; GitHub's restricted default token (the default for
 repositories created since 2023) does not include it — and without either
-nothing is scanned, which the log says in so many words. The lookup reads the
-100 most recently *updated* closed pull requests into the pushed branch
-(since `verify-v1.6`), so the pull request whose merge triggered the run is
-always on the page, however old it is.
+nothing is scanned, which the log says in so many words. The lookup reads
+every page of the closed pull requests into the pushed branch, most recently
+updated first (since `verify-v1.6`; `verify-v1.5` read one page of 100 by
+creation date), so a delayed or re-run workflow finds the pull request too.
 
 ### Supported Merge Strategies
 
