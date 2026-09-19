@@ -46,10 +46,19 @@ merge). Verdicts on sound evidence are unchanged; each fix turns a false
   keyed by its whole tuple of SHAs it counted beside the single attestations
   of the same commits, so `--require 3` passed on two attestations (external
   review; predates this range). The unit of counting is now the reviewed
-  commit: a blob counts once for each reviewed commit not already counted,
-  and blobs are judged after single attestations so they never pre-empt the
-  sound commits behind them. Reproduced with git's real notes merge; the
-  default `--require 1` and head mode were never affected.
+  commit, each independently supported. An intact attestation — a commit or
+  one block of a note — supports its one reviewed commit by its own claims.
+  A merged blob has lost which tree went with which commit, and a stale
+  attestation merged into it (a note git copied onto a rebased commit) is
+  indistinguishable from a live one, so a blob counts a reviewed commit only
+  when the history supports it on its own: reachable, and the object the
+  blob hangs on or of the tree it hangs on; once, however often the blob
+  repeats it (appending a blob to itself doubles every line); and it names
+  what it could not count. Blobs are judged after intact attestations so
+  they never pre-empt the sound commits behind them. Three reproductions
+  with git's real notes merge (a second review pass found the stale-SHA and
+  repeated-SHA cases in the first fix); the default `--require 1` and head
+  mode were never affected.
 - **Fixed** both actions splicing the branch name into the API URL's query
   string. `+`, `&` and `#` are legal in a ref name and were read as a space,
   a parameter separator and a fragment, so pull requests into such a branch

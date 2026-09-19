@@ -1363,9 +1363,70 @@ def test_history_mode_merged_note_as_the_only_evidence_counts_each_reviewed_comm
     text = "\n".join(lines)
     assert ok, text
     assert "PASS: 2 valid attestation(s)" in lines[0]
-    assert "(cat_sort_uniq-merged)" in text and "(2 of 2 reviewed commits counted)" in text
+    assert "(cat_sort_uniq-merged)" in text and "(2 reviewed commit(s) counted)" in text
     # the same blob on the commit too: the reviewed commits are already counted
     git(repo, "notes", "--ref=refs/notes/signoff", "add", "-m", git(repo, "notes", "--ref=refs/notes/signoff", "show", tree).stdout, b)
+    ok, lines = verify_signoff.check_history(str(repo), "main", require=3)
+    assert not ok and "2 valid attestation(s)" in lines[0], lines
+
+
+def test_history_mode_merged_note_does_not_revive_a_stale_attestation_merged_into_it(repo):
+    """Regression (external review of d263bc6): with `notes.rewriteRef`, a rebase
+    copies F's note onto its rewrite F'. F' is then attested for real and the
+    two notes on F' are merged with cat_sort_uniq. The blob anchors F' (one of
+    its claims is F' itself), and counting every SHA inside it revived F, which
+    main does not carry. A blob counts only the reviewed commits this history
+    supports on its own: reachable, and the object the blob hangs on or of the
+    tree it hangs on."""
+    git(repo, "config", "notes.rewriteRef", "refs/notes/signoff")
+    git(repo, "checkout", "-q", "-b", "feature")
+    commit_file(repo, "b.txt", "feature work", "add b.txt")
+    stale, stale_tree = attest_head(repo)
+    git(repo, "notes", "--ref=refs/notes/signoff", "add", "-m", attestation_message(stale, stale_tree), stale)
+    git(repo, "checkout", "-q", "main")
+    commit_file(repo, "c.txt", "main work", "advance main")
+    git(repo, "checkout", "-q", "feature")
+    git(repo, "rebase", "-q", "main")
+    git(repo, "reset", "-q", "--hard", "HEAD~1")  # drop the rebased (invalid) attestation commit; keep F'
+    rewritten = git(repo, "rev-parse", "HEAD").stdout.strip()
+    assert git(repo, "notes", "--ref=refs/notes/signoff", "show", rewritten).stdout  # the copied stale note
+    reviewed, tree = attest_head(repo)  # a real attestation of F'
+    assert reviewed == rewritten
+    git(repo, "notes", "--ref=refs/notes/live", "add", "-m", attestation_message(reviewed, tree) + "Signoff-Timestamp: 2026-09-02T00:00:00Z\n", reviewed)
+    git(repo, "checkout", "-q", "main")
+    git(repo, "merge", "-q", "--ff-only", "feature")
+
+    ok, lines = verify_signoff.check_history(str(repo), "main", require=1)
+    assert ok and "1 valid attestation(s)" in lines[0], lines  # before the merge: the stale note is invalid on F'
+
+    git(repo, "notes", "--ref=refs/notes/signoff", "merge", "-s", "cat_sort_uniq", "refs/notes/live")
+    blob = git(repo, "notes", "--ref=refs/notes/signoff", "show", rewritten).stdout
+    assert blob.count("Signoff-Reviewed-Commit-SHA") == 2
+    ok, lines = verify_signoff.check_history(str(repo), "main", require=2)
+    text = "\n".join(lines)
+    assert not ok, text
+    assert "1 valid attestation(s)" in lines[0]
+    assert f"not counted (note on {rewritten[:7]} (cat_sort_uniq-merged)): reviewed commit(s) {stale[:7]} are not in main history" in text
+
+
+def test_history_mode_counts_a_reviewed_commit_repeated_inside_one_merged_note_once(repo):
+    """Regression (external review of d263bc6): appending a merged note to
+    itself repeats every line, so the blob names the same reviewed commit
+    twice. Distinct commits are counted, not lines."""
+    a = git(repo, "rev-parse", "HEAD").stdout.strip()
+    tree = git(repo, "rev-parse", "HEAD^{tree}").stdout.strip()
+    git(repo, "commit", "-q", "--allow-empty", "-m", "same tree, second commit")
+    b = git(repo, "rev-parse", "HEAD").stdout.strip()
+    blob = _merge_tree_notes_cat_sort_uniq(
+        repo, tree,
+        attestation_message(a, tree) + "Signoff-Timestamp: 2026-09-01T00:00:00Z\n",
+        attestation_message(b, tree) + "Signoff-Timestamp: 2026-09-02T00:00:00Z\n",
+    )
+    git(repo, "notes", "--ref=refs/notes/signoff", "append", "-m", blob, tree)
+    doubled = git(repo, "notes", "--ref=refs/notes/signoff", "show", tree).stdout
+    assert doubled.count("Signoff-Reviewed-Commit-SHA") == 4
+    ok, lines = verify_signoff.check_history(str(repo), "main", require=2)
+    assert ok and "2 valid attestation(s)" in lines[0], lines
     ok, lines = verify_signoff.check_history(str(repo), "main", require=3)
     assert not ok and "2 valid attestation(s)" in lines[0], lines
 

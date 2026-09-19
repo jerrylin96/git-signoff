@@ -488,7 +488,7 @@ def check_history(repo, ref, require):
         problems = validate_single(trailers)
         if not problems:
             problems, _, _ = commit_evidence(repo, sha, trailers)
-        payloads.append((source, payload, problems or None))
+        payloads.append((source, payload, problems or None, None))
     annotated = []
     for n_ref in (NOTES_REF, NOTES_FETCH_REF):
         listing = git(repo, "notes", f"--ref={n_ref}", "list", check=False)
@@ -509,15 +509,15 @@ def check_history(repo, ref, require):
     # abandoned, or squash-merged onto an advanced base, would otherwise turn
     # the integration branch's badge green. A squash or rebase merge onto an
     # unchanged base keeps its evidence: the merged tip has the attested tree.
-    history_commits, history_trees = set(), set()
+    commit_tree, history_trees = {}, set()  # reachable commit -> its tree; reachable trees
     for line in git(repo, "log", ref, "--format=%H %T", check=False).stdout.split("\n"):
         if line:
             commit_sha, tree_sha = line.split()
-            history_commits.add(commit_sha)
+            commit_tree[commit_sha] = tree_sha
             history_trees.add(tree_sha)
     for target in annotated:
-        if target in history_commits:
-            commit, tree = target, git(repo, "rev-parse", f"{target}^{{tree}}", check=False).stdout.strip()
+        if target in commit_tree:
+            commit, tree = target, commit_tree[target]
         elif target in history_trees:
             commit, tree = None, target
         else:
@@ -533,52 +533,69 @@ def check_history(repo, ref, require):
                 merged = parse_trailers(payload)
                 if duplicate_problems(merged) and not validate_merged(merged):
                     problems = [] if _anchors(merged, commit, tree) else [_describes_other_object(merged, target)]
-                    payloads.append((f"note on {target[:7]} (cat_sort_uniq-merged)", payload, problems or None))
+                    payloads.append((f"note on {target[:7]} (cat_sort_uniq-merged)", payload, problems or None, (commit, tree)))
                     continue
             for block in blocks:
                 trailers = parse_trailers(block)
                 problems = validate_single(trailers)
                 if not problems and not _anchors(trailers, commit, tree):
                     problems = [_describes_other_object(trailers, target)]
-                payloads.append((f"note on {target[:7]}", block, problems or None))
-    # One reviewed commit counts once, however many copies of its attestation
-    # exist (commit in history, note on the commit, note on the tree, a line
-    # set inside a cat_sort_uniq-merged blob). The unit of counting is the
-    # reviewed commit, never the payload: a merged blob names every commit the
-    # attestations it was merged from reviewed, and counts once for each of
-    # those not already counted — so a blob merged from two attestations that
-    # are also in history as commits adds nothing, while a blob that is the
-    # only surviving evidence still counts each distinct reviewed commit
-    # (verify-v1.6; before, the blob's whole SHA tuple was the key, so (A, B)
-    # counted beside (A,) and (B,) and `--require 3` passed on two). Blobs are
-    # judged after single attestations so they never pre-empt the sound
-    # commits behind them. Only a *valid* payload claims a commit: an invalid
-    # copy — a rebased or cherry-picked attestation commit whose parent is no
-    # longer the commit it names — is reported but must not shadow sound
-    # evidence for the same reviewed commit listed after it.
+                payloads.append((f"note on {target[:7]}", block, problems or None, (commit, tree)))
+    # One rule throughout: count distinct reviewed commits, each independently
+    # supported; copying or merging records never manufactures another. The
+    # unit is the reviewed commit, never the payload, however many copies of
+    # its attestation exist (commit in history, note on the commit, note on
+    # the tree, a line set inside a cat_sort_uniq-merged blob). An intact
+    # attestation — a commit, or one block of a note — supports its one
+    # reviewed commit by its own claims, judged above. A merged blob is the
+    # sorted union of several attestations' lines: which tree went with which
+    # commit is gone, and a stale attestation merged in (a note git copied onto
+    # a rebased commit) is indistinguishable from a live one. So a blob counts
+    # a reviewed commit only when this history itself supports it — the commit
+    # is reachable and is the object the blob hangs on or has the tree the blob
+    # hangs on — once, whatever the line repeats, and names what it could not
+    # count. Blobs are judged after intact attestations so they never pre-empt
+    # the sound commits behind them (verify-v1.6; before, a blob's whole SHA
+    # tuple was the key, so (A, B) counted beside (A,) and (B,), a stale SHA
+    # merged into a valid blob counted, and a repeated SHA counted twice).
+    # Only a *valid* payload claims a commit: an invalid copy — a rebased or
+    # cherry-picked attestation commit whose parent is no longer the commit it
+    # names — is reported but must not shadow sound evidence for the same
+    # reviewed commit listed after it.
     reported = set()
 
     def is_merged(entry):
         return entry[0].endswith("(cat_sort_uniq-merged)")
 
-    for source, payload, precomputed in sorted(payloads, key=is_merged):
+    for source, payload, precomputed, anchor in sorted(payloads, key=is_merged):
         trailers = parse_trailers(payload)
-        if precomputed is not None:
-            problems = precomputed
-        else:
-            problems = [] if is_merged((source,)) else validate_single(trailers)
-        reviewed = trailers.get("Signoff-Reviewed-Commit-SHA") or [source]
-        unseen = [sha for sha in reviewed if sha not in seen]
-        if not unseen:
-            continue
+        merged = is_merged((source,))
+        problems = precomputed if precomputed is not None else ([] if merged else validate_single(trailers))
+        reviewed = list(dict.fromkeys(trailers.get("Signoff-Reviewed-Commit-SHA") or [source]))
         if problems:
-            if (tuple(reviewed), tuple(problems)) not in reported:
+            if any(sha not in seen for sha in reviewed) and (tuple(reviewed), tuple(problems)) not in reported:
                 reported.add((tuple(reviewed), tuple(problems)))
                 lines.append(f"  invalid ({source}): " + "; ".join(problems))
             continue
+        if merged:
+            note_commit, note_tree = anchor
+            supported = [
+                sha for sha in reviewed
+                if sha in commit_tree and (sha == note_commit or commit_tree[sha] == note_tree)
+            ]
+            unsupported = [sha for sha in reviewed if sha not in supported]
+            if unsupported:
+                lines.append(
+                    f"  not counted ({source}): reviewed commit(s) {', '.join(sha[:7] for sha in unsupported)} "
+                    f"are not in {ref} history at the object this note is attached to"
+                )
+            reviewed = supported
+        unseen = [sha for sha in reviewed if sha not in seen]
+        if not unseen:
+            continue
         seen.update(reviewed)
         valid += len(unseen)
-        counted = f" ({len(unseen)} of {len(reviewed)} reviewed commits counted)" if is_merged((source,)) else ""
+        counted = f" ({len(unseen)} reviewed commit(s) counted)" if merged else ""
         lines.append(f"  valid ({source}): {describe(trailers)}{counted}")
     verdict = "PASS" if valid >= require else "FAIL"
     lines.insert(
