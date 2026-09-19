@@ -214,6 +214,40 @@ def test_history_mode_rebased_branch_carries_neither_the_commit_nor_its_note(rep
     assert not [line for line in lines if line.startswith("  valid (")]
 
 
+def test_history_mode_rejects_a_note_git_copied_onto_the_rebased_commit(repo):
+    """Regression (external review of 2ee9b73): with `notes.rewriteRef` set, git
+    copies a commit's note onto its rewrite during a rebase. The copied note
+    hangs on a commit that *is* in main's history after the fast-forward, but
+    its trailers still name the pre-rebase commit and tree, neither of which
+    main carries. Reachability of the attachment is not evidence; the note has
+    to describe the object it hangs on, as in head mode."""
+    git(repo, "config", "notes.rewriteRef", "refs/notes/signoff")
+    git(repo, "checkout", "-q", "-b", "feature")
+    commit_file(repo, "b.txt", "feature work", "add b.txt")
+    reviewed, tree = attest_head(repo)
+    git(repo, "notes", "--ref=refs/notes/signoff", "add", "-m", attestation_message(reviewed, tree), reviewed)
+    git(repo, "notes", "--ref=refs/notes/signoff", "add", "-m", attestation_message(reviewed, tree), tree)
+    git(repo, "checkout", "-q", "main")
+    commit_file(repo, "c.txt", "main work", "advance main")
+    git(repo, "checkout", "-q", "feature")
+    git(repo, "rebase", "-q", "main")
+    rewritten = git(repo, "rev-parse", "HEAD~1").stdout.strip()  # the rebased feature commit, below the rebased attestation
+    assert rewritten != reviewed
+    assert git(repo, "notes", "--ref=refs/notes/signoff", "show", rewritten).stdout, "git copied the note onto the rewrite"
+    git(repo, "checkout", "-q", "main")
+    git(repo, "merge", "-q", "--ff-only", "feature")
+    ok, lines = verify_signoff.check_history(str(repo), "main", require=1)
+    text = "\n".join(lines)
+    assert not ok, text
+    assert "0 valid attestation(s)" in lines[0]
+    assert f"invalid (note on {rewritten[:7]}): attests commit {reviewed[:7]} / tree {tree[:7]}, not the object it is attached to ({rewritten[:7]})" in text
+    assert f"skipped (note on {reviewed[:7]})" in text and f"skipped (note on {tree[:7]})" in text
+    assert not [line for line in lines if line.startswith("  valid (")]
+    # head mode agrees, for its own reason: the rebased attestation commit does not attest its parent
+    ok, lines = verify_signoff.check_head(str(repo), "main")
+    assert not ok
+
+
 def test_history_mode_ignores_notes_published_for_an_abandoned_branch(repo):
     """Regression (found in the signoff interview of verify-v1.6): a feature
     branch is attested, its notes are published (they survive the branch's
@@ -932,11 +966,25 @@ def test_check_history_multi_block_notes(repo):
     block2 = attestation_message(sha2, tree2)
     combined = f"{block1}\n\n{block2}"
 
-    # Attach concatenated note blocks to sha2
+    # Attach concatenated note blocks to sha2 (what `git notes append` produces).
+    # Blocks are judged one by one; each counts only if it describes the object
+    # the note hangs on (verify-v1.6, as head mode always did): block2 attests
+    # sha2 and counts; block1 attests sha1 from a note on sha2 and does not,
+    # although sha1 is in this history — a note on X is evidence about X only.
     git(repo, "notes", "--ref=refs/notes/signoff", "add", "-m", combined, sha2)
 
     ok, lines = verify_signoff.check_history(str(repo), "HEAD", require=2)
-    assert ok is True
+    text = "\n".join(lines)
+    assert not ok, text
+    assert "FAIL: 1 valid attestation(s) in HEAD history (required 2)" in lines[0]
+    assert f"valid (note on {sha2[:7]}): reviewed={sha2[:7]}" in text
+    assert f"invalid (note on {sha2[:7]}): attests commit {sha1[:7]} / tree {tree1[:7]}, not the object it is attached to ({sha2[:7]})" in text
+
+    # the same two blocks each on their own object: two attestations
+    git(repo, "notes", "--ref=refs/notes/signoff", "add", "-f", "-m", block2, sha2)
+    git(repo, "notes", "--ref=refs/notes/signoff", "add", "-m", block1, sha1)
+    ok, lines = verify_signoff.check_history(str(repo), "HEAD", require=2)
+    assert ok, lines
     assert "PASS: 2 valid attestation(s) in HEAD history" in lines[0]
 
 

@@ -91,8 +91,10 @@ read`, `pull-requests: read`) and pins `verify@verify-v1.6` and
 scanned nothing. `verify-v1.6` also fixes history mode's deduplication (an
 invalid rebased copy no longer hides valid evidence for the same commit) and
 the 100-pull-request lookup window, and history mode no longer counts notes
-on objects outside the ref's history (an abandoned branch's published notes
-made a badge green). Existing attestations verify as before; a history badge
+on objects outside the ref's history, or notes that do not name the object
+they hang on (an abandoned branch's published notes, or a note git copied onto
+a rebased commit, made a badge green); branch names with `+`, `&` or `#` now
+reach the pull-request lookup intact. Existing attestations verify as before; a history badge
 that was green only on such notes turns red.
 
 **Migration note (2026-09, `init-v8`):** re-running the initializer adds

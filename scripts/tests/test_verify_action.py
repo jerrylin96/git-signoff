@@ -39,7 +39,9 @@ def test_auto_mode_is_head_on_every_event():
 def test_lookup_is_the_paginated_branch_pull_request_list():
     text = _action()
     assert "scan-refs:" in text and "default: 'auto'" in text
-    assert 'gh api --paginate "repos/$GITHUB_REPOSITORY/pulls?state=closed&base=$GITHUB_REF_NAME&sort=updated&direction=desc&per_page=100"' in text
+    assert 'gh api --paginate --method GET "repos/$GITHUB_REPOSITORY/pulls"' in text
+    assert '-f "base=$GITHUB_REF_NAME"' in text, "the branch name is a field gh encodes, never spliced into the URL"
+    assert "pulls?" not in text
     assert "gh pr list" not in text, "gh pr list orders by creation date, has no sort option, and stops at --limit"
     assert "refs/pull/*/head" not in text, "no wildcard fetch of every pull request"
     assert "--scan-refs $SCAN" in text
@@ -58,7 +60,8 @@ def test_eligible_pull_request_on_page_two_is_found_and_fetched(tmp_path):
     assert git(fx.repo, "rev-parse", "refs/remotes/pull/7/head").stdout.strip() == fx.pr_heads[7]
     assert "eligible: pull request #7" in stdout
     (call,) = fx.gh_calls()
-    assert "state=closed" in call and "base=main" in call and "sort=updated&direction=desc" in call
+    assert call["url"] == "repos/org/project/pulls" and call["method"] == "GET" and call["paginate"] == "1"
+    assert call["fields"] == {"state": "closed", "base": "main", "sort": "updated", "direction": "desc", "per_page": "100"}
 
 
 def test_ineligible_entries_on_later_pages_are_excluded(tmp_path):
@@ -84,6 +87,19 @@ def test_no_eligible_pull_request_scans_nothing(tmp_path):
     assert outputs["scan"].strip() == ""
     assert fx.fetched_pull_refs() == []
     assert "nothing scanned" in stdout
+
+
+def test_branch_name_with_url_characters_reaches_gh_verbatim_as_a_field(tmp_path):
+    """`release/1+hotfix#2&x` is a legal ref name. Spliced into a URL it read as
+    `release/1 hotfix` with the rest lost (external review of 2ee9b73); as a
+    field, gh URL-encodes it and the eligible pull request is found."""
+    fx = Fixture(tmp_path, pr_numbers=(7,))
+    fx.serve([pull_request(7, True, fx.target_sha, REPO)])
+    _, outputs = fx.run(step_script("verify/action.yml", STEP), push_env(GITHUB_REF_NAME="release/1+hotfix#2&x"))
+    (call,) = fx.gh_calls()
+    assert call["fields"]["base"] == "release/1+hotfix#2&x"
+    assert "?" not in call["url"] and "#" not in call["url"]
+    assert outputs["scan"].split() == ["refs/remotes/pull/7/head"]
 
 
 def test_auto_scan_happens_only_on_push_events(tmp_path):

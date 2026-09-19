@@ -47,7 +47,11 @@ runs:
         BRANCH="${BRANCH_INPUT:-$GITHUB_REF_NAME}"
         REFS="--ref origin/$BRANCH"
         if [ "$PRS" = auto ] && command -v gh >/dev/null 2>&1; then
-          NUMBERS=$(gh api --paginate "repos/$GITHUB_REPOSITORY/pulls?state=closed&base=$BRANCH&sort=updated&direction=desc&per_page=100" \
+          # Query parameters through -f/-F so gh URL-encodes the branch name
+          # (`+`, `&`, `#` are legal in a ref name); --method GET because gh
+          # api switches to POST once a field is given.
+          NUMBERS=$(gh api --paginate --method GET "repos/$GITHUB_REPOSITORY/pulls" \
+            -f state=closed -f "base=$BRANCH" -f sort=updated -f direction=desc -F per_page=100 \
             --jq ".[] | select(.merged_at != null and .head.repo.full_name == \"$GITHUB_REPOSITORY\") | .number" \
             2>/dev/null || true)
           for N in $NUMBERS; do

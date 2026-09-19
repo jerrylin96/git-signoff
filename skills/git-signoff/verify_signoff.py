@@ -469,6 +469,13 @@ def check_head(repo, target, scan_refs=()):
     ]
 
 
+def _describes_other_object(trailers, target):
+    """Why a note that is attached to `target` does not attest it."""
+    reviewed = ", ".join(v[:7] for v in trailers.get("Signoff-Reviewed-Commit-SHA", [])) or "none"
+    declared_tree = ", ".join(v[:7] for v in trailers.get("Signoff-Reviewed-Tree-SHA", [])) or "none"
+    return f"attests commit {reviewed} / tree {declared_tree}, not the object it is attached to ({target[:7]})"
+
+
 def check_history(repo, ref, require):
     """Repo-badge check: does ref's history carry valid attestations? Evidence is
     attestation commits reachable from ref and notes on objects reachable from
@@ -490,19 +497,30 @@ def check_history(repo, ref, require):
         for entry in listing.stdout.split("\n"):
             if entry and entry.split()[1] not in annotated:
                 annotated.append(entry.split()[1])
-    # A note counts toward *this ref's* history only when the object it hangs
-    # on is in that history: the commit itself, or a tree some reachable commit
-    # has (verify-v1.6). A note truthfully describes its object wherever that
-    # object lives; the badge asks the narrower question. Without this, notes
-    # published for a branch that was then abandoned and deleted, or rebased
-    # away, turned the integration branch's badge green. A squash or rebase
-    # merge keeps its evidence: the merged tip carries the attested tree, so the
-    # note on that tree hangs on an object in this history.
-    in_history = set()
+    # A note is evidence for *this ref's* history only under head mode's own
+    # rule, applied to every object in that history (verify-v1.6): the object it
+    # hangs on must be reachable — a commit, or the tree some reachable commit
+    # has — and the attestation must describe that object, naming it as the
+    # reviewed commit or its tree as the reviewed tree. Attachment alone is not
+    # enough: `notes.rewriteRef` copies a note onto a rebased commit whose
+    # trailers still name the pre-rebase commit and tree, neither of which the
+    # branch carries any more. Reachability alone is not enough either: notes
+    # outlive branches by design, so notes published for a branch that was then
+    # abandoned, or squash-merged onto an advanced base, would otherwise turn
+    # the integration branch's badge green. A squash or rebase merge onto an
+    # unchanged base keeps its evidence: the merged tip has the attested tree.
+    history_commits, history_trees = set(), set()
     for line in git(repo, "log", ref, "--format=%H %T", check=False).stdout.split("\n"):
-        in_history.update(line.split())
+        if line:
+            commit_sha, tree_sha = line.split()
+            history_commits.add(commit_sha)
+            history_trees.add(tree_sha)
     for target in annotated:
-        if target not in in_history:
+        if target in history_commits:
+            commit, tree = target, git(repo, "rev-parse", f"{target}^{{tree}}", check=False).stdout.strip()
+        elif target in history_trees:
+            commit, tree = None, target
+        else:
             lines.append(f"  skipped (note on {target[:7]}): object not in {ref} history")
             continue
         for payload in note_payloads(repo, target):
@@ -514,10 +532,15 @@ def check_history(repo, ref, require):
                 # reporting a legitimate merge as several invalid fragments.
                 merged = parse_trailers(payload)
                 if duplicate_problems(merged) and not validate_merged(merged):
-                    payloads.append((f"note on {target[:7]} (cat_sort_uniq-merged)", payload, None))
+                    problems = [] if _anchors(merged, commit, tree) else [_describes_other_object(merged, target)]
+                    payloads.append((f"note on {target[:7]} (cat_sort_uniq-merged)", payload, problems or None))
                     continue
             for block in blocks:
-                payloads.append((f"note on {target[:7]}", block, None))
+                trailers = parse_trailers(block)
+                problems = validate_single(trailers)
+                if not problems and not _anchors(trailers, commit, tree):
+                    problems = [_describes_other_object(trailers, target)]
+                payloads.append((f"note on {target[:7]}", block, problems or None))
     # One reviewed commit counts once, however many copies of its attestation
     # exist (commit in history, note on the commit, note on the tree). Only a
     # *valid* payload claims the key: an invalid copy — a rebased or

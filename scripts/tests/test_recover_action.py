@@ -21,7 +21,8 @@ def _action():
 
 def test_lookup_is_the_paginated_branch_pull_request_list():
     text = _action()
-    assert 'gh api --paginate "repos/$GITHUB_REPOSITORY/pulls?state=closed&base=$BRANCH&sort=updated&direction=desc&per_page=100"' in text
+    assert 'gh api --paginate --method GET "repos/$GITHUB_REPOSITORY/pulls"' in text
+    assert '-f "base=$BRANCH"' in text and "pulls?" not in text
     assert "gh pr list" not in text
     assert "refs/pull/*/head" not in text, "no wildcard fetch of every pull request"
     assert "GH_TOKEN: ${{ github.token }}" in text
@@ -48,16 +49,18 @@ def test_every_merged_same_repository_pull_request_across_pages_is_fetched(tmp_p
     ]
     assert sorted(fx.fetched_pull_refs()) == ["refs/remotes/pull/5/head", "refs/remotes/pull/6/head", "refs/remotes/pull/7/head"]
     (call,) = fx.gh_calls()
-    assert "base=main" in call and "state=closed" in call
+    assert call["url"] == "repos/org/project/pulls" and call["method"] == "GET" and call["paginate"] == "1"
+    assert call["fields"] == {"state": "closed", "base": "main", "sort": "updated", "direction": "desc", "per_page": "100"}
 
 
 def test_branch_input_overrides_the_pushed_branch(tmp_path):
     fx = Fixture(tmp_path, pr_numbers=())
     fx.serve([])
-    _, outputs = fx.run(step_script("recover/action.yml", STEP), {"BRANCH_INPUT": "dev", "PRS": "auto"})
-    assert outputs["branch"] == "dev" and outputs["refs"] == "--ref origin/dev"
+    _, outputs = fx.run(step_script("recover/action.yml", STEP), {"BRANCH_INPUT": "release/1+hotfix#2&x", "PRS": "auto"})
+    assert outputs["branch"] == "release/1+hotfix#2&x" and outputs["refs"] == "--ref origin/release/1+hotfix#2&x"
     (call,) = fx.gh_calls()
-    assert "base=dev" in call
+    assert call["fields"]["base"] == "release/1+hotfix#2&x", "a legal ref name reaches gh verbatim, as a field it encodes"
+    assert "?" not in call["url"]
 
 
 def test_pull_requests_none_scans_the_branch_only(tmp_path):

@@ -23,19 +23,31 @@ from helpers import commit_file, git, init_repo
 ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
 
 MOCK_GH = r"""#!/usr/bin/env bash
-# Stand-in for `gh api [--paginate] URL --jq FILTER` (see action_harness.py).
+# Stand-in for `gh api [--paginate] [--method M] URL [-f k=v] [-F k=v] --jq FILTER`
+# (see action_harness.py). Each call appends one record to $MOCK_LOG:
+# `url <endpoint>`, `method <M>`, `paginate <0|1>`, one `field <k>=<v>` per
+# parameter, exactly as received — what gh would URL-encode — then `end`.
 set -eu
-paginate=0 filter="" url=""
+paginate=0 filter="" url="" method=""
+fields=()
 while [ $# -gt 0 ]; do
   case "$1" in
     api) ;;
     --paginate) paginate=1 ;;
+    --method|-X) method="$2"; shift ;;
+    -f|--raw-field|-F|--field) fields+=("$2"); shift ;;
     --jq) filter="$2"; shift ;;
     *) url="$1" ;;
   esac
   shift
 done
-printf '%s\n' "$url" >> "$MOCK_LOG"
+{
+  printf 'url %s\n' "$url"
+  printf 'method %s\n' "$method"
+  printf 'paginate %s\n' "$paginate"
+  for f in "${fields[@]+"${fields[@]}"}"; do printf 'field %s\n' "$f"; done
+  printf 'end\n'
+} >> "$MOCK_LOG"
 if [ "$paginate" = 1 ]; then
   for page in "$MOCK_PAGES"/page*.json; do jq -r "$filter" "$page"; done
 else
@@ -122,6 +134,7 @@ class Fixture:
             "GITHUB_OUTPUT": str(output),
             "GITHUB_REPOSITORY": "org/project",
             "GITHUB_REF_NAME": "main",
+            "GH_TOKEN": "test-token",
             **env,
         }
         proc = subprocess.run(["bash", "-eo", "pipefail", "-c", script], cwd=self.repo, env=full_env, capture_output=True, text=True)
@@ -130,7 +143,20 @@ class Fixture:
         return proc.stdout, outputs
 
     def gh_calls(self):
-        return self.log.read_text(encoding="utf-8").split()
+        """One dict per gh invocation: url, method, paginate, fields (dict)."""
+        calls, current = [], None
+        for line in self.log.read_text(encoding="utf-8").splitlines():
+            kind, _, value = line.partition(" ")
+            if kind == "url":
+                current = {"url": value, "fields": {}}
+            elif kind == "end":
+                calls.append(current)
+            elif kind == "field":
+                key, _, val = value.partition("=")
+                current["fields"][key] = val
+            else:
+                current[kind] = value
+        return calls
 
     def fetched_pull_refs(self):
         proc = git(self.repo, "for-each-ref", "--format=%(refname)", "refs/remotes/pull/")

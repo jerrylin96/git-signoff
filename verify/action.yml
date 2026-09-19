@@ -84,7 +84,12 @@ runs:
         if [ "$MODE" = head ] && [ "$SCAN_INPUT" = auto ] && [ "$GITHUB_EVENT_NAME" = push ]; then
           if command -v gh >/dev/null 2>&1; then
             SHA=$(git rev-parse "$TARGET^{commit}")
-            NUMBERS=$(gh api --paginate "repos/$GITHUB_REPOSITORY/pulls?state=closed&base=$GITHUB_REF_NAME&sort=updated&direction=desc&per_page=100" \
+            # Query parameters go through -f/-F so gh URL-encodes them: `+`,
+            # `&` and `#` are legal in a branch name and would otherwise be read
+            # as a space, a separator and a fragment. --method GET is stated
+            # because gh api switches to POST as soon as a field is given.
+            NUMBERS=$(gh api --paginate --method GET "repos/$GITHUB_REPOSITORY/pulls" \
+              -f state=closed -f "base=$GITHUB_REF_NAME" -f sort=updated -f direction=desc -F per_page=100 \
               --jq ".[] | select(.merged_at != null and .merge_commit_sha == \"$SHA\" and .head.repo.full_name == \"$GITHUB_REPOSITORY\") | .number" \
               2>/dev/null || true)
             for N in $NUMBERS; do

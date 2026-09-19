@@ -380,7 +380,10 @@ branch they cannot push to. So:
   and a delayed or re-run workflow still reaches it further down. The
   lookup needs
   `pull-requests: read` on the workflow token, which GitHub's restricted
-  default token lacks; `init-v9` writes it into the scaffolded workflow.
+  default token lacks; `init-v9` writes it into the scaffolded workflow. The
+  branch name travels as a `gh api -f` field, never spliced into the URL,
+  because `+`, `&` and `#` are legal in a ref name and are not in a query
+  string.
 - Recovery applies the same eligibility: it walks the integration branch,
   and PR head refs only for merged same-repository PRs.
 - Anything broader (all same-repository PRs, all PR refs, another

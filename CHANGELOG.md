@@ -26,13 +26,28 @@ merge). Verdicts on sound evidence are unchanged; each fix turns a false
   an advanced base (a code state nobody reviewed), made the integration
   branch's badge green although its history never carried the attested
   commit or tree. Found in the signoff interview of this release, when the
-  fix above made it observable. A note now counts toward a ref only when the
-  object it hangs on is in that ref's history — the commit itself, or the
-  tree of a reachable commit — and is otherwise reported as `skipped`. Squash
-  and rebase merges onto an unchanged base keep their evidence: the merged
-  tip has the attested tree. Head mode is unchanged (it always judged the
-  target's own objects); a history badge that was green only on such notes
-  turns red.
+  fix above made it observable. A note now counts toward a ref only under
+  head mode's own rule applied to every object in that history: the object
+  it hangs on is reachable — the commit itself, or the tree of a reachable
+  commit — *and* its trailers name that object as the reviewed commit or
+  tree. Reachability alone was not enough (external review of the first
+  fix): with `notes.rewriteRef` set, git copies a commit's note onto its
+  rewrite during a rebase, so a note whose trailers still named the
+  pre-rebase commit and tree hung on a commit main did carry, and the badge
+  went green over code nobody reviewed. Unreachable notes are reported as
+  `skipped`, notes that name another object as `invalid`; a block of a
+  multi-block note counts only for the object the note is on. Squash and
+  rebase merges onto an unchanged base keep their evidence: the merged tip
+  has the attested tree. Head mode is unchanged (it always judged the
+  target's own objects this way); a history badge that was green only on
+  such notes turns red.
+- **Fixed** both actions splicing the branch name into the API URL's query
+  string. `+`, `&` and `#` are legal in a ref name and were read as a space,
+  a parameter separator and a fragment, so pull requests into such a branch
+  were never found (external review). The parameters now go through
+  `gh api -f`/`-F`, which URL-encodes them, with `--method GET` stated
+  because gh switches to POST once a field is given. The eligibility tests
+  run the step with a branch named `release/1+hotfix#2&x`.
 - **Fixed** the pull-request lookup behind `scan-refs: auto` and the recover
   action stopping at the 100 most recently *created* pull requests (`gh pr
   list`, which has no sort option). A long-lived pull request merged after a
