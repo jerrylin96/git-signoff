@@ -62,6 +62,31 @@ merge). Verdicts on sound evidence are unchanged; each fix turns a false
   with git's real notes merge (a second review pass found the stale-SHA and
   repeated-SHA cases in the first fix); the default `--require 1` and head
   mode were never affected.
+- **Fixed** both modes losing a `cat_sort_uniq`-merged blob once an intact
+  attestation was appended to the same note — what recovery does when it
+  rebuilds a note that already holds a merged blob. The merge-aware reading
+  applied only when *no* block of the note was intact, so the blob's
+  fragments were judged as broken attestations and its reviewed commits
+  vanished: history mode fell from PASS 2 to FAIL 1 at `--require 2`
+  (external review of `e54887d`, reproduced with git's real merge and
+  `git notes append`). A note is now read as its intact blocks plus, when
+  the rest of the payload parses as a merged blob, that blob, in both head
+  and history mode.
+- **Fixed** the actions' pull-request lookup reporting a failed or partial
+  lookup — a 403 without `pull-requests: read`, a rate limit hit on a later
+  page — as "no merged pull request has this SHA", sending an adopter to
+  look for a missing pull request instead of at the token or the limit.
+  stderr is kept and surfaced as a workflow warning, the numbers a partial
+  lookup did return are still used (they only add candidates; the verdict
+  stays fail-closed), and the "nothing scanned" line says which of the two
+  happened. A pull-request head that cannot be fetched is a warning too,
+  never a silent skip.
+- **Fixed** the recover action finishing green after an incomplete run: a
+  head that could not be fetched was dropped silently and the rebuilt notes
+  pushed as if complete (external review, reproduced against the step). The
+  step now records every pull request it did not reach and a failed or
+  partial lookup; what was rebuilt is still pushed, then a final step fails
+  the run naming what was missed, and the next push retries everything.
 - **Fixed** both actions splicing the branch name into the API URL's query
   string. `+`, `&` and `#` are legal in a ref name and were read as a space,
   a parameter separator and a fragment, so pull requests into such a branch

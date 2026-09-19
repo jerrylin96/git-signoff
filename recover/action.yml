@@ -3,7 +3,8 @@ description: >-
   Rebuilds refs/notes/signoff from the attestation commits in a branch's
   history and in the heads of merged, same-repository pull requests, then
   pushes it. Cloud sessions cannot push notes refs; this runs where pushes are
-  unrestricted. Idempotent.
+  unrestricted. Idempotent. A run that could not reach every eligible pull
+  request pushes what it rebuilt and then fails, naming what it missed.
 branding:
   icon: 'refresh-cw'
   color: 'green'
@@ -46,22 +47,34 @@ runs:
         # `pull-requests: read` on the workflow token.
         BRANCH="${BRANCH_INPUT:-$GITHUB_REF_NAME}"
         REFS="--ref origin/$BRANCH"
+        INCOMPLETE=""
         if [ "$PRS" = auto ] && command -v gh >/dev/null 2>&1; then
           # Query parameters through -f/-F so gh URL-encodes the branch name
           # (`+`, `&`, `#` are legal in a ref name); --method GET because gh
-          # api switches to POST once a field is given.
-          NUMBERS=$(gh api --paginate --method GET "repos/$GITHUB_REPOSITORY/pulls" \
+          # api switches to POST once a field is given. A failed or partial
+          # lookup and every head that could not be fetched are recorded in
+          # `incomplete`: what was rebuilt is still pushed, then the last step
+          # fails the run so an incomplete recovery is never a green run.
+          LOOKUP_ERR=$(mktemp)
+          if ! NUMBERS=$(gh api --paginate --method GET "repos/$GITHUB_REPOSITORY/pulls" \
             -f state=closed -f "base=$BRANCH" -f sort=updated -f direction=desc -F per_page=100 \
             --jq ".[] | select(.merged_at != null and .head.repo.full_name == \"$GITHUB_REPOSITORY\") | .number" \
-            2>/dev/null || true)
+            2>"$LOOKUP_ERR"); then
+            INCOMPLETE="$INCOMPLETE pull-request-lookup"
+            echo "::warning::pull-request lookup failed or stopped early: $(head -c 400 "$LOOKUP_ERR" | tr '\n' ' ')"
+          fi
           for N in $NUMBERS; do
             if git fetch -q origin "+refs/pull/$N/head:refs/remotes/pull/$N/head"; then
               REFS="$REFS --ref refs/remotes/pull/$N/head"
+            else
+              INCOMPLETE="$INCOMPLETE #$N"
+              echo "::warning::could not fetch refs/pull/$N/head; its attestation is not recovered in this run"
             fi
           done
         fi
         echo "refs=$REFS" >> "$GITHUB_OUTPUT"
         echo "branch=$BRANCH" >> "$GITHUB_OUTPUT"
+        echo "incomplete=${INCOMPLETE# }" >> "$GITHUB_OUTPUT"
 
     - name: Reconstruct notes from attestation commits
       shell: bash
@@ -78,3 +91,15 @@ runs:
     - name: Push notes ref
       shell: bash
       run: git push origin refs/notes/signoff
+
+    - name: Report incomplete recovery
+      if: steps.eligible.outputs.incomplete != ''
+      shell: bash
+      env:
+        INCOMPLETE: ${{ steps.eligible.outputs.incomplete }}
+      run: |
+        # After the push, so what could be rebuilt is published; the run is
+        # red so nobody reads an incomplete recovery as a complete one. The
+        # next push to the branch retries everything.
+        echo "::error::recovery incomplete — not reached: $INCOMPLETE. Notes that could be rebuilt were pushed; the next run retries."
+        exit 1

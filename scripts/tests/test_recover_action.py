@@ -53,6 +53,41 @@ def test_every_merged_same_repository_pull_request_across_pages_is_fetched(tmp_p
     assert call["fields"] == {"state": "closed", "base": "main", "sort": "updated", "direction": "desc", "per_page": "100"}
 
 
+def test_unfetchable_head_and_failed_lookup_mark_the_run_incomplete(tmp_path):
+    """One head that cannot be fetched used to be dropped silently and the run
+    finished green with an incomplete notes ref (external review of e54887d).
+    The step now records what it did not reach; the action pushes what it
+    rebuilt and then fails on that record."""
+    fx = Fixture(tmp_path, pr_numbers=(5, 7))  # no refs/pull/6/head on origin
+    fx.serve([pull_request(5, True, "1" * 40, REPO), pull_request(6, True, "2" * 40, REPO), pull_request(7, True, "3" * 40, REPO)])
+    stdout, outputs = fx.run(step_script("recover/action.yml", STEP), {"BRANCH_INPUT": "", "PRS": "auto"})
+    assert outputs["refs"].split() == ["--ref", "origin/main", "--ref", "refs/remotes/pull/5/head", "--ref", "refs/remotes/pull/7/head"]
+    assert outputs["incomplete"] == "#6"
+    assert "::warning::could not fetch refs/pull/6/head" in stdout
+
+    fx.serve([pull_request(5, True, "1" * 40, REPO)], [pull_request(7, True, "3" * 40, REPO)])
+    stdout, outputs = fx.run(step_script("recover/action.yml", STEP), {"BRANCH_INPUT": "", "PRS": "auto"}, fail_after=1)
+    assert outputs["refs"].split() == ["--ref", "origin/main", "--ref", "refs/remotes/pull/5/head"]  # page one was used
+    assert outputs["incomplete"] == "pull-request-lookup"
+    assert "::warning::pull-request lookup failed or stopped early: gh: HTTP 403" in stdout
+
+
+def test_complete_run_records_nothing_incomplete(tmp_path):
+    fx = Fixture(tmp_path, pr_numbers=(5,))
+    fx.serve([pull_request(5, True, "1" * 40, REPO)])
+    _, outputs = fx.run(step_script("recover/action.yml", STEP), {"BRANCH_INPUT": "", "PRS": "auto"})
+    assert outputs["incomplete"] == ""
+
+
+def test_incomplete_recovery_fails_the_run_after_the_push():
+    text = _action()
+    push_at = text.index("- name: Push notes ref")
+    report_at = text.index("- name: Report incomplete recovery")
+    assert push_at < report_at, "what was rebuilt is pushed before the run is failed"
+    assert "if: steps.eligible.outputs.incomplete != ''" in text
+    assert "exit 1" in text[report_at:]
+
+
 def test_branch_input_overrides_the_pushed_branch(tmp_path):
     fx = Fixture(tmp_path, pr_numbers=())
     fx.serve([])

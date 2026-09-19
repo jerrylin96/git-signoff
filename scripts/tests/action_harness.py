@@ -48,9 +48,24 @@ done
   for f in "${fields[@]+"${fields[@]}"}"; do printf 'field %s\n' "$f"; done
   printf 'end\n'
 } >> "$MOCK_LOG"
+# MOCK_FAIL_AFTER=N: pages 1..N are served, then the call fails as gh does when
+# a later page's request is refused (rate limit, 403): partial stdout, an error
+# on stderr, exit 1.
+served=0
 if [ "$paginate" = 1 ]; then
-  for page in "$MOCK_PAGES"/page*.json; do jq -r "$filter" "$page"; done
+  for page in "$MOCK_PAGES"/page*.json; do
+    if [ -n "${MOCK_FAIL_AFTER:-}" ] && [ "$served" -ge "$MOCK_FAIL_AFTER" ]; then
+      echo "gh: HTTP 403: API rate limit exceeded (https://api.github.com/repos/org/project/pulls?page=$((served + 1)))" >&2
+      exit 1
+    fi
+    jq -r "$filter" "$page"
+    served=$((served + 1))
+  done
 else
+  if [ "${MOCK_FAIL_AFTER:-1}" = 0 ]; then
+    echo "gh: HTTP 403: Resource not accessible by integration (https://api.github.com/repos/org/project/pulls)" >&2
+    exit 1
+  fi
   jq -r "$filter" "$MOCK_PAGES/page1.json"
 fi
 """
@@ -123,7 +138,8 @@ class Fixture:
         for i, page in enumerate(pages, start=1):
             (self.pages / f"page{i}.json").write_text(json.dumps(page), encoding="utf-8")
 
-    def run(self, script, env):
+    def run(self, script, env, fail_after=None):
+        """Run the step; `fail_after=N` makes the stand-in gh fail after serving N pages (0: at once)."""
         output = self.tmp / "github_output"
         output.write_text("", encoding="utf-8")
         full_env = {
@@ -135,6 +151,7 @@ class Fixture:
             "GITHUB_REPOSITORY": "org/project",
             "GITHUB_REF_NAME": "main",
             "GH_TOKEN": "test-token",
+            **({"MOCK_FAIL_AFTER": str(fail_after)} if fail_after is not None else {}),
             **env,
         }
         proc = subprocess.run(["bash", "-eo", "pipefail", "-c", script], cwd=self.repo, env=full_env, capture_output=True, text=True)

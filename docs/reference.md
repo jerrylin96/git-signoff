@@ -301,8 +301,10 @@ into the branch that came from this repository (`pull-requests: auto`; the
 same eligibility the verifier's `scan-refs: auto` applies; every page of the
 pull-request list is read, since `verify-v1.6`; forks are never fetched;
 needs `pull-requests: read` on the token), passes `--ref origin/<branch>` plus `--ref refs/remotes/pull/N/head`
-for each, and pushes. `init.py` scaffolds it as
-`.github/workflows/git-signoff-notes.yml`; this repository's
+for each, and pushes. A run that could not reach every eligible pull request
+(a failed or partial lookup, a head that could not be fetched) pushes what it
+rebuilt and then fails, naming what it missed; the next push retries. `init.py`
+scaffolds it as `.github/workflows/git-signoff-notes.yml`; this repository's
 `notes-recovery.yml` uses the same action. Idempotent.
 
 A note is attached only where the commit object backs the trailer's claim.

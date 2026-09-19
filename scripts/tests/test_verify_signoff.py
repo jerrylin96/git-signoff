@@ -1464,6 +1464,57 @@ def test_history_mode_merged_tree_note_still_covers_a_squash_merge(repo):
     assert ok  # head mode agreed all along
 
 
+def test_history_mode_keeps_a_merged_blob_after_an_intact_attestation_is_appended(repo):
+    """Regression (external review of e54887d): recovery appends a fresh
+    attestation to an existing cat_sort_uniq-merged tree note. The parser
+    applied its merge-aware reading only when *no* block was intact, so once
+    the appended block validated, the blob's fragments were judged as broken
+    attestations and its two reviewed commits vanished: PASS 2 became FAIL 1
+    at `--require 2`. The blob is now recognised beside intact blocks."""
+    a = git(repo, "rev-parse", "HEAD").stdout.strip()
+    tree = git(repo, "rev-parse", "HEAD^{tree}").stdout.strip()
+    git(repo, "commit", "-q", "--allow-empty", "-m", "same tree, second commit")
+    b = git(repo, "rev-parse", "HEAD").stdout.strip()
+    _merge_tree_notes_cat_sort_uniq(
+        repo, tree,
+        attestation_message(a, tree) + "Signoff-Timestamp: 2026-09-01T00:00:00Z\n",
+        attestation_message(b, tree) + "Signoff-Timestamp: 2026-09-02T00:00:00Z\n",
+    )
+    ok, lines = verify_signoff.check_history(str(repo), "main", require=2)
+    assert ok and "2 valid attestation(s)" in lines[0], lines
+    git(repo, "commit", "-q", "--allow-empty", "-m", "same tree, third commit")
+    c = git(repo, "rev-parse", "HEAD").stdout.strip()
+    git(repo, "notes", "--ref=refs/notes/signoff", "append", "-m", attestation_message(c, tree) + "Signoff-Timestamp: 2026-09-03T00:00:00Z\n", tree)
+    ok, lines = verify_signoff.check_history(str(repo), "main", require=3)
+    text = "\n".join(lines)
+    assert ok, text
+    assert "PASS: 3 valid attestation(s)" in lines[0]
+    assert f"valid (note on {tree[:7]}): reviewed={c[:7]}" in text  # the intact block, judged first
+    assert f"valid (note on {tree[:7]} (cat_sort_uniq-merged)): reviewed=" in text and "(2 reviewed commit(s) counted)" in text
+    assert "invalid" not in text, text
+
+
+def test_head_mode_reads_a_merged_blob_beside_an_intact_block_that_does_not_anchor(repo, tmp_path):
+    """Head mode, same shape: the intact block appended to the tree note attests
+    another commit with another tree and does not anchor the squash tip; the
+    blob beside it does. Before, an intact block present meant the blob was
+    never consulted."""
+    reviewed = git(repo, "rev-parse", "HEAD").stdout.strip()
+    tree = git(repo, "rev-parse", "HEAD^{tree}").stdout.strip()
+    squashed = init_repo(tmp_path / "squashed")
+    commit_file(squashed, "a.txt", "hello", "squash-merged")
+    assert git(squashed, "rev-parse", "HEAD^{tree}").stdout.strip() == tree
+    _merge_tree_notes_cat_sort_uniq(
+        squashed, tree,
+        attestation_message(reviewed, tree) + "Signoff-Timestamp: 2026-09-01T00:00:00Z\n",
+        attestation_message(reviewed, tree) + "Signoff-Timestamp: 2026-09-02T00:00:00Z\n",
+    )
+    git(squashed, "notes", "--ref=refs/notes/signoff", "append", "-m", attestation_message("9" * 40, "8" * 40), tree)
+    ok, lines = verify_signoff.check_head(str(squashed), "HEAD")
+    assert ok, lines
+    assert "cat_sort_uniq-merged" in lines[0] or "cat_sort_uniq-merged" in "\n".join(lines)
+
+
 def test_verifier_exits_loudly_below_python_floor(tmp_path):
     """The verifier runs under whatever python3 a runner or laptop has; below the
     documented floor it must say so instead of dying on a syntax or type error."""

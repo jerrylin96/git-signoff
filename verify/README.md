@@ -156,7 +156,9 @@ pull requests are never fetched by `auto`; broader evidence is an explicit
 runners) and a workflow token with `pull-requests: read` — the scaffolded
 workflow sets it; GitHub's restricted default token (the default for
 repositories created since 2023) does not include it — and without either
-nothing is scanned, which the log says in so many words. The lookup reads
+nothing is scanned, and the log says which: a complete lookup that found no
+eligible pull request, or a lookup that failed or stopped early (the API's
+error is kept as a workflow warning). The lookup reads
 every page of the closed pull requests into the pushed branch, most recently
 updated first (since `verify-v1.6`; `verify-v1.5` read one page of 100 by
 creation date), so a delayed or re-run workflow finds the pull request too.

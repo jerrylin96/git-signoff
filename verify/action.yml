@@ -88,18 +88,34 @@ runs:
             # `&` and `#` are legal in a branch name and would otherwise be read
             # as a space, a separator and a fragment. --method GET is stated
             # because gh api switches to POST as soon as a field is given.
-            NUMBERS=$(gh api --paginate --method GET "repos/$GITHUB_REPOSITORY/pulls" \
+            # A failed or partial lookup (403 without pull-requests: read, a rate
+            # limit hit on a later page) is told apart from a complete lookup
+            # that found nothing: the numbers already returned are still used
+            # (they only add candidates; the verdict stays fail-closed), the
+            # error is kept, and the log names which of the two happened.
+            LOOKUP_ERR=$(mktemp)
+            LOOKUP=complete
+            if ! NUMBERS=$(gh api --paginate --method GET "repos/$GITHUB_REPOSITORY/pulls" \
               -f state=closed -f "base=$GITHUB_REF_NAME" -f sort=updated -f direction=desc -F per_page=100 \
               --jq ".[] | select(.merged_at != null and .merge_commit_sha == \"$SHA\" and .head.repo.full_name == \"$GITHUB_REPOSITORY\") | .number" \
-              2>/dev/null || true)
+              2>"$LOOKUP_ERR"); then
+              LOOKUP=failed
+              echo "::warning::pull-request lookup failed or stopped early: $(head -c 400 "$LOOKUP_ERR" | tr '\n' ' ')"
+            fi
             for N in $NUMBERS; do
               if git fetch -q origin "+refs/pull/$N/head:refs/remotes/pull/$N/head"; then
                 SCAN="$SCAN refs/remotes/pull/$N/head"
                 echo "eligible: pull request #$N (merged into $GITHUB_REF_NAME from this repository)"
+              else
+                echo "::warning::could not fetch refs/pull/$N/head; the attestation it may carry cannot be scanned"
               fi
             done
             if [ -z "$NUMBERS" ]; then
-              echo "no merged same-repository pull request has $SHA as its merge commit; nothing scanned"
+              if [ "$LOOKUP" = complete ]; then
+                echo "no merged same-repository pull request has $SHA as its merge commit; nothing scanned"
+              else
+                echo "the pull-request lookup failed before it found one; nothing scanned (check the token's pull-requests: read scope and the API rate limit; see the warning above)"
+              fi
             fi
           else
             echo "gh CLI not available; no pull-request heads scanned"

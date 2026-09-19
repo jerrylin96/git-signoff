@@ -102,6 +102,40 @@ def test_branch_name_with_url_characters_reaches_gh_verbatim_as_a_field(tmp_path
     assert outputs["scan"].split() == ["refs/remotes/pull/7/head"]
 
 
+def test_failed_lookup_is_told_apart_from_an_empty_one(tmp_path):
+    """A 403 (token without pull-requests: read) used to be swallowed and
+    reported as 'no merged pull request has this SHA' — sending the adopter
+    to look for a missing pull request instead of at the token. The error is
+    kept and the log says the lookup failed."""
+    fx = Fixture(tmp_path, pr_numbers=(7,))
+    fx.serve([pull_request(7, True, fx.target_sha, REPO)])
+    stdout, outputs = fx.run(step_script("verify/action.yml", STEP), push_env(), fail_after=0)
+    assert outputs["scan"].strip() == ""
+    assert "::warning::pull-request lookup failed or stopped early: gh: HTTP 403" in stdout
+    assert "the pull-request lookup failed before it found one; nothing scanned" in stdout
+    assert "no merged same-repository pull request has" not in stdout
+
+
+def test_partial_lookup_keeps_what_it_got_and_still_warns(tmp_path):
+    """Rate limit hit on page two: the eligible pull request on page one is
+    scanned (partial results only add candidates), and the run still carries
+    the warning so a later red badge is not blamed on a missing pull request."""
+    fx = Fixture(tmp_path, pr_numbers=(7,))
+    fx.serve([pull_request(7, True, fx.target_sha, REPO)], unrelated(100))
+    stdout, outputs = fx.run(step_script("verify/action.yml", STEP), push_env(), fail_after=1)
+    assert outputs["scan"].split() == ["refs/remotes/pull/7/head"]
+    assert "::warning::pull-request lookup failed or stopped early" in stdout
+    assert "eligible: pull request #7" in stdout
+
+
+def test_unfetchable_eligible_head_is_reported_not_silently_skipped(tmp_path):
+    fx = Fixture(tmp_path, pr_numbers=(7,))  # origin has refs/pull/7/head only
+    fx.serve([pull_request(8, True, fx.target_sha, REPO), pull_request(7, True, fx.target_sha, REPO)])
+    stdout, outputs = fx.run(step_script("verify/action.yml", STEP), push_env())
+    assert outputs["scan"].split() == ["refs/remotes/pull/7/head"]
+    assert "::warning::could not fetch refs/pull/8/head" in stdout
+
+
 def test_auto_scan_happens_only_on_push_events(tmp_path):
     fx = Fixture(tmp_path, pr_numbers=(7,))
     fx.serve([pull_request(7, True, fx.target_sha, REPO)])

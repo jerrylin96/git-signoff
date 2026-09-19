@@ -342,6 +342,35 @@ def _anchors(trailers, commit, tree):
     )
 
 
+def _note_parts(payload):
+    """(intact_blocks, merged_blob_or_None, leftover_blocks) of a note payload.
+
+    A note is judged block by block (git notes append concatenates
+    attestations). A cat_sort_uniq-merged blob is one sorted line set that the
+    splitter cuts into fragments none of which is an attestation; when the
+    blocks that are not intact attestations together parse as such a blob, they
+    are that blob. Since `git notes append` puts a fresh attestation after an
+    existing blob, one payload can hold both — judging the blob's fragments as
+    attestations would report a legitimate merge as several invalid fragments
+    and lose the evidence it carries (found in external review, verify-v1.6).
+    Leftover blocks are the fragments that form neither."""
+    blocks = split_attestation_blocks(payload)
+    intact = [b for b in blocks if not validate_single(parse_trailers(b))]
+    rest = [b for b in blocks if validate_single(parse_trailers(b))]
+    # The blob is what remains of the payload once the intact blocks are cut
+    # out — not the fragments joined back, since the splitter drops fragments
+    # carrying no status, version or subject line (a sorted blob's leading
+    # Reviewed-*-SHA lines are exactly such a fragment).
+    remainder = payload
+    for block in intact:
+        remainder = remainder.replace(block, "", 1)
+    if remainder.strip():
+        trailers = parse_trailers(remainder)
+        if duplicate_problems(trailers) and not validate_merged(trailers):
+            return intact, remainder, []
+    return intact, None, rest
+
+
 def _anchoring_note_attestation(repo, commit, tree):
     """(source, trailers) of a valid attestation in a note on `commit` or `tree`
     that covers it, or None.
@@ -356,20 +385,15 @@ def _anchoring_note_attestation(repo, commit, tree):
     """
     for note_target, how in ((commit, "note on commit"), (tree, "note on tree")):
         for payload in note_payloads(repo, note_target):
-            blocks = split_attestation_blocks(payload)
-            valid = []
-            for block in blocks:
-                trailers = parse_trailers(block)
-                if not validate_single(trailers) and _anchors(trailers, commit, tree):
-                    valid.append(trailers)
+            intact, merged_blob, _ = _note_parts(payload)
+            valid = [t for t in (parse_trailers(b) for b in intact) if _anchors(t, commit, tree)]
             if valid:
                 valid.sort(key=lambda t: t.get("Signoff-Status", [""])[0] != "VERIFIED_BY_HUMAN")
                 return how, valid[0]
-            # Sorting scatters a merged blob's lines, so the splitter may cut it
-            # into fragments that validate as nothing; judge the whole payload.
-            trailers = parse_trailers(payload)
-            if duplicate_problems(trailers) and not validate_merged(trailers) and _anchors(trailers, commit, tree):
-                return f"{how} (cat_sort_uniq-merged)", trailers
+            if merged_blob is not None:
+                trailers = parse_trailers(merged_blob)
+                if _anchors(trailers, commit, tree):
+                    return f"{how} (cat_sort_uniq-merged)", trailers
     return None
 
 
@@ -524,18 +548,12 @@ def check_history(repo, ref, require):
             lines.append(f"  skipped (note on {target[:7]}): object not in {ref} history")
             continue
         for payload in note_payloads(repo, target):
-            blocks = split_attestation_blocks(payload)
-            if all(validate_single(parse_trailers(b)) for b in blocks):
-                # No block is one valid attestation: a cat_sort_uniq-merged blob
-                # (sorting scatters its lines across the splitter's fragments).
-                # Judge the whole payload under the merge-aware rules instead of
-                # reporting a legitimate merge as several invalid fragments.
-                merged = parse_trailers(payload)
-                if duplicate_problems(merged) and not validate_merged(merged):
-                    problems = [] if _anchors(merged, commit, tree) else [_describes_other_object(merged, target)]
-                    payloads.append((f"note on {target[:7]} (cat_sort_uniq-merged)", payload, problems or None, (commit, tree)))
-                    continue
-            for block in blocks:
+            intact, merged_blob, leftover = _note_parts(payload)
+            if merged_blob is not None:
+                merged = parse_trailers(merged_blob)
+                problems = [] if _anchors(merged, commit, tree) else [_describes_other_object(merged, target)]
+                payloads.append((f"note on {target[:7]} (cat_sort_uniq-merged)", merged_blob, problems or None, (commit, tree)))
+            for block in intact + leftover:
                 trailers = parse_trailers(block)
                 problems = validate_single(trailers)
                 if not problems and not _anchors(trailers, commit, tree):
