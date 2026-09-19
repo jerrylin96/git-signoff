@@ -542,31 +542,44 @@ def check_history(repo, ref, require):
                     problems = [_describes_other_object(trailers, target)]
                 payloads.append((f"note on {target[:7]}", block, problems or None))
     # One reviewed commit counts once, however many copies of its attestation
-    # exist (commit in history, note on the commit, note on the tree). Only a
-    # *valid* payload claims the key: an invalid copy — a rebased or
-    # cherry-picked attestation commit whose parent is no longer the commit it
-    # names — is reported but must not shadow sound evidence for the same
-    # reviewed commit that happens to be listed after it (verify-v1.6; before,
-    # the first copy seen claimed the key whatever its verdict, so the badge
-    # could report zero attestations over a valid note).
+    # exist (commit in history, note on the commit, note on the tree, a line
+    # set inside a cat_sort_uniq-merged blob). The unit of counting is the
+    # reviewed commit, never the payload: a merged blob names every commit the
+    # attestations it was merged from reviewed, and counts once for each of
+    # those not already counted — so a blob merged from two attestations that
+    # are also in history as commits adds nothing, while a blob that is the
+    # only surviving evidence still counts each distinct reviewed commit
+    # (verify-v1.6; before, the blob's whole SHA tuple was the key, so (A, B)
+    # counted beside (A,) and (B,) and `--require 3` passed on two). Blobs are
+    # judged after single attestations so they never pre-empt the sound
+    # commits behind them. Only a *valid* payload claims a commit: an invalid
+    # copy — a rebased or cherry-picked attestation commit whose parent is no
+    # longer the commit it names — is reported but must not shadow sound
+    # evidence for the same reviewed commit listed after it.
     reported = set()
-    for source, payload, precomputed in payloads:
+
+    def is_merged(entry):
+        return entry[0].endswith("(cat_sort_uniq-merged)")
+
+    for source, payload, precomputed in sorted(payloads, key=is_merged):
         trailers = parse_trailers(payload)
         if precomputed is not None:
             problems = precomputed
         else:
-            problems = [] if source.endswith("(cat_sort_uniq-merged)") else validate_single(trailers)
-        key = tuple(trailers.get("Signoff-Reviewed-Commit-SHA", [source]))
-        if key in seen:
+            problems = [] if is_merged((source,)) else validate_single(trailers)
+        reviewed = trailers.get("Signoff-Reviewed-Commit-SHA") or [source]
+        unseen = [sha for sha in reviewed if sha not in seen]
+        if not unseen:
             continue
         if problems:
-            if (key, tuple(problems)) not in reported:
-                reported.add((key, tuple(problems)))
+            if (tuple(reviewed), tuple(problems)) not in reported:
+                reported.add((tuple(reviewed), tuple(problems)))
                 lines.append(f"  invalid ({source}): " + "; ".join(problems))
             continue
-        seen.add(key)
-        valid += 1
-        lines.append(f"  valid ({source}): {describe(trailers)}")
+        seen.update(reviewed)
+        valid += len(unseen)
+        counted = f" ({len(unseen)} of {len(reviewed)} reviewed commits counted)" if is_merged((source,)) else ""
+        lines.append(f"  valid ({source}): {describe(trailers)}{counted}")
     verdict = "PASS" if valid >= require else "FAIL"
     lines.insert(
         0,

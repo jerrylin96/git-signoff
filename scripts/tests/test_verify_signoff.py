@@ -1307,6 +1307,69 @@ def test_history_mode_counts_cat_sort_uniq_merged_note_once(repo):
     assert "1 valid attestation(s)" in lines[0]
 
 
+def _merge_tree_notes_cat_sort_uniq(repo, tree, *payloads):
+    """Attach each payload to `tree` in its own notes ref and merge them into
+    refs/notes/signoff with git's real cat_sort_uniq strategy (gsa-core §2.5)."""
+    for i, payload in enumerate(payloads):
+        git(repo, "notes", f"--ref=refs/notes/side{i}", "add", "-m", payload, tree)
+    git(repo, "update-ref", "refs/notes/signoff", "refs/notes/side0")
+    for i in range(1, len(payloads)):
+        git(repo, "notes", "--ref=refs/notes/signoff", "merge", "-s", "cat_sort_uniq", f"refs/notes/side{i}")
+    merged = git(repo, "notes", "--ref=refs/notes/signoff", "show", tree).stdout
+    assert merged.count("Signoff-Reviewed-Commit-SHA") == len(payloads), merged
+    return merged
+
+
+def test_history_mode_merged_note_adds_nothing_over_the_attestations_it_was_merged_from(repo):
+    """Regression (external review of 8252d0a): two attested commits share a
+    tree; their tree notes are merged with git's cat_sort_uniq. The blob names
+    both reviewed commits, and keyed by its whole SHA tuple it counted as a
+    third attestation, so `--require 3` passed on two. The unit of counting is
+    the reviewed commit: the blob adds nothing here."""
+    a, tree = attest_head(repo)
+    git(repo, "commit", "-q", "--allow-empty", "-m", "same tree, second commit")
+    b = git(repo, "rev-parse", "HEAD").stdout.strip()
+    assert git(repo, "rev-parse", "HEAD^{tree}").stdout.strip() == tree
+    attest_head(repo)
+    _merge_tree_notes_cat_sort_uniq(
+        repo, tree,
+        attestation_message(a, tree) + "Signoff-Timestamp: 2026-09-01T00:00:00Z\n",
+        attestation_message(b, tree) + "Signoff-Timestamp: 2026-09-02T00:00:00Z\n",
+    )
+    ok, lines = verify_signoff.check_history(str(repo), "main", require=2)
+    text = "\n".join(lines)
+    assert ok, text
+    assert "PASS: 2 valid attestation(s)" in lines[0]
+    assert "cat_sort_uniq-merged" not in text  # nothing left for the blob to add, so it is not listed
+    ok, lines = verify_signoff.check_history(str(repo), "main", require=3)
+    assert not ok and "2 valid attestation(s)" in lines[0], lines
+
+
+def test_history_mode_merged_note_as_the_only_evidence_counts_each_reviewed_commit_once(repo):
+    """The blob's other side: both attestation commits are gone (squashed
+    away), the merged tree note is all that survives, and it names two
+    reviewed commits that are in main's history — two attestations, once each,
+    however many blobs repeat them."""
+    a = git(repo, "rev-parse", "HEAD").stdout.strip()
+    tree = git(repo, "rev-parse", "HEAD^{tree}").stdout.strip()
+    git(repo, "commit", "-q", "--allow-empty", "-m", "same tree, second commit")
+    b = git(repo, "rev-parse", "HEAD").stdout.strip()
+    _merge_tree_notes_cat_sort_uniq(
+        repo, tree,
+        attestation_message(a, tree) + "Signoff-Timestamp: 2026-09-01T00:00:00Z\n",
+        attestation_message(b, tree) + "Signoff-Timestamp: 2026-09-02T00:00:00Z\n",
+    )
+    ok, lines = verify_signoff.check_history(str(repo), "main", require=2)
+    text = "\n".join(lines)
+    assert ok, text
+    assert "PASS: 2 valid attestation(s)" in lines[0]
+    assert "(cat_sort_uniq-merged)" in text and "(2 of 2 reviewed commits counted)" in text
+    # the same blob on the commit too: the reviewed commits are already counted
+    git(repo, "notes", "--ref=refs/notes/signoff", "add", "-m", git(repo, "notes", "--ref=refs/notes/signoff", "show", tree).stdout, b)
+    ok, lines = verify_signoff.check_history(str(repo), "main", require=3)
+    assert not ok and "2 valid attestation(s)" in lines[0], lines
+
+
 def test_verifier_exits_loudly_below_python_floor(tmp_path):
     """The verifier runs under whatever python3 a runner or laptop has; below the
     documented floor it must say so instead of dying on a syntax or type error."""

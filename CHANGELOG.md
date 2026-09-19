@@ -41,6 +41,15 @@ merge). Verdicts on sound evidence are unchanged; each fix turns a false
   has the attested tree. Head mode is unchanged (it always judged the
   target's own objects this way); a history badge that was green only on
   such notes turns red.
+- **Fixed** history mode over-counting a `cat_sort_uniq`-merged note. The
+  blob names every commit the attestations it was merged from reviewed, and
+  keyed by its whole tuple of SHAs it counted beside the single attestations
+  of the same commits, so `--require 3` passed on two attestations (external
+  review; predates this range). The unit of counting is now the reviewed
+  commit: a blob counts once for each reviewed commit not already counted,
+  and blobs are judged after single attestations so they never pre-empt the
+  sound commits behind them. Reproduced with git's real notes merge; the
+  default `--require 1` and head mode were never affected.
 - **Fixed** both actions splicing the branch name into the API URL's query
   string. `+`, `&` and `#` are legal in a ref name and were read as a space,
   a parameter separator and a fragment, so pull requests into such a branch
