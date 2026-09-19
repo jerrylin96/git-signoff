@@ -51,10 +51,13 @@ merge). Verdicts on sound evidence are unchanged; each fix turns a false
   A merged blob has lost which tree went with which commit, and a stale
   attestation merged into it (a note git copied onto a rebased commit) is
   indistinguishable from a live one, so a blob counts a reviewed commit only
-  when the history supports it on its own: reachable, and the object the
-  blob hangs on or of the tree it hangs on; once, however often the blob
-  repeats it (appending a blob to itself doubles every line); and it names
-  what it could not count. Blobs are judged after intact attestations so
+  when the support is unambiguous: the blob names exactly one reviewed tree
+  and hangs on it — every attestation merged in declared that tree, so it
+  is squash or rebase evidence exactly as an intact tree note is (a third
+  review pass caught the strict rule rejecting this) — or the commit is
+  reachable and is the object the blob hangs on or of the tree it hangs on;
+  once, however often the blob repeats it (appending a blob to itself
+  doubles every line); and it names what it could not count. Blobs are judged after intact attestations so
   they never pre-empt the sound commits behind them. Three reproductions
   with git's real notes merge (a second review pass found the stale-SHA and
   repeated-SHA cases in the first fix); the default `--require 1` and head

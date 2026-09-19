@@ -1316,7 +1316,8 @@ def _merge_tree_notes_cat_sort_uniq(repo, tree, *payloads):
     for i in range(1, len(payloads)):
         git(repo, "notes", "--ref=refs/notes/signoff", "merge", "-s", "cat_sort_uniq", f"refs/notes/side{i}")
     merged = git(repo, "notes", "--ref=refs/notes/signoff", "show", tree).stdout
-    assert merged.count("Signoff-Reviewed-Commit-SHA") == len(payloads), merged
+    distinct = {line for p in payloads for line in p.splitlines() if line.startswith("Signoff-Reviewed-Commit-SHA:")}
+    assert merged.count("Signoff-Reviewed-Commit-SHA") == len(distinct), merged
     return merged
 
 
@@ -1429,6 +1430,38 @@ def test_history_mode_counts_a_reviewed_commit_repeated_inside_one_merged_note_o
     assert ok and "2 valid attestation(s)" in lines[0], lines
     ok, lines = verify_signoff.check_history(str(repo), "main", require=3)
     assert not ok and "2 valid attestation(s)" in lines[0], lines
+
+
+def test_history_mode_merged_tree_note_still_covers_a_squash_merge(repo):
+    """Regression (external review of c365566): a feature attested twice (the
+    two tree notes merged with cat_sort_uniq), then squash-merged onto an
+    unchanged base. The blob names one reviewed commit and one tree, and hangs
+    on that tree, which the squash tip has. Nothing was lost in the merge —
+    every attestation merged in declared that tree — so it is squash evidence
+    exactly as an intact tree note is. The strict per-commit rule of c365566
+    demanded the squashed-away commit be reachable and rejected it."""
+    git(repo, "checkout", "-q", "-b", "feature")
+    commit_file(repo, "b.txt", "feature work", "add b.txt")
+    reviewed = git(repo, "rev-parse", "HEAD").stdout.strip()
+    tree = git(repo, "rev-parse", "HEAD^{tree}").stdout.strip()
+    blob = _merge_tree_notes_cat_sort_uniq(
+        repo, tree,
+        attestation_message(reviewed, tree) + "Signoff-Timestamp: 2026-09-01T00:00:00Z\n",
+        attestation_message(reviewed, tree) + "Signoff-Timestamp: 2026-09-02T00:00:00Z\n",
+    )
+    assert blob.count("Signoff-Reviewed-Commit-SHA") == 1 and blob.count("Signoff-Reviewed-Tree-SHA") == 1
+    git(repo, "checkout", "-q", "main")
+    git(repo, "merge", "-q", "--squash", "feature")
+    git(repo, "commit", "-q", "-m", "squash: feature")
+    assert git(repo, "rev-parse", "HEAD^{tree}").stdout.strip() == tree
+    ok, lines = verify_signoff.check_history(str(repo), "main", require=1)
+    text = "\n".join(lines)
+    assert ok, text
+    assert "PASS: 1 valid attestation(s)" in lines[0]
+    assert f"valid (note on {tree[:7]} (cat_sort_uniq-merged)): reviewed={reviewed[:7]}" in text
+    assert "not counted" not in text
+    ok, _ = verify_signoff.check_head(str(repo), "main")
+    assert ok  # head mode agreed all along
 
 
 def test_verifier_exits_loudly_below_python_floor(tmp_path):

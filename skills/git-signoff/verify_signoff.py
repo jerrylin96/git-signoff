@@ -551,10 +551,13 @@ def check_history(repo, ref, require):
     # sorted union of several attestations' lines: which tree went with which
     # commit is gone, and a stale attestation merged in (a note git copied onto
     # a rebased commit) is indistinguishable from a live one. So a blob counts
-    # a reviewed commit only when this history itself supports it — the commit
-    # is reachable and is the object the blob hangs on or has the tree the blob
-    # hangs on — once, whatever the line repeats, and names what it could not
-    # count. Blobs are judged after intact attestations so they never pre-empt
+    # a reviewed commit only when the support is unambiguous: either the blob
+    # names exactly one reviewed tree and hangs on it (or on a commit that has
+    # it) — then every attestation merged in declared that tree, and the blob
+    # is squash or rebase evidence exactly as an intact tree note is — or the
+    # commit is reachable and is the object the blob hangs on or has the tree
+    # it hangs on. Once, whatever the line repeats, and it names what it could
+    # not count. Blobs are judged after intact attestations so they never pre-empt
     # the sound commits behind them (verify-v1.6; before, a blob's whole SHA
     # tuple was the key, so (A, B) counted beside (A,) and (B,), a stale SHA
     # merged into a valid blob counted, and a repeated SHA counted twice).
@@ -579,10 +582,14 @@ def check_history(repo, ref, require):
             continue
         if merged:
             note_commit, note_tree = anchor
-            supported = [
-                sha for sha in reviewed
-                if sha in commit_tree and (sha == note_commit or commit_tree[sha] == note_tree)
-            ]
+            declared_trees = list(dict.fromkeys(trailers.get("Signoff-Reviewed-Tree-SHA", [])))
+            if declared_trees == [note_tree]:
+                supported = reviewed  # one tree, and the blob hangs on it: every merged attestation reviewed this tree
+            else:
+                supported = [
+                    sha for sha in reviewed
+                    if sha in commit_tree and (sha == note_commit or commit_tree[sha] == note_tree)
+                ]
             unsupported = [sha for sha in reviewed if sha not in supported]
             if unsupported:
                 lines.append(
