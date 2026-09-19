@@ -40,7 +40,11 @@ merge). Verdicts on sound evidence are unchanged; each fix turns a false
   rebase merges onto an unchanged base keep their evidence: the merged tip
   has the attested tree. Head mode is unchanged (it always judged the
   target's own objects this way); a history badge that was green only on
-  such notes turns red.
+  such notes turns red. A ref the checkout cannot enumerate is now reported
+  as that (`FAIL: cannot enumerate <ref>: <git's reason>`) instead of as zero
+  attestations with a "not in history" line for every note, and a shallow
+  checkout gets a warning that history beyond its boundary is invisible
+  (found in the signoff interview).
 - **Fixed** history mode over-counting a `cat_sort_uniq`-merged note. The
   blob names every commit the attestations it was merged from reviewed, and
   keyed by its whole tuple of SHAs it counted beside the single attestations

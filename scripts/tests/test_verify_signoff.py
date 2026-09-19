@@ -1515,6 +1515,35 @@ def test_head_mode_reads_a_merged_blob_beside_an_intact_block_that_does_not_anch
     assert "cat_sort_uniq-merged" in lines[0] or "cat_sort_uniq-merged" in "\n".join(lines)
 
 
+def test_history_mode_names_a_ref_it_cannot_enumerate_instead_of_skipping_every_note(repo):
+    """A missing ref used to yield FAIL 0 plus a 'not in history' line for every
+    note — a confident wrong reason. The git error is the reason now, and
+    nothing is judged."""
+    reviewed, tree = attest_head(repo)
+    git(repo, "notes", "--ref=refs/notes/signoff", "add", "-m", attestation_message(reviewed, tree), reviewed)
+    ok, lines = verify_signoff.check_history(str(repo), "refs/heads/no-such-branch", require=1)
+    assert not ok
+    assert lines[0].startswith("FAIL: cannot enumerate refs/heads/no-such-branch: ")
+    assert "nothing was judged" in lines[1]
+    assert not [line for line in lines if "skipped" in line or "valid" in line]
+
+
+def test_history_mode_warns_on_a_shallow_checkout(repo, tmp_path):
+    """A shallow clone enumerates only what it has; the verifier says so rather
+    than reporting the invisible history's notes as outside it."""
+    commit_file(repo, "b.txt", "x", "second")
+    reviewed, tree = attest_head(repo)
+    git(repo, "notes", "--ref=refs/notes/signoff", "add", "-m", attestation_message(reviewed, tree), reviewed)
+    shallow = tmp_path / "shallow"
+    subprocess.run(["git", "clone", "-q", "--depth", "2", f"file://{repo}", str(shallow)], check=True)  # the attestation and the commit it attests; nothing older
+    assert git(shallow, "rev-parse", "--is-shallow-repository").stdout.strip() == "true"
+    ok, lines = verify_signoff.check_history(str(shallow), "HEAD", require=1)
+    assert ok, lines  # the attestation tip itself is within the shallow history
+    assert lines[1].startswith("  warning: shallow checkout"), lines
+    ok, lines = verify_signoff.check_history(str(repo), "HEAD", require=1)
+    assert not [line for line in lines if "shallow" in line]  # the full clone gets no warning
+
+
 def test_verifier_exits_loudly_below_python_floor(tmp_path):
     """The verifier runs under whatever python3 a runner or laptop has; below the
     documented floor it must say so instead of dying on a syntax or type error."""

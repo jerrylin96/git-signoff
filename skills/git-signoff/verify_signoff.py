@@ -507,6 +507,24 @@ def check_history(repo, ref, require):
     lines, valid = [], 0
     seen = set()
     payloads = []
+    # Enumerate the history first, and say so when it cannot be enumerated: a
+    # ref this checkout does not have must not come back as "0 attestations"
+    # plus a confident wrong reason on every note (verify-v1.6). A shallow
+    # checkout enumerates only what it has, so history beyond its boundary —
+    # and every note hanging there — looks absent; the warning names the cause.
+    enumeration = git(repo, "log", ref, "--format=%H %T", check=False)
+    if enumeration.returncode != 0:
+        reason = (enumeration.stderr.strip().splitlines() or ["git log failed"])[0]
+        return False, [
+            f"FAIL: cannot enumerate {ref}: {reason}",
+            "  history mode needs a ref this checkout has (a full clone: fetch-depth: 0 in Actions, "
+            "git fetch --unshallow locally); nothing was judged",
+        ]
+    if git(repo, "rev-parse", "--is-shallow-repository", check=False).stdout.strip() == "true":
+        lines.append(
+            f"  warning: shallow checkout — history beyond the shallow boundary is not visible, so attestations "
+            f"and notes there are reported as not in {ref} history (git fetch --unshallow, or fetch-depth: 0)"
+        )
     for source, payload, sha in history_payloads(repo, ref):
         trailers = parse_trailers(payload)
         problems = validate_single(trailers)
@@ -534,7 +552,7 @@ def check_history(repo, ref, require):
     # the integration branch's badge green. A squash or rebase merge onto an
     # unchanged base keeps its evidence: the merged tip has the attested tree.
     commit_tree, history_trees = {}, set()  # reachable commit -> its tree; reachable trees
-    for line in git(repo, "log", ref, "--format=%H %T", check=False).stdout.split("\n"):
+    for line in enumeration.stdout.split("\n"):
         if line:
             commit_sha, tree_sha = line.split()
             commit_tree[commit_sha] = tree_sha
