@@ -5,7 +5,128 @@ the composite action (`verify-vX.Y`) and the initializer (`init-vN`) never
 move and are listed with the release that introduced them. Dates are the tag
 dates on `origin`.
 
-## Unreleased (`verify-v1.5`, `init-v8`, spec 3.8.0)
+## Unreleased (`verify-v1.5` → `verify-v1.6`, `init-v8` → `init-v9`, spec 3.8.0)
+
+Three fixes from an external review of the merged `verify-v1.5` range, shipped
+as `verify-v1.6` and `init-v9` (pins never move; `tag.yml` creates both at
+merge). Verdicts on sound evidence are unchanged; each fix turns a false
+"nothing found" into the evidence being found.
+
+- **Fixed** history mode letting an invalid copy of an attestation commit
+  hide valid evidence for the same reviewed commit. Payloads are deduplicated
+  by reviewed commit, and the first copy `git log` listed claimed the key
+  before it was judged: a rebased or cherry-picked attestation commit (its
+  parent is no longer the commit it names, so `verify-v1.5` rightly rejects
+  it) shadowed a sound note or the sound original reachable through a merge,
+  and the badge reported zero attestations. Reproduced; now only a valid
+  payload claims the key and the invalid copy is still reported.
+- **Fixed** history mode counting every note in the notes ref, wherever its
+  object lived. Notes outlive branches by design, so notes published for a
+  feature branch that was then abandoned and deleted, or squash-merged onto
+  an advanced base (a code state nobody reviewed), made the integration
+  branch's badge green although its history never carried the attested
+  commit or tree. Found in the signoff interview of this release, when the
+  fix above made it observable. A note now counts toward a ref only under
+  head mode's own rule applied to every object in that history: the object
+  it hangs on is reachable — the commit itself, or the tree of a reachable
+  commit — *and* its trailers name that object as the reviewed commit or
+  tree. Reachability alone was not enough (external review of the first
+  fix): with `notes.rewriteRef` set, git copies a commit's note onto its
+  rewrite during a rebase, so a note whose trailers still named the
+  pre-rebase commit and tree hung on a commit main did carry, and the badge
+  went green over code nobody reviewed. Unreachable notes are reported as
+  `skipped`, notes that name another object as `invalid`; a block of a
+  multi-block note counts only for the object the note is on. Squash and
+  rebase merges onto an unchanged base keep their evidence: the merged tip
+  has the attested tree. Head mode is unchanged (it always judged the
+  target's own objects this way); a history badge that was green only on
+  such notes turns red. A ref the checkout cannot enumerate is now reported
+  as that (`FAIL: cannot enumerate <ref>: <git's reason>`) instead of as zero
+  attestations with a "not in history" line for every note, and a shallow
+  checkout gets a warning that history beyond its boundary is invisible
+  (found in the signoff interview).
+- **Fixed** history mode over-counting a `cat_sort_uniq`-merged note. The
+  blob names every commit the attestations it was merged from reviewed, and
+  keyed by its whole tuple of SHAs it counted beside the single attestations
+  of the same commits, so `--require 3` passed on two attestations (external
+  review; predates this range). The unit of counting is now the reviewed
+  commit, each independently supported. An intact attestation — a commit or
+  one block of a note — supports its one reviewed commit by its own claims.
+  A merged blob has lost which tree went with which commit, and a stale
+  attestation merged into it (a note git copied onto a rebased commit) is
+  indistinguishable from a live one, so a blob counts a reviewed commit only
+  when the support is unambiguous: the blob names exactly one reviewed tree
+  and hangs on it — every attestation merged in declared that tree, so it
+  is squash or rebase evidence exactly as an intact tree note is (a third
+  review pass caught the strict rule rejecting this) — or the commit is
+  reachable and is the object the blob hangs on or of the tree it hangs on;
+  once, however often the blob repeats it (appending a blob to itself
+  doubles every line); and it names what it could not count. Blobs are judged after intact attestations so
+  they never pre-empt the sound commits behind them. Three reproductions
+  with git's real notes merge (a second review pass found the stale-SHA and
+  repeated-SHA cases in the first fix); the default `--require 1` and head
+  mode were never affected.
+- **Fixed** both modes losing a `cat_sort_uniq`-merged blob once an intact
+  attestation was appended to the same note — what recovery does when it
+  rebuilds a note that already holds a merged blob. The merge-aware reading
+  applied only when *no* block of the note was intact, so the blob's
+  fragments were judged as broken attestations and its reviewed commits
+  vanished: history mode fell from PASS 2 to FAIL 1 at `--require 2`
+  (external review of `e54887d`, reproduced with git's real merge and
+  `git notes append`). A note is now read as its intact blocks plus, when
+  the rest of the payload parses as a merged blob, that blob, in both head
+  and history mode.
+- **Fixed** the actions' pull-request lookup reporting a failed or partial
+  lookup — a 403 without `pull-requests: read`, a rate limit hit on a later
+  page — as "no merged pull request has this SHA", sending an adopter to
+  look for a missing pull request instead of at the token or the limit.
+  stderr is kept and surfaced as a workflow warning, the numbers a partial
+  lookup did return are still used (they only add candidates; the verdict
+  stays fail-closed), and the "nothing scanned" line says which of the two
+  happened. A pull-request head that cannot be fetched is a warning too,
+  never a silent skip.
+- **Fixed** the recover action finishing green after an incomplete run: a
+  head that could not be fetched was dropped silently and the rebuilt notes
+  pushed as if complete (external review, reproduced against the step). The
+  step now records every pull request it did not reach and a failed or
+  partial lookup; what was rebuilt is still pushed, then a final step fails
+  the run naming what was missed, and the next push retries everything.
+- **Fixed** both actions splicing the branch name into the API URL's query
+  string. `+`, `&` and `#` are legal in a ref name and were read as a space,
+  a parameter separator and a fragment, so pull requests into such a branch
+  were never found (external review). The parameters now go through
+  `gh api -f`/`-F`, which URL-encodes them, with `--method GET` stated
+  because gh switches to POST once a field is given. The eligibility tests
+  run the step with a branch named `release/1+hotfix#2&x`.
+- **Fixed** the pull-request lookup behind `scan-refs: auto` and the recover
+  action stopping at the 100 most recently *created* pull requests (`gh pr
+  list`, which has no sort option). A long-lived pull request merged after a
+  hundred newer ones had been opened was never found: the verifier failed a
+  legitimate squash or rebase merge until notes existed, and recovery — which
+  uses the same window on every run — never rebuilt its note. Both now read
+  every page of the closed pull requests into the branch, most recently
+  updated first (`GET /repos/{owner}/{repo}/pulls?state=closed&base=…&sort=updated`,
+  paginated), so a delayed or re-run workflow finds the pull request too.
+  The filters are unchanged (merged, merge commit is the target, head
+  repository is this repository). The tests now execute each action's
+  eligibility step in bash against a real `origin` and a stand-in `gh` that
+  serves fixture pages — the eligible pull request on page two, ineligible
+  ones (unmerged, fork, deleted fork) on later pages — instead of asserting
+  the step's text.
+- **Fixed** the scaffolded verify workflow carrying no `permissions:` block.
+  GitHub's restricted default token — the default for repositories and
+  organizations created since 2023, not only private ones — has no
+  `pull-requests` scope, so the lookup got a 403 that the action swallows
+  as "nothing scanned", and every squash or rebase merge failed until
+  recovery ran. `init.py` (`init-v9`) writes `contents: read` and
+  `pull-requests: read`; existing adopters add the block by hand (the README
+  and `verify/README.md` snippets show it). This repository's own workflow
+  carries it too.
+- **Confirmed** end to end: the first `notes-recovery` run after the
+  `verify-v1.5` merge fetched all 22 merged pull-request heads from Actions
+  with the default token while only `main` remained on origin, rebuilt the
+  new attestation's notes, and pushed them. The fetch assumption below is
+  closed; the third `Signoff-Risk` of the attestation on `480b410` is retired.
 
 - **Added** notes recovery for adopters: `init.py` scaffolds
   `.github/workflows/git-signoff-notes.yml`, which runs the new composite
@@ -25,10 +146,10 @@ dates on `origin`.
   `refs/pull/N/head` must stay fetchable after the pull request's branch is
   deleted. Confirmed on this repository on 2026-09-17: origin retains only
   `main` and the feature branch, yet advertises and serves the head ref of
-  all 22 merged pull requests over `git fetch`. `tag.yml` creates
-  `verify-v1.5` at merge, so the remaining end-to-end confirmation is the
-  first `notes-recovery` run after merge, whose log lists each eligible pull
-  request it fetched. If the fetch ever fails, the guard skips that ref and
+  all 22 merged pull requests over `git fetch`; the first `notes-recovery`
+  run after merge then fetched all 22 from Actions and pushed the rebuilt
+  notes (see the **Confirmed** entry above). If the fetch ever fails, the
+  guard skips that ref and
   the verifier scans nothing: squash merges without a pushed note fail
   loudly, never pass falsely.
 - **Changed** the verifier (`verify-v1.5`): an attestation *commit* found by

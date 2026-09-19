@@ -59,10 +59,10 @@ Inside your repository root, run the zero-touch initializer (Python 3.10+ stdlib
 
 ```bash
 # Standard software engineering profile:
-curl -fsSL https://raw.githubusercontent.com/jerrylin96/git-signoff/init-v8/init.py -o /tmp/signoff-init.py && python3 /tmp/signoff-init.py
+curl -fsSL https://raw.githubusercontent.com/jerrylin96/git-signoff/init-v9/init.py -o /tmp/signoff-init.py && python3 /tmp/signoff-init.py
 
 # Scientific & research computing profile (math, physics, bio, climate, ML):
-curl -fsSL https://raw.githubusercontent.com/jerrylin96/git-signoff/init-v8/init.py -o /tmp/signoff-init.py && python3 /tmp/signoff-init.py --profile domain-science
+curl -fsSL https://raw.githubusercontent.com/jerrylin96/git-signoff/init-v9/init.py -o /tmp/signoff-init.py && python3 /tmp/signoff-init.py --profile domain-science
 ```
 
 The script automatically:
@@ -162,7 +162,7 @@ account-scoped, nothing to pip-install.
 
 | Where you work | One-time action |
 |---|---|
-| **Any repository (Zero-touch)** | `curl -fsSL https://raw.githubusercontent.com/jerrylin96/git-signoff/init-v8/init.py -o /tmp/signoff-init.py && python3 /tmp/signoff-init.py` (use `--skill-target {auto,claude,agents,both}` to control destinations) |
+| **Any repository (Zero-touch)** | `curl -fsSL https://raw.githubusercontent.com/jerrylin96/git-signoff/init-v9/init.py -o /tmp/signoff-init.py && python3 /tmp/signoff-init.py` (use `--skill-target {auto,claude,agents,both}` to control destinations) |
 | **Any repository (manual)** | Copy this repo's `skills/git-signoff/` folder to `<your-repo>/.claude/skills/git-signoff/` (Claude Code) or `<your-repo>/.agents/skills/git-signoff/` (Antigravity, Codex, Cursor, etc.) and commit before running the initializer; an untracked skill destination now aborts as an unrelated working-tree change. Update by re-copying (or re-running the initializer) on new releases. |
 | **Other harnesses (Antigravity, Codex, Cursor, …)** | Same folder, cross-client convention: copy `skills/git-signoff/` into `.agents/skills/git-signoff` (or `.claude/skills/git-signoff`) and set the transcript adapter env vars — full matrix in [HARNESSES.md](skills/git-signoff/HARNESSES.md). |
 
@@ -267,6 +267,9 @@ on:
   pull_request:
   push:
     branches: [ main ]
+permissions:
+  contents: read
+  pull-requests: read   # scan-refs: auto asks which merged pull request produced the pushed merge
 jobs:
   verify-signoff:
     runs-on: ubuntu-latest
@@ -274,7 +277,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0   # full history — attestations live in it
-      - uses: jerrylin96/git-signoff/verify@verify-v1.5
+      - uses: jerrylin96/git-signoff/verify@verify-v1.6
 ```
 
 Supports standard merge strategies: **2-parent PR merges** (verifies clean merge tree & attested PR head in `head` mode), **fast-forward merges** (`head` mode), **squash merges** (`history` mode; in `head` mode when base is unchanged), and **rebase merges** (`history` mode; in `head` mode, re-run `/git-signoff` after rebase). Enforce strictly with preconfigured [`ruleset.json`](verify/ruleset.json). Full setup & badge markdown: [`verify/`](verify/README.md).

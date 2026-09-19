@@ -90,6 +90,10 @@ on:
   push:
     branches: [ {default_branch} ]
 
+permissions:
+  contents: read
+  pull-requests: read   # scan-refs: auto asks which merged pull request produced the pushed merge
+
 jobs:
   verify-signoff:
     runs-on: ubuntu-latest
@@ -97,7 +101,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0   # full history — attestations live in it
-      - uses: jerrylin96/git-signoff/verify@verify-v1.5
+      - uses: jerrylin96/git-signoff/verify@verify-v1.6
 """
 
 NOTES_WORKFLOW_TEMPLATE = """name: git-signoff notes
@@ -123,7 +127,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
-      - uses: jerrylin96/git-signoff/recover@verify-v1.5
+      - uses: jerrylin96/git-signoff/recover@verify-v1.6
         with:
           branch: {default_branch}
 """
@@ -406,7 +410,7 @@ SKILL_SOURCE_REPO = "https://github.com/jerrylin96/git-signoff"
 # script version instead of silently tracking the default branch. Pin tags
 # never move; bump this together with the install snippets (README,
 # verify/README.md, site/index.html) and tag.yml's PINS list.
-SKILL_SOURCE_REF = "init-v8"
+SKILL_SOURCE_REF = "init-v9"
 VENDOR_STAMP_FILENAME = "VENDORED-FROM"
 BENIGN_METADATA_FILES: set[str] = {".DS_Store", "Thumbs.db", "desktop.ini"}
 

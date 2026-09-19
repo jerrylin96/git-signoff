@@ -3,8 +3,11 @@
 **Status:** Implemented on branch `claude/joss-submission-prep-pmfto5`
 (2026-09-16), in the slices of §5, after external review found no remaining
 design blockers. The fetch assumption in §2.5 item 3 was confirmed on this
-repository on 2026-09-17 (see CHANGELOG); the first `notes-recovery` run
-after merge is its end-to-end confirmation. Revised five times after
+repository on 2026-09-17 and end to end by the first `notes-recovery` run
+after the merge (see CHANGELOG). Three fixes from a review of the merged
+range shipped as `verify-v1.6` and `init-v9` (§2.13 lookup window,
+history-mode deduplication, workflow token permissions). Revised five times
+after
 three review passes that reproduced failures against the code as it was;
 the fixes those passes prompted (§2.12, §2.13) shipped first, the feature
 slices after.
@@ -213,7 +216,8 @@ not be on. The contract instead removes the ordering dependency:
    one of the 22 merged pull requests is still advertised and fetchable.
    The Actions default token fetches pull refs by the same mechanism
    `actions/checkout` uses on every `pull_request` event; the first
-   `notes-recovery` run after merge confirms it end to end. A failed fetch
+   `notes-recovery` run after merge confirmed it end to end (22 heads
+   fetched, notes rebuilt and pushed). A failed fetch
    is skipped, so the verifier scans nothing and fails loudly rather than
    passing falsely.
 
@@ -358,13 +362,28 @@ author; this would additionally widen *who may supply evidence* for a
 branch they cannot push to. So:
 
 - Default eligibility is the pull request **associated with the merged
-  target**, discovered by the composite action from the API
-  (`GET /repos/{owner}/{repo}/commits/{sha}/pulls`), filtered to merged
-  PRs whose head repository is this repository. Exactly those
-  `refs/pull/N/head` are fetched and passed to `--scan-refs`. No API, no
-  eligible PR, or a fork head: nothing is scanned and verification behaves
-  as today. Eligibility is an API fact about the PR, never a ref-name
-  pattern.
+  target**, discovered by the composite action from the API: the closed
+  pull requests into the pushed branch, most recently updated first
+  (`GET /repos/{owner}/{repo}/pulls?state=closed&base=…&sort=updated`),
+  filtered to merged PRs whose merge commit is the target and whose head
+  repository is this repository. Exactly those `refs/pull/N/head` are
+  fetched and passed to `--scan-refs`. No API, no eligible PR, or a fork
+  head: nothing is scanned and verification behaves as today. Eligibility
+  is an API fact about the PR, never a ref-name pattern. Two endpoints were
+  rejected on the way: `commits/{sha}/pulls` returns only *open* pull
+  requests for a commit that is not on the default branch, so it finds
+  nothing for a `dev`-based repository; and `gh pr list`, which orders by
+  creation date with no sort option, so a long-lived pull request merged
+  after a hundred newer ones fell outside its window (`verify-v1.5`; fixed
+  in `verify-v1.6`). Both now walk every page, most recently updated
+  first: the pull request whose merge was just pushed is on the first page,
+  and a delayed or re-run workflow still reaches it further down. The
+  lookup needs
+  `pull-requests: read` on the workflow token, which GitHub's restricted
+  default token lacks; `init-v9` writes it into the scaffolded workflow. The
+  branch name travels as a `gh api -f` field, never spliced into the URL,
+  because `+`, `&` and `#` are legal in a ref name and are not in a query
+  string.
 - Recovery applies the same eligibility: it walks the integration branch,
   and PR head refs only for merged same-repository PRs.
 - Anything broader (all same-repository PRs, all PR refs, another
@@ -583,8 +602,8 @@ may consult, and the sentence on what a cross-history match establishes.
 - `init.py`: report an installed ruleset whose branch disagrees with the
   configured one, with the manual step.
 - Fetch assumption: `refs/pull/N/head` fetchable after branch deletion,
-  confirmed on this repository (§2.5 item 3); end-to-end confirmation is
-  the first `notes-recovery` run after merge.
+  confirmed on this repository (§2.5 item 3) and end to end by the first
+  `notes-recovery` run after merge. Closed.
 - Tests: the §2.13 regression matrix for the lookup (the recovery half
   exists); target mode end to end against scratch repos (reviewer on `dev`,
   target pushed by another clone); race (author pushes mid-interview);

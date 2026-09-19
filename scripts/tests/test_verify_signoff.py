@@ -144,6 +144,167 @@ def test_history_mode_dedupes_note_and_commit_payloads(repo):
     assert "1 valid attestation(s)" in lines[0]
 
 
+def test_history_mode_invalid_copy_does_not_shadow_the_valid_original(repo):
+    """verify-v1.6: dedup by reviewed commit lets only a *valid* payload claim
+    the key. A cherry-picked copy of an attestation commit (parent is main's
+    tip, not the commit it names) is listed first by `git log`; before, it
+    claimed the key and the sound original reachable through the merge was
+    skipped unjudged, so the badge reported zero attestations."""
+    git(repo, "checkout", "-q", "-b", "feature")
+    commit_file(repo, "b.txt", "feature work", "add b.txt")
+    reviewed, _ = attest_head(repo)
+    attestation = git(repo, "rev-parse", "HEAD").stdout.strip()
+    git(repo, "checkout", "-q", "main")
+    commit_file(repo, "c.txt", "main work", "advance main")
+    git(repo, "cherry-pick", "--allow-empty", attestation)  # invalid copy: parent is c.txt's commit
+    git(repo, "merge", "-q", "--no-ff", "-m", "merge feature", "feature")  # original stays reachable
+    ok, lines = verify_signoff.check_history(str(repo), "HEAD", require=1)
+    text = "\n".join(lines)
+    assert ok, text
+    assert "1 valid attestation(s)" in lines[0]
+    assert f"reviewed={reviewed[:7]}" in text
+    # the invalid copy is still reported — once — not hidden by the valid one
+    assert text.count("not the declared reviewed commit") == 1
+
+
+def test_history_mode_invalid_copy_does_not_shadow_the_note_on_the_reachable_commit(repo):
+    """The note variant of the shadowing fix: a note published for F, and an
+    attestation commit naming F whose parent is main's tip (invalid), listed
+    first; F itself reachable through the merge. The invalid commit is
+    reported; the note is judged on its own and counts."""
+    git(repo, "checkout", "-q", "-b", "feature")
+    commit_file(repo, "b.txt", "feature work", "add b.txt")
+    reviewed = git(repo, "rev-parse", "HEAD").stdout.strip()
+    tree = git(repo, "rev-parse", "HEAD^{tree}").stdout.strip()
+    git(repo, "notes", "--ref=refs/notes/signoff", "add", "-m", attestation_message(reviewed, tree), reviewed)
+    git(repo, "checkout", "-q", "main")
+    commit_file(repo, "c.txt", "main work", "advance main")
+    git(repo, "commit", "-q", "--allow-empty", "-m", attestation_message(reviewed, tree))  # parent is not F
+    git(repo, "merge", "-q", "--no-ff", "-m", "merge feature", "feature")  # F reachable
+    ok, lines = verify_signoff.check_history(str(repo), "HEAD", require=1)
+    text = "\n".join(lines)
+    assert ok, text
+    assert "1 valid attestation(s)" in lines[0]
+    assert "not the declared reviewed commit" in text
+    assert f"valid (note on {reviewed[:7]})" in text
+
+
+def test_history_mode_rebased_branch_carries_neither_the_commit_nor_its_note(repo):
+    """After a rebase onto an advanced base, neither F nor its tree is in the
+    branch's history. The rebased attestation commit is invalid (parent
+    rewritten) and the note published for F hangs on an object outside this
+    history: both are reported, neither counts. The code state changed; the
+    interview has to be re-run (verify/README.md, rebase merge)."""
+    git(repo, "checkout", "-q", "-b", "feature")
+    commit_file(repo, "b.txt", "feature work", "add b.txt")
+    reviewed, tree = attest_head(repo)
+    git(repo, "notes", "--ref=refs/notes/signoff", "add", "-m", attestation_message(reviewed, tree), reviewed)
+    git(repo, "notes", "--ref=refs/notes/signoff", "add", "-m", attestation_message(reviewed, tree), tree)
+    git(repo, "checkout", "-q", "main")
+    commit_file(repo, "c.txt", "main work", "advance main")
+    git(repo, "checkout", "-q", "feature")
+    git(repo, "rebase", "-q", "main")
+    ok, lines = verify_signoff.check_history(str(repo), "HEAD", require=1)
+    text = "\n".join(lines)
+    assert not ok, text
+    assert "0 valid attestation(s)" in lines[0]
+    assert "not the declared reviewed commit" in text
+    assert f"skipped (note on {reviewed[:7]}): object not in HEAD history" in text
+    assert f"skipped (note on {tree[:7]}): object not in HEAD history" in text
+    assert not [line for line in lines if line.startswith("  valid (")]
+
+
+def test_history_mode_rejects_a_note_git_copied_onto_the_rebased_commit(repo):
+    """Regression (external review of 2ee9b73): with `notes.rewriteRef` set, git
+    copies a commit's note onto its rewrite during a rebase. The copied note
+    hangs on a commit that *is* in main's history after the fast-forward, but
+    its trailers still name the pre-rebase commit and tree, neither of which
+    main carries. Reachability of the attachment is not evidence; the note has
+    to describe the object it hangs on, as in head mode."""
+    git(repo, "config", "notes.rewriteRef", "refs/notes/signoff")
+    git(repo, "checkout", "-q", "-b", "feature")
+    commit_file(repo, "b.txt", "feature work", "add b.txt")
+    reviewed, tree = attest_head(repo)
+    git(repo, "notes", "--ref=refs/notes/signoff", "add", "-m", attestation_message(reviewed, tree), reviewed)
+    git(repo, "notes", "--ref=refs/notes/signoff", "add", "-m", attestation_message(reviewed, tree), tree)
+    git(repo, "checkout", "-q", "main")
+    commit_file(repo, "c.txt", "main work", "advance main")
+    git(repo, "checkout", "-q", "feature")
+    git(repo, "rebase", "-q", "main")
+    rewritten = git(repo, "rev-parse", "HEAD~1").stdout.strip()  # the rebased feature commit, below the rebased attestation
+    assert rewritten != reviewed
+    assert git(repo, "notes", "--ref=refs/notes/signoff", "show", rewritten).stdout, "git copied the note onto the rewrite"
+    git(repo, "checkout", "-q", "main")
+    git(repo, "merge", "-q", "--ff-only", "feature")
+    ok, lines = verify_signoff.check_history(str(repo), "main", require=1)
+    text = "\n".join(lines)
+    assert not ok, text
+    assert "0 valid attestation(s)" in lines[0]
+    assert f"invalid (note on {rewritten[:7]}): attests commit {reviewed[:7]} / tree {tree[:7]}, not the object it is attached to ({rewritten[:7]})" in text
+    assert f"skipped (note on {reviewed[:7]})" in text and f"skipped (note on {tree[:7]})" in text
+    assert not [line for line in lines if line.startswith("  valid (")]
+    # head mode agrees, for its own reason: the rebased attestation commit does not attest its parent
+    ok, lines = verify_signoff.check_head(str(repo), "main")
+    assert not ok
+
+
+def test_history_mode_ignores_notes_published_for_an_abandoned_branch(repo):
+    """Regression (found in the signoff interview of verify-v1.6): a feature
+    branch is attested, its notes are published (they survive the branch's
+    deletion — that is what notes are for), and the branch is abandoned. main
+    has never carried an attestation; its badge must not go green on those
+    notes. Before, check_history counted every note in the notes ref."""
+    git(repo, "checkout", "-q", "-b", "feature")
+    commit_file(repo, "b.txt", "feature work", "add b.txt")
+    reviewed, tree = attest_head(repo)
+    git(repo, "notes", "--ref=refs/notes/signoff", "add", "-m", attestation_message(reviewed, tree), reviewed)
+    git(repo, "notes", "--ref=refs/notes/signoff", "add", "-m", attestation_message(reviewed, tree), tree)
+    git(repo, "checkout", "-q", "main")
+    git(repo, "branch", "-D", "feature")
+    assert git(repo, "notes", "--ref=refs/notes/signoff", "show", reviewed).stdout  # the notes survived
+    ok, lines = verify_signoff.check_history(str(repo), "main", require=1)
+    text = "\n".join(lines)
+    assert not ok, text
+    assert "0 valid attestation(s)" in lines[0]
+    assert f"skipped (note on {reviewed[:7]}): object not in main history" in text
+    assert f"skipped (note on {tree[:7]}): object not in main history" in text
+    assert not [line for line in lines if line.startswith("  valid (")]
+
+
+def test_history_mode_keeps_squash_and_rebase_merge_evidence(repo):
+    """The legitimate cases the reachability rule must not break: a squash
+    merge and a rebase merge onto an unchanged base drop the attestation
+    commit and the reviewed commit, but the merged tip has the attested tree,
+    and the note on that tree hangs on an object in main's history."""
+    git(repo, "checkout", "-q", "-b", "feature")
+    commit_file(repo, "b.txt", "feature work", "add b.txt")
+    reviewed, tree = attest_head(repo)
+    git(repo, "notes", "--ref=refs/notes/signoff", "add", "-m", attestation_message(reviewed, tree), reviewed)
+    git(repo, "notes", "--ref=refs/notes/signoff", "add", "-m", attestation_message(reviewed, tree), tree)
+    main_tip = git(repo, "rev-parse", "main").stdout.strip()
+
+    git(repo, "checkout", "-q", "main")
+    git(repo, "merge", "-q", "--squash", "feature")
+    git(repo, "commit", "-q", "-m", "squash: feature")
+    assert git(repo, "rev-parse", "HEAD^{tree}").stdout.strip() == tree
+    ok, lines = verify_signoff.check_history(str(repo), "main", require=1)
+    text = "\n".join(lines)
+    assert ok, text
+    assert f"valid (note on {tree[:7]})" in text
+    assert f"skipped (note on {reviewed[:7]})" in text  # the reviewed commit itself is not in main
+
+    # rebase merge: GitHub rewrites the commit even onto an unchanged base
+    # (a plain cherry-pick here would reproduce the identical object)
+    rebased = git(repo, "commit-tree", tree, "-p", main_tip, "-m", "add b.txt (rebased by the merge)").stdout.strip()
+    git(repo, "update-ref", "refs/heads/main", rebased)
+    git(repo, "reset", "-q", "--hard", "main")
+    assert git(repo, "rev-parse", "HEAD^{tree}").stdout.strip() == tree
+    assert rebased != reviewed
+    ok, lines = verify_signoff.check_history(str(repo), "main", require=1)
+    assert ok, lines
+    assert f"valid (note on {tree[:7]})" in "\n".join(lines)
+
+
 REPO_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
 
 
@@ -423,10 +584,18 @@ def test_head_mode_fails_on_squash_merge_onto_advanced_base_without_resignoff(re
     assert not ok
     assert "no valid attestation covers commit" in lines[0]
 
-    # In history mode: note on reviewed commit remains valid in history
+    # In history mode (verify-v1.6): the reviewed commit and its tree are not in
+    # main's history — the squashed tree is base + PR, a code state nobody
+    # reviewed — so the notes published for them hang on objects outside it and
+    # are skipped, not counted. Before v1.6 history mode counted every note in
+    # the notes ref, so this squash turned the badge green over an unreviewed
+    # code state.
     ok_hist, lines_hist = verify_signoff.check_history(str(repo), "HEAD", require=1)
-    assert ok_hist, lines_hist
-    assert "1 valid attestation(s)" in lines_hist[0]
+    assert not ok_hist, lines_hist
+    assert "0 valid attestation(s)" in lines_hist[0]
+    text = "\n".join(lines_hist)
+    assert f"skipped (note on {reviewed[:7]}): object not in HEAD history" in text
+    assert f"skipped (note on {tree[:7]}): object not in HEAD history" in text
 
 
 # --- Audit Mode Tests ---
@@ -797,11 +966,25 @@ def test_check_history_multi_block_notes(repo):
     block2 = attestation_message(sha2, tree2)
     combined = f"{block1}\n\n{block2}"
 
-    # Attach concatenated note blocks to sha2
+    # Attach concatenated note blocks to sha2 (what `git notes append` produces).
+    # Blocks are judged one by one; each counts only if it describes the object
+    # the note hangs on (verify-v1.6, as head mode always did): block2 attests
+    # sha2 and counts; block1 attests sha1 from a note on sha2 and does not,
+    # although sha1 is in this history — a note on X is evidence about X only.
     git(repo, "notes", "--ref=refs/notes/signoff", "add", "-m", combined, sha2)
 
     ok, lines = verify_signoff.check_history(str(repo), "HEAD", require=2)
-    assert ok is True
+    text = "\n".join(lines)
+    assert not ok, text
+    assert "FAIL: 1 valid attestation(s) in HEAD history (required 2)" in lines[0]
+    assert f"valid (note on {sha2[:7]}): reviewed={sha2[:7]}" in text
+    assert f"invalid (note on {sha2[:7]}): attests commit {sha1[:7]} / tree {tree1[:7]}, not the object it is attached to ({sha2[:7]})" in text
+
+    # the same two blocks each on their own object: two attestations
+    git(repo, "notes", "--ref=refs/notes/signoff", "add", "-f", "-m", block2, sha2)
+    git(repo, "notes", "--ref=refs/notes/signoff", "add", "-m", block1, sha1)
+    ok, lines = verify_signoff.check_history(str(repo), "HEAD", require=2)
+    assert ok, lines
     assert "PASS: 2 valid attestation(s) in HEAD history" in lines[0]
 
 
@@ -1124,6 +1307,243 @@ def test_history_mode_counts_cat_sort_uniq_merged_note_once(repo):
     assert "1 valid attestation(s)" in lines[0]
 
 
+def _merge_tree_notes_cat_sort_uniq(repo, tree, *payloads):
+    """Attach each payload to `tree` in its own notes ref and merge them into
+    refs/notes/signoff with git's real cat_sort_uniq strategy (gsa-core §2.5)."""
+    for i, payload in enumerate(payloads):
+        git(repo, "notes", f"--ref=refs/notes/side{i}", "add", "-m", payload, tree)
+    git(repo, "update-ref", "refs/notes/signoff", "refs/notes/side0")
+    for i in range(1, len(payloads)):
+        git(repo, "notes", "--ref=refs/notes/signoff", "merge", "-s", "cat_sort_uniq", f"refs/notes/side{i}")
+    merged = git(repo, "notes", "--ref=refs/notes/signoff", "show", tree).stdout
+    distinct = {line for p in payloads for line in p.splitlines() if line.startswith("Signoff-Reviewed-Commit-SHA:")}
+    assert merged.count("Signoff-Reviewed-Commit-SHA") == len(distinct), merged
+    return merged
+
+
+def test_history_mode_merged_note_adds_nothing_over_the_attestations_it_was_merged_from(repo):
+    """Regression (external review of 8252d0a): two attested commits share a
+    tree; their tree notes are merged with git's cat_sort_uniq. The blob names
+    both reviewed commits, and keyed by its whole SHA tuple it counted as a
+    third attestation, so `--require 3` passed on two. The unit of counting is
+    the reviewed commit: the blob adds nothing here."""
+    a, tree = attest_head(repo)
+    git(repo, "commit", "-q", "--allow-empty", "-m", "same tree, second commit")
+    b = git(repo, "rev-parse", "HEAD").stdout.strip()
+    assert git(repo, "rev-parse", "HEAD^{tree}").stdout.strip() == tree
+    attest_head(repo)
+    _merge_tree_notes_cat_sort_uniq(
+        repo, tree,
+        attestation_message(a, tree) + "Signoff-Timestamp: 2026-09-01T00:00:00Z\n",
+        attestation_message(b, tree) + "Signoff-Timestamp: 2026-09-02T00:00:00Z\n",
+    )
+    ok, lines = verify_signoff.check_history(str(repo), "main", require=2)
+    text = "\n".join(lines)
+    assert ok, text
+    assert "PASS: 2 valid attestation(s)" in lines[0]
+    assert "cat_sort_uniq-merged" not in text  # nothing left for the blob to add, so it is not listed
+    ok, lines = verify_signoff.check_history(str(repo), "main", require=3)
+    assert not ok and "2 valid attestation(s)" in lines[0], lines
+
+
+def test_history_mode_merged_note_as_the_only_evidence_counts_each_reviewed_commit_once(repo):
+    """The blob's other side: both attestation commits are gone (squashed
+    away), the merged tree note is all that survives, and it names two
+    reviewed commits that are in main's history — two attestations, once each,
+    however many blobs repeat them."""
+    a = git(repo, "rev-parse", "HEAD").stdout.strip()
+    tree = git(repo, "rev-parse", "HEAD^{tree}").stdout.strip()
+    git(repo, "commit", "-q", "--allow-empty", "-m", "same tree, second commit")
+    b = git(repo, "rev-parse", "HEAD").stdout.strip()
+    _merge_tree_notes_cat_sort_uniq(
+        repo, tree,
+        attestation_message(a, tree) + "Signoff-Timestamp: 2026-09-01T00:00:00Z\n",
+        attestation_message(b, tree) + "Signoff-Timestamp: 2026-09-02T00:00:00Z\n",
+    )
+    ok, lines = verify_signoff.check_history(str(repo), "main", require=2)
+    text = "\n".join(lines)
+    assert ok, text
+    assert "PASS: 2 valid attestation(s)" in lines[0]
+    assert "(cat_sort_uniq-merged)" in text and "(2 reviewed commit(s) counted)" in text
+    # the same blob on the commit too: the reviewed commits are already counted
+    git(repo, "notes", "--ref=refs/notes/signoff", "add", "-m", git(repo, "notes", "--ref=refs/notes/signoff", "show", tree).stdout, b)
+    ok, lines = verify_signoff.check_history(str(repo), "main", require=3)
+    assert not ok and "2 valid attestation(s)" in lines[0], lines
+
+
+def test_history_mode_merged_note_does_not_revive_a_stale_attestation_merged_into_it(repo):
+    """Regression (external review of d263bc6): with `notes.rewriteRef`, a rebase
+    copies F's note onto its rewrite F'. F' is then attested for real and the
+    two notes on F' are merged with cat_sort_uniq. The blob anchors F' (one of
+    its claims is F' itself), and counting every SHA inside it revived F, which
+    main does not carry. A blob counts only the reviewed commits this history
+    supports on its own: reachable, and the object the blob hangs on or of the
+    tree it hangs on."""
+    git(repo, "config", "notes.rewriteRef", "refs/notes/signoff")
+    git(repo, "checkout", "-q", "-b", "feature")
+    commit_file(repo, "b.txt", "feature work", "add b.txt")
+    stale, stale_tree = attest_head(repo)
+    git(repo, "notes", "--ref=refs/notes/signoff", "add", "-m", attestation_message(stale, stale_tree), stale)
+    git(repo, "checkout", "-q", "main")
+    commit_file(repo, "c.txt", "main work", "advance main")
+    git(repo, "checkout", "-q", "feature")
+    git(repo, "rebase", "-q", "main")
+    git(repo, "reset", "-q", "--hard", "HEAD~1")  # drop the rebased (invalid) attestation commit; keep F'
+    rewritten = git(repo, "rev-parse", "HEAD").stdout.strip()
+    assert git(repo, "notes", "--ref=refs/notes/signoff", "show", rewritten).stdout  # the copied stale note
+    reviewed, tree = attest_head(repo)  # a real attestation of F'
+    assert reviewed == rewritten
+    git(repo, "notes", "--ref=refs/notes/live", "add", "-m", attestation_message(reviewed, tree) + "Signoff-Timestamp: 2026-09-02T00:00:00Z\n", reviewed)
+    git(repo, "checkout", "-q", "main")
+    git(repo, "merge", "-q", "--ff-only", "feature")
+
+    ok, lines = verify_signoff.check_history(str(repo), "main", require=1)
+    assert ok and "1 valid attestation(s)" in lines[0], lines  # before the merge: the stale note is invalid on F'
+
+    git(repo, "notes", "--ref=refs/notes/signoff", "merge", "-s", "cat_sort_uniq", "refs/notes/live")
+    blob = git(repo, "notes", "--ref=refs/notes/signoff", "show", rewritten).stdout
+    assert blob.count("Signoff-Reviewed-Commit-SHA") == 2
+    ok, lines = verify_signoff.check_history(str(repo), "main", require=2)
+    text = "\n".join(lines)
+    assert not ok, text
+    assert "1 valid attestation(s)" in lines[0]
+    assert f"not counted (note on {rewritten[:7]} (cat_sort_uniq-merged)): reviewed commit(s) {stale[:7]} are not in main history" in text
+
+
+def test_history_mode_counts_a_reviewed_commit_repeated_inside_one_merged_note_once(repo):
+    """Regression (external review of d263bc6): appending a merged note to
+    itself repeats every line, so the blob names the same reviewed commit
+    twice. Distinct commits are counted, not lines."""
+    a = git(repo, "rev-parse", "HEAD").stdout.strip()
+    tree = git(repo, "rev-parse", "HEAD^{tree}").stdout.strip()
+    git(repo, "commit", "-q", "--allow-empty", "-m", "same tree, second commit")
+    b = git(repo, "rev-parse", "HEAD").stdout.strip()
+    blob = _merge_tree_notes_cat_sort_uniq(
+        repo, tree,
+        attestation_message(a, tree) + "Signoff-Timestamp: 2026-09-01T00:00:00Z\n",
+        attestation_message(b, tree) + "Signoff-Timestamp: 2026-09-02T00:00:00Z\n",
+    )
+    git(repo, "notes", "--ref=refs/notes/signoff", "append", "-m", blob, tree)
+    doubled = git(repo, "notes", "--ref=refs/notes/signoff", "show", tree).stdout
+    assert doubled.count("Signoff-Reviewed-Commit-SHA") == 4
+    ok, lines = verify_signoff.check_history(str(repo), "main", require=2)
+    assert ok and "2 valid attestation(s)" in lines[0], lines
+    ok, lines = verify_signoff.check_history(str(repo), "main", require=3)
+    assert not ok and "2 valid attestation(s)" in lines[0], lines
+
+
+def test_history_mode_merged_tree_note_still_covers_a_squash_merge(repo):
+    """Regression (external review of c365566): a feature attested twice (the
+    two tree notes merged with cat_sort_uniq), then squash-merged onto an
+    unchanged base. The blob names one reviewed commit and one tree, and hangs
+    on that tree, which the squash tip has. Nothing was lost in the merge —
+    every attestation merged in declared that tree — so it is squash evidence
+    exactly as an intact tree note is. The strict per-commit rule of c365566
+    demanded the squashed-away commit be reachable and rejected it."""
+    git(repo, "checkout", "-q", "-b", "feature")
+    commit_file(repo, "b.txt", "feature work", "add b.txt")
+    reviewed = git(repo, "rev-parse", "HEAD").stdout.strip()
+    tree = git(repo, "rev-parse", "HEAD^{tree}").stdout.strip()
+    blob = _merge_tree_notes_cat_sort_uniq(
+        repo, tree,
+        attestation_message(reviewed, tree) + "Signoff-Timestamp: 2026-09-01T00:00:00Z\n",
+        attestation_message(reviewed, tree) + "Signoff-Timestamp: 2026-09-02T00:00:00Z\n",
+    )
+    assert blob.count("Signoff-Reviewed-Commit-SHA") == 1 and blob.count("Signoff-Reviewed-Tree-SHA") == 1
+    git(repo, "checkout", "-q", "main")
+    git(repo, "merge", "-q", "--squash", "feature")
+    git(repo, "commit", "-q", "-m", "squash: feature")
+    assert git(repo, "rev-parse", "HEAD^{tree}").stdout.strip() == tree
+    ok, lines = verify_signoff.check_history(str(repo), "main", require=1)
+    text = "\n".join(lines)
+    assert ok, text
+    assert "PASS: 1 valid attestation(s)" in lines[0]
+    assert f"valid (note on {tree[:7]} (cat_sort_uniq-merged)): reviewed={reviewed[:7]}" in text
+    assert "not counted" not in text
+    ok, _ = verify_signoff.check_head(str(repo), "main")
+    assert ok  # head mode agreed all along
+
+
+def test_history_mode_keeps_a_merged_blob_after_an_intact_attestation_is_appended(repo):
+    """Regression (external review of e54887d): recovery appends a fresh
+    attestation to an existing cat_sort_uniq-merged tree note. The parser
+    applied its merge-aware reading only when *no* block was intact, so once
+    the appended block validated, the blob's fragments were judged as broken
+    attestations and its two reviewed commits vanished: PASS 2 became FAIL 1
+    at `--require 2`. The blob is now recognised beside intact blocks."""
+    a = git(repo, "rev-parse", "HEAD").stdout.strip()
+    tree = git(repo, "rev-parse", "HEAD^{tree}").stdout.strip()
+    git(repo, "commit", "-q", "--allow-empty", "-m", "same tree, second commit")
+    b = git(repo, "rev-parse", "HEAD").stdout.strip()
+    _merge_tree_notes_cat_sort_uniq(
+        repo, tree,
+        attestation_message(a, tree) + "Signoff-Timestamp: 2026-09-01T00:00:00Z\n",
+        attestation_message(b, tree) + "Signoff-Timestamp: 2026-09-02T00:00:00Z\n",
+    )
+    ok, lines = verify_signoff.check_history(str(repo), "main", require=2)
+    assert ok and "2 valid attestation(s)" in lines[0], lines
+    git(repo, "commit", "-q", "--allow-empty", "-m", "same tree, third commit")
+    c = git(repo, "rev-parse", "HEAD").stdout.strip()
+    git(repo, "notes", "--ref=refs/notes/signoff", "append", "-m", attestation_message(c, tree) + "Signoff-Timestamp: 2026-09-03T00:00:00Z\n", tree)
+    ok, lines = verify_signoff.check_history(str(repo), "main", require=3)
+    text = "\n".join(lines)
+    assert ok, text
+    assert "PASS: 3 valid attestation(s)" in lines[0]
+    assert f"valid (note on {tree[:7]}): reviewed={c[:7]}" in text  # the intact block, judged first
+    assert f"valid (note on {tree[:7]} (cat_sort_uniq-merged)): reviewed=" in text and "(2 reviewed commit(s) counted)" in text
+    assert "invalid" not in text, text
+
+
+def test_head_mode_reads_a_merged_blob_beside_an_intact_block_that_does_not_anchor(repo, tmp_path):
+    """Head mode, same shape: the intact block appended to the tree note attests
+    another commit with another tree and does not anchor the squash tip; the
+    blob beside it does. Before, an intact block present meant the blob was
+    never consulted."""
+    reviewed = git(repo, "rev-parse", "HEAD").stdout.strip()
+    tree = git(repo, "rev-parse", "HEAD^{tree}").stdout.strip()
+    squashed = init_repo(tmp_path / "squashed")
+    commit_file(squashed, "a.txt", "hello", "squash-merged")
+    assert git(squashed, "rev-parse", "HEAD^{tree}").stdout.strip() == tree
+    _merge_tree_notes_cat_sort_uniq(
+        squashed, tree,
+        attestation_message(reviewed, tree) + "Signoff-Timestamp: 2026-09-01T00:00:00Z\n",
+        attestation_message(reviewed, tree) + "Signoff-Timestamp: 2026-09-02T00:00:00Z\n",
+    )
+    git(squashed, "notes", "--ref=refs/notes/signoff", "append", "-m", attestation_message("9" * 40, "8" * 40), tree)
+    ok, lines = verify_signoff.check_head(str(squashed), "HEAD")
+    assert ok, lines
+    assert "cat_sort_uniq-merged" in lines[0] or "cat_sort_uniq-merged" in "\n".join(lines)
+
+
+def test_history_mode_names_a_ref_it_cannot_enumerate_instead_of_skipping_every_note(repo):
+    """A missing ref used to yield FAIL 0 plus a 'not in history' line for every
+    note — a confident wrong reason. The git error is the reason now, and
+    nothing is judged."""
+    reviewed, tree = attest_head(repo)
+    git(repo, "notes", "--ref=refs/notes/signoff", "add", "-m", attestation_message(reviewed, tree), reviewed)
+    ok, lines = verify_signoff.check_history(str(repo), "refs/heads/no-such-branch", require=1)
+    assert not ok
+    assert lines[0].startswith("FAIL: cannot enumerate refs/heads/no-such-branch: ")
+    assert "nothing was judged" in lines[1]
+    assert not [line for line in lines if "skipped" in line or "valid" in line]
+
+
+def test_history_mode_warns_on_a_shallow_checkout(repo, tmp_path):
+    """A shallow clone enumerates only what it has; the verifier says so rather
+    than reporting the invisible history's notes as outside it."""
+    commit_file(repo, "b.txt", "x", "second")
+    reviewed, tree = attest_head(repo)
+    git(repo, "notes", "--ref=refs/notes/signoff", "add", "-m", attestation_message(reviewed, tree), reviewed)
+    shallow = tmp_path / "shallow"
+    subprocess.run(["git", "clone", "-q", "--depth", "2", f"file://{repo}", str(shallow)], check=True)  # the attestation and the commit it attests; nothing older
+    assert git(shallow, "rev-parse", "--is-shallow-repository").stdout.strip() == "true"
+    ok, lines = verify_signoff.check_history(str(shallow), "HEAD", require=1)
+    assert ok, lines  # the attestation tip itself is within the shallow history
+    assert lines[1].startswith("  warning: shallow checkout"), lines
+    ok, lines = verify_signoff.check_history(str(repo), "HEAD", require=1)
+    assert not [line for line in lines if "shallow" in line]  # the full clone gets no warning
+
+
 def test_verifier_exits_loudly_below_python_floor(tmp_path):
     """The verifier runs under whatever python3 a runner or laptop has; below the
     documented floor it must say so instead of dying on a syntax or type error."""
@@ -1181,7 +1601,7 @@ def test_pin_version_parsing():
 
 
 def test_stale_pin_warning_when_upstream_has_newer_tag(repo, tmp_path, monkeypatch, capsys):
-    remote = _fake_pin_remote(tmp_path, ["verify-v1", "verify-v1.5", "verify-v1.6", "init-v9"])
+    remote = _fake_pin_remote(tmp_path, ["verify-v1", "verify-v1.6", "verify-v1.7", "init-v10"])
     monkeypatch.delenv("GIT_SIGNOFF_NO_UPDATE_CHECK", raising=False)
     monkeypatch.setenv("GIT_SIGNOFF_PIN_REMOTE", remote)
     attest_head(repo)
@@ -1189,7 +1609,7 @@ def test_stale_pin_warning_when_upstream_has_newer_tag(repo, tmp_path, monkeypat
     captured = capsys.readouterr()
     assert rc == 0, captured.out  # the warning never changes the verdict
     # stderr carries the warning so stdout stays the verdict for pipelines
-    assert f"warning: verifier pin {verify_signoff.VERIFIER_PIN} is behind verify-v1.6" in captured.err
+    assert f"warning: verifier pin {verify_signoff.VERIFIER_PIN} is behind verify-v1.7" in captured.err
     assert "see verify/README.md" in captured.err
     assert "warning: verifier pin" not in captured.out
     assert captured.out.startswith("PASS")

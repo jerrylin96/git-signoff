@@ -83,6 +83,20 @@ dogfoods via symlinks at both `.claude/skills/git-signoff` and
 `.agents/skills/git-signoff` to its own `skills/git-signoff/`; that symlink pattern is
 for this repo only.
 
+**Migration note (2026-09, `init-v9`):** re-running the initializer rewrites
+`.github/workflows/git-signoff.yml` with a `permissions:` block (`contents:
+read`, `pull-requests: read`) and pins `verify@verify-v1.6` and
+`recover@verify-v1.6`. GitHub's restricted default token has no
+`pull-requests` scope, and without it the verifier's `scan-refs: auto` lookup
+scanned nothing. `verify-v1.6` also fixes history mode's deduplication (an
+invalid rebased copy no longer hides valid evidence for the same commit) and
+the 100-pull-request lookup window, and history mode no longer counts notes
+on objects outside the ref's history, or notes that do not name the object
+they hang on (an abandoned branch's published notes, or a note git copied onto
+a rebased commit, made a badge green); branch names with `+`, `&` or `#` now
+reach the pull-request lookup intact. Existing attestations verify as before; a history badge
+that was green only on such notes turns red.
+
 **Migration note (2026-09, `init-v8`):** re-running the initializer adds
 `.git-signoff/config.json` (the integration branch, confirmed once), renders
 the ruleset for that branch, and scaffolds the notes-recovery workflow; the

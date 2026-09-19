@@ -19,7 +19,7 @@ end-to-end example is [`walkthrough.md`](walkthrough.md).
 ## `init.py` — repository initializer
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/jerrylin96/git-signoff/init-v8/init.py -o /tmp/signoff-init.py
+curl -fsSL https://raw.githubusercontent.com/jerrylin96/git-signoff/init-v9/init.py -o /tmp/signoff-init.py
 python3 /tmp/signoff-init.py [options]
 ```
 
@@ -245,7 +245,7 @@ Tests: `scripts/tests/test_attest.py`, `test_attest_adapters.py`,
 ## `verify_signoff.py` — verifier
 
 Same file at `skills/git-signoff/verify_signoff.py` (vendored) and behind the
-composite action `jerrylin96/git-signoff/verify@verify-v1.5`.
+composite action `jerrylin96/git-signoff/verify@verify-v1.6`.
 
 ```
 verify_signoff.py [--repo PATH] [--mode {head,history}] [--target REV] [--require N] [--scan-refs REF ...]
@@ -257,17 +257,17 @@ verify_signoff.py --version
 |---|---|
 | `--repo PATH` | Repository to verify (default `.`). |
 | `--mode head` | PR gate (default): `--target` (default `HEAD`) must be a valid **empty** attestation commit attesting its parent's commit and tree; or be covered by a note on its commit or tree, a *sound* `[SIGNOFF *]` commit in its history or under `--scan-refs` (one parent, empty, parent is the declared reviewed commit; the declared tree anchors only when it is the parent's tree), or (for a 2-parent merge) a clean `merge-tree` whose PR head is attested. |
-| `--mode history` | Badge check: `--target` (a ref) must reach at least `--require` (default 1) valid attestations — notes, and attestation commits that corroborate their trailers (a rebased attestation commit does not) — deduplicated by reviewed commit. |
+| `--mode history` | Badge check: `--target` (a ref) must reach at least `--require` (default 1) valid attestations — attestation commits reachable from the ref that corroborate their trailers (a rebased attestation commit does not), and notes on objects in that history (a reachable commit or the tree of one) whose trailers name that object as the reviewed commit or tree; a note on anything else is reported as skipped, a note that names another object (e.g. copied by `notes.rewriteRef` onto a rebased commit) as invalid — counted once per reviewed commit, a merged note included. |
 | `--scan-refs REF ...` | Head mode: also consider sound attestation commits reachable from these refs (patterns expand via `for-each-ref`); a tree match proves the same code state was attested, not that this PR, base, or interview was reviewed. The composite action passes the merged same-repository pull request's head for the target; the verifier trusts no ref it was not given. |
 | `--audit [COMMIT]` | Re-hash the local transcript for the attestation covering `COMMIT` (default `HEAD`) against `Signoff-Transcript-Digest` over the first `Signoff-Transcript-Bytes` bytes. The transcript is resolved from the harness id and conversation id, or from `GIT_SIGNOFF_TRANSCRIPT_FILE`. |
 | `--export PATH` | With `--audit`: write the audited byte snapshot to `PATH`. |
-| `--version` | Prints the pin (`verify-v1.5`). |
+| `--version` | Prints the pin (`verify-v1.6`). |
 
 Before checking, the verifier fetches `origin`'s notes into its own mirror
 ref `refs/notes/signoff-verify` and never writes `refs/notes/signoff`, so an
 unpushed local attestation survives verification. Then it lists this
 repository's `verify-v*` tags and prints
-`warning: verifier pin verify-v1.5 is behind verify-vX.Y; see verify/README.md`
+`warning: verifier pin verify-v1.6 is behind verify-vX.Y; see verify/README.md`
 on stderr when a newer pin exists (never changes the verdict; stdout carries
 only the verdict; silent on network failure).
 
@@ -298,10 +298,13 @@ no longer exist locally. The composite action `jerrylin96/git-signoff/recover`
 runs it in Actions, where pushes are unrestricted (cloud sessions cannot push
 notes refs): it fetches the existing notes, resolves the merged pull requests
 into the branch that came from this repository (`pull-requests: auto`; the
-same eligibility the verifier's `scan-refs: auto` applies; forks are never
-fetched), passes `--ref origin/<branch>` plus `--ref refs/remotes/pull/N/head`
-for each, and pushes. `init.py` scaffolds it as
-`.github/workflows/git-signoff-notes.yml`; this repository's
+same eligibility the verifier's `scan-refs: auto` applies; every page of the
+pull-request list is read, since `verify-v1.6`; forks are never fetched;
+needs `pull-requests: read` on the token), passes `--ref origin/<branch>` plus `--ref refs/remotes/pull/N/head`
+for each, and pushes. A run that could not reach every eligible pull request
+(a failed or partial lookup, a head that could not be fetched) pushes what it
+rebuilt and then fails, naming what it missed; the next push retries. `init.py`
+scaffolds it as `.github/workflows/git-signoff-notes.yml`; this repository's
 `notes-recovery.yml` uses the same action. Idempotent.
 
 A note is attached only where the commit object backs the trailer's claim.

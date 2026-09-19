@@ -90,7 +90,7 @@ from pathlib import Path  # noqa: E402
 # The pin tag this file ships under. tag.yml's PINS list and the install
 # snippets must carry the same value (pinned by tests); the stale-pin warning
 # compares it against the tags published upstream.
-VERIFIER_PIN = "verify-v1.5"
+VERIFIER_PIN = "verify-v1.6"
 PIN_REMOTE = "https://github.com/jerrylin96/git-signoff"
 PIN_TAG_RE = re.compile(r"refs/tags/verify-v(\d+)(?:\.(\d+))?$")
 
@@ -342,6 +342,35 @@ def _anchors(trailers, commit, tree):
     )
 
 
+def _note_parts(payload):
+    """(intact_blocks, merged_blob_or_None, leftover_blocks) of a note payload.
+
+    A note is judged block by block (git notes append concatenates
+    attestations). A cat_sort_uniq-merged blob is one sorted line set that the
+    splitter cuts into fragments none of which is an attestation; when the
+    blocks that are not intact attestations together parse as such a blob, they
+    are that blob. Since `git notes append` puts a fresh attestation after an
+    existing blob, one payload can hold both — judging the blob's fragments as
+    attestations would report a legitimate merge as several invalid fragments
+    and lose the evidence it carries (found in external review, verify-v1.6).
+    Leftover blocks are the fragments that form neither."""
+    blocks = split_attestation_blocks(payload)
+    intact = [b for b in blocks if not validate_single(parse_trailers(b))]
+    rest = [b for b in blocks if validate_single(parse_trailers(b))]
+    # The blob is what remains of the payload once the intact blocks are cut
+    # out — not the fragments joined back, since the splitter drops fragments
+    # carrying no status, version or subject line (a sorted blob's leading
+    # Reviewed-*-SHA lines are exactly such a fragment).
+    remainder = payload
+    for block in intact:
+        remainder = remainder.replace(block, "", 1)
+    if remainder.strip():
+        trailers = parse_trailers(remainder)
+        if duplicate_problems(trailers) and not validate_merged(trailers):
+            return intact, remainder, []
+    return intact, None, rest
+
+
 def _anchoring_note_attestation(repo, commit, tree):
     """(source, trailers) of a valid attestation in a note on `commit` or `tree`
     that covers it, or None.
@@ -356,20 +385,15 @@ def _anchoring_note_attestation(repo, commit, tree):
     """
     for note_target, how in ((commit, "note on commit"), (tree, "note on tree")):
         for payload in note_payloads(repo, note_target):
-            blocks = split_attestation_blocks(payload)
-            valid = []
-            for block in blocks:
-                trailers = parse_trailers(block)
-                if not validate_single(trailers) and _anchors(trailers, commit, tree):
-                    valid.append(trailers)
+            intact, merged_blob, _ = _note_parts(payload)
+            valid = [t for t in (parse_trailers(b) for b in intact) if _anchors(t, commit, tree)]
             if valid:
                 valid.sort(key=lambda t: t.get("Signoff-Status", [""])[0] != "VERIFIED_BY_HUMAN")
                 return how, valid[0]
-            # Sorting scatters a merged blob's lines, so the splitter may cut it
-            # into fragments that validate as nothing; judge the whole payload.
-            trailers = parse_trailers(payload)
-            if duplicate_problems(trailers) and not validate_merged(trailers) and _anchors(trailers, commit, tree):
-                return f"{how} (cat_sort_uniq-merged)", trailers
+            if merged_blob is not None:
+                trailers = parse_trailers(merged_blob)
+                if _anchors(trailers, commit, tree):
+                    return f"{how} (cat_sort_uniq-merged)", trailers
     return None
 
 
@@ -469,17 +493,44 @@ def check_head(repo, target, scan_refs=()):
     ]
 
 
+def _describes_other_object(trailers, target):
+    """Why a note that is attached to `target` does not attest it."""
+    reviewed = ", ".join(v[:7] for v in trailers.get("Signoff-Reviewed-Commit-SHA", [])) or "none"
+    declared_tree = ", ".join(v[:7] for v in trailers.get("Signoff-Reviewed-Tree-SHA", [])) or "none"
+    return f"attests commit {reviewed} / tree {declared_tree}, not the object it is attached to ({target[:7]})"
+
+
 def check_history(repo, ref, require):
-    """Repo-badge check: does ref's history carry valid attestations?"""
+    """Repo-badge check: does ref's history carry valid attestations? Evidence is
+    attestation commits reachable from ref and notes on objects reachable from
+    ref (a commit, or the tree of a commit); nothing outside that history."""
     lines, valid = [], 0
     seen = set()
     payloads = []
+    # Enumerate the history first, and say so when it cannot be enumerated: a
+    # ref this checkout does not have must not come back as "0 attestations"
+    # plus a confident wrong reason on every note (verify-v1.6). A shallow
+    # checkout enumerates only what it has, so history beyond its boundary —
+    # and every note hanging there — looks absent; the warning names the cause.
+    enumeration = git(repo, "log", ref, "--format=%H %T", check=False)
+    if enumeration.returncode != 0:
+        reason = (enumeration.stderr.strip().splitlines() or ["git log failed"])[0]
+        return False, [
+            f"FAIL: cannot enumerate {ref}: {reason}",
+            "  history mode needs a ref this checkout has (a full clone: fetch-depth: 0 in Actions, "
+            "git fetch --unshallow locally); nothing was judged",
+        ]
+    if git(repo, "rev-parse", "--is-shallow-repository", check=False).stdout.strip() == "true":
+        lines.append(
+            f"  warning: shallow checkout — history beyond the shallow boundary is not visible, so attestations "
+            f"and notes there are reported as not in {ref} history (git fetch --unshallow, or fetch-depth: 0)"
+        )
     for source, payload, sha in history_payloads(repo, ref):
         trailers = parse_trailers(payload)
         problems = validate_single(trailers)
         if not problems:
             problems, _, _ = commit_evidence(repo, sha, trailers)
-        payloads.append((source, payload, problems or None))
+        payloads.append((source, payload, problems or None, None))
     annotated = []
     for n_ref in (NOTES_REF, NOTES_FETCH_REF):
         listing = git(repo, "notes", f"--ref={n_ref}", "list", check=False)
@@ -488,35 +539,107 @@ def check_history(repo, ref, require):
         for entry in listing.stdout.split("\n"):
             if entry and entry.split()[1] not in annotated:
                 annotated.append(entry.split()[1])
+    # A note is evidence for *this ref's* history only under head mode's own
+    # rule, applied to every object in that history (verify-v1.6): the object it
+    # hangs on must be reachable — a commit, or the tree some reachable commit
+    # has — and the attestation must describe that object, naming it as the
+    # reviewed commit or its tree as the reviewed tree. Attachment alone is not
+    # enough: `notes.rewriteRef` copies a note onto a rebased commit whose
+    # trailers still name the pre-rebase commit and tree, neither of which the
+    # branch carries any more. Reachability alone is not enough either: notes
+    # outlive branches by design, so notes published for a branch that was then
+    # abandoned, or squash-merged onto an advanced base, would otherwise turn
+    # the integration branch's badge green. A squash or rebase merge onto an
+    # unchanged base keeps its evidence: the merged tip has the attested tree.
+    commit_tree, history_trees = {}, set()  # reachable commit -> its tree; reachable trees
+    for line in enumeration.stdout.split("\n"):
+        if line:
+            commit_sha, tree_sha = line.split()
+            commit_tree[commit_sha] = tree_sha
+            history_trees.add(tree_sha)
     for target in annotated:
-        for payload in note_payloads(repo, target):
-            blocks = split_attestation_blocks(payload)
-            if all(validate_single(parse_trailers(b)) for b in blocks):
-                # No block is one valid attestation: a cat_sort_uniq-merged blob
-                # (sorting scatters its lines across the splitter's fragments).
-                # Judge the whole payload under the merge-aware rules instead of
-                # reporting a legitimate merge as several invalid fragments.
-                merged = parse_trailers(payload)
-                if duplicate_problems(merged) and not validate_merged(merged):
-                    payloads.append((f"note on {target[:7]} (cat_sort_uniq-merged)", payload, None))
-                    continue
-            for block in blocks:
-                payloads.append((f"note on {target[:7]}", block, None))
-    for source, payload, precomputed in payloads:
-        trailers = parse_trailers(payload)
-        if precomputed is not None:
-            problems = precomputed
+        if target in commit_tree:
+            commit, tree = target, commit_tree[target]
+        elif target in history_trees:
+            commit, tree = None, target
         else:
-            problems = [] if source.endswith("(cat_sort_uniq-merged)") else validate_single(trailers)
-        key = tuple(trailers.get("Signoff-Reviewed-Commit-SHA", [source]))
-        if key in seen:
+            lines.append(f"  skipped (note on {target[:7]}): object not in {ref} history")
             continue
-        seen.add(key)
+        for payload in note_payloads(repo, target):
+            intact, merged_blob, leftover = _note_parts(payload)
+            if merged_blob is not None:
+                merged = parse_trailers(merged_blob)
+                problems = [] if _anchors(merged, commit, tree) else [_describes_other_object(merged, target)]
+                payloads.append((f"note on {target[:7]} (cat_sort_uniq-merged)", merged_blob, problems or None, (commit, tree)))
+            for block in intact + leftover:
+                trailers = parse_trailers(block)
+                problems = validate_single(trailers)
+                if not problems and not _anchors(trailers, commit, tree):
+                    problems = [_describes_other_object(trailers, target)]
+                payloads.append((f"note on {target[:7]}", block, problems or None, (commit, tree)))
+    # One rule throughout: count distinct reviewed commits, each independently
+    # supported; copying or merging records never manufactures another. The
+    # unit is the reviewed commit, never the payload, however many copies of
+    # its attestation exist (commit in history, note on the commit, note on
+    # the tree, a line set inside a cat_sort_uniq-merged blob). An intact
+    # attestation — a commit, or one block of a note — supports its one
+    # reviewed commit by its own claims, judged above. A merged blob is the
+    # sorted union of several attestations' lines: which tree went with which
+    # commit is gone, and a stale attestation merged in (a note git copied onto
+    # a rebased commit) is indistinguishable from a live one. So a blob counts
+    # a reviewed commit only when the support is unambiguous: either the blob
+    # names exactly one reviewed tree and hangs on it (or on a commit that has
+    # it) — then every attestation merged in declared that tree, and the blob
+    # is squash or rebase evidence exactly as an intact tree note is — or the
+    # commit is reachable and is the object the blob hangs on or has the tree
+    # it hangs on. Once, whatever the line repeats, and it names what it could
+    # not count. Blobs are judged after intact attestations so they never pre-empt
+    # the sound commits behind them (verify-v1.6; before, a blob's whole SHA
+    # tuple was the key, so (A, B) counted beside (A,) and (B,), a stale SHA
+    # merged into a valid blob counted, and a repeated SHA counted twice).
+    # Only a *valid* payload claims a commit: an invalid copy — a rebased or
+    # cherry-picked attestation commit whose parent is no longer the commit it
+    # names — is reported but must not shadow sound evidence for the same
+    # reviewed commit listed after it.
+    reported = set()
+
+    def is_merged(entry):
+        return entry[0].endswith("(cat_sort_uniq-merged)")
+
+    for source, payload, precomputed, anchor in sorted(payloads, key=is_merged):
+        trailers = parse_trailers(payload)
+        merged = is_merged((source,))
+        problems = precomputed if precomputed is not None else ([] if merged else validate_single(trailers))
+        reviewed = list(dict.fromkeys(trailers.get("Signoff-Reviewed-Commit-SHA") or [source]))
         if problems:
-            lines.append(f"  invalid ({source}): " + "; ".join(problems))
+            if any(sha not in seen for sha in reviewed) and (tuple(reviewed), tuple(problems)) not in reported:
+                reported.add((tuple(reviewed), tuple(problems)))
+                lines.append(f"  invalid ({source}): " + "; ".join(problems))
             continue
-        valid += 1
-        lines.append(f"  valid ({source}): {describe(trailers)}")
+        if merged:
+            note_commit, note_tree = anchor
+            declared_trees = list(dict.fromkeys(trailers.get("Signoff-Reviewed-Tree-SHA", [])))
+            if declared_trees == [note_tree]:
+                supported = reviewed  # one tree, and the blob hangs on it: every merged attestation reviewed this tree
+            else:
+                supported = [
+                    sha for sha in reviewed
+                    if sha in commit_tree and (sha == note_commit or commit_tree[sha] == note_tree)
+                ]
+            unsupported = [sha for sha in reviewed if sha not in supported]
+            if unsupported:
+                lines.append(
+                    f"  not counted ({source}): reviewed commit(s) {', '.join(sha[:7] for sha in unsupported)} "
+                    f"are not in {ref} history at the object this note is attached to"
+                )
+            reviewed = supported
+        unseen = [sha for sha in reviewed if sha not in seen]
+        if not unseen:
+            continue
+        seen.update(reviewed)
+        valid += len(unseen)
+        counted = f" ({len(unseen)} reviewed commit(s) counted)" if merged else ""
+        lines.append(f"  valid ({source}): {describe(trailers)}{counted}")
     verdict = "PASS" if valid >= require else "FAIL"
     lines.insert(
         0,
