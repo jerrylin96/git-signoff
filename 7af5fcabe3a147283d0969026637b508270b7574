@@ -1,0 +1,22 @@
+[SIGNOFF 027a9ec]: human comprehension and risk attestation
+
+Review of verify-v1.6 and init-v9 on top of the merged verify-v1.5 range: history mode rebuilt around one rule (count distinct reviewed commits, each independently supported; nothing outside the ref's history; a merged blob counts only under unambiguous support; copies and merges never manufacture evidence) after six external review passes found shadowing, unreachable notes, copied notes, tuple-keyed over-counting, stale-SHA revival, duplicate SHAs, a squash regression, and a mixed-note parser loss; both actions moved to the paginated REST pulls list with fields, distinguish a failed lookup from an empty one, and never finish an incomplete recovery green; the scaffolded workflow gains pull-requests: read. Fourteen probes over five components, two prediction challenges, three ownership decisions, one loudness fix and one reachability fix made during the interview at the reviewer's direction.
+
+Signoff-Spec-Version: 1.0
+Signoff-Status: VERIFIED_BY_HUMAN
+Signoff-Timestamp: 2026-09-19T21:58:59Z
+Signoff-Base-SHA: ffa8ac7310f16f9fbbade1d90bd15af4f6330a76
+Signoff-Reviewed-Commit-SHA: 027a9ec0455afbc1053d71788de7e96cf1a5dfa3
+Signoff-Reviewed-Tree-SHA: 7af5fcabe3a147283d0969026637b508270b7574
+Signoff-Harness-ID: claude-code
+Signoff-Conversation-ID: cfa96aa9-8d54-5f5e-a2b4-340816f8ffd5
+Signoff-Transcript-Digest: sha256:4273179333d3a5f5df07ea39e57acc2b6f84d0122a79e8f7dbaa6c4458192e03
+Signoff-Transcript-Bytes: 9750678
+Signoff-Tradeoff: recover action reads every page of closed pull requests and fetches every eligible head on every push to the integration branch; accepted for repositories under roughly 500 merged pull requests, larger ones will see elevated CI time and fetch traffic until incremental recovery is added
+Signoff-Tradeoff: a merged note naming several trees counts a reviewed commit only if that commit is reachable and is the attached object or has the attached tree; a live attestation merged with a stale one under those conditions is not counted, by design, and the log names it
+Signoff-Risk: gh api --paginate --method GET with -f fields has not yet run in Actions; the first push to main after merge exercises it, and its failure mode is a loud lookup-failed line with a red badge, never a false pass
+Signoff-Risk: merge_commit_sha equality for squash and rebase merges rests on GitHub documentation; this repository has only merge-commit merges, so it is unobserved here; same loud failure mode
+Signoff-Risk: history mode's per-note subprocess cost predates this range and makes the badge job slow on repositories with tens of thousands of notes; this range reduces it by skipping unreachable notes before any subprocess runs
+Signoff-Risk: the producer's reference precedence falls back to the local main when no upstream, config, or origin/HEAD applies, and a stale local main widens the range silently; seen at the first prepare of this interview, worked around with --reference origin/main, not fixed in this range
+Signoff-Verified-By: jerrylin247365@gmail.com
+Signoff-Agent: harness=claude-code/2.1.42 model=claude-fable-5-1 reasoning=high interview=skeptical/software-general
