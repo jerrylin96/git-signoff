@@ -470,7 +470,9 @@ def check_head(repo, target, scan_refs=()):
 
 
 def check_history(repo, ref, require):
-    """Repo-badge check: does ref's history carry valid attestations?"""
+    """Repo-badge check: does ref's history carry valid attestations? Evidence is
+    attestation commits reachable from ref and notes on objects reachable from
+    ref (a commit, or the tree of a commit); nothing outside that history."""
     lines, valid = [], 0
     seen = set()
     payloads = []
@@ -488,7 +490,21 @@ def check_history(repo, ref, require):
         for entry in listing.stdout.split("\n"):
             if entry and entry.split()[1] not in annotated:
                 annotated.append(entry.split()[1])
+    # A note counts toward *this ref's* history only when the object it hangs
+    # on is in that history: the commit itself, or a tree some reachable commit
+    # has (verify-v1.6). A note truthfully describes its object wherever that
+    # object lives; the badge asks the narrower question. Without this, notes
+    # published for a branch that was then abandoned and deleted, or rebased
+    # away, turned the integration branch's badge green. A squash or rebase
+    # merge keeps its evidence: the merged tip carries the attested tree, so the
+    # note on that tree hangs on an object in this history.
+    in_history = set()
+    for line in git(repo, "log", ref, "--format=%H %T", check=False).stdout.split("\n"):
+        in_history.update(line.split())
     for target in annotated:
+        if target not in in_history:
+            lines.append(f"  skipped (note on {target[:7]}): object not in {ref} history")
+            continue
         for payload in note_payloads(repo, target):
             blocks = split_attestation_blocks(payload)
             if all(validate_single(parse_trailers(b)) for b in blocks):

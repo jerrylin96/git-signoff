@@ -90,7 +90,10 @@ read`, `pull-requests: read`) and pins `verify@verify-v1.6` and
 `pull-requests` scope, and without it the verifier's `scan-refs: auto` lookup
 scanned nothing. `verify-v1.6` also fixes history mode's deduplication (an
 invalid rebased copy no longer hides valid evidence for the same commit) and
-the 100-pull-request lookup window. Existing attestations verify as before.
+the 100-pull-request lookup window, and history mode no longer counts notes
+on objects outside the ref's history (an abandoned branch's published notes
+made a badge green). Existing attestations verify as before; a history badge
+that was green only on such notes turns red.
 
 **Migration note (2026-09, `init-v8`):** re-running the initializer adds
 `.git-signoff/config.json` (the integration branch, confirmed once), renders

@@ -20,6 +20,19 @@ merge). Verdicts on sound evidence are unchanged; each fix turns a false
   it) shadowed a sound note or the sound original reachable through a merge,
   and the badge reported zero attestations. Reproduced; now only a valid
   payload claims the key and the invalid copy is still reported.
+- **Fixed** history mode counting every note in the notes ref, wherever its
+  object lived. Notes outlive branches by design, so notes published for a
+  feature branch that was then abandoned and deleted, or squash-merged onto
+  an advanced base (a code state nobody reviewed), made the integration
+  branch's badge green although its history never carried the attested
+  commit or tree. Found in the signoff interview of this release, when the
+  fix above made it observable. A note now counts toward a ref only when the
+  object it hangs on is in that ref's history — the commit itself, or the
+  tree of a reachable commit — and is otherwise reported as `skipped`. Squash
+  and rebase merges onto an unchanged base keep their evidence: the merged
+  tip has the attested tree. Head mode is unchanged (it always judged the
+  target's own objects); a history badge that was green only on such notes
+  turns red.
 - **Fixed** the pull-request lookup behind `scan-refs: auto` and the recover
   action stopping at the 100 most recently *created* pull requests (`gh pr
   list`, which has no sort option). A long-lived pull request merged after a

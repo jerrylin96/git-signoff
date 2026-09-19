@@ -90,8 +90,13 @@ unavailable, and can be turned off with `GIT_SIGNOFF_NO_UPDATE_CHECK=1`.
 > pull request merged late was never found (both now read every page, most
 > recently updated first); and GitHub's restricted
 > default token has no `pull-requests` scope, so the lookup silently scanned
-> nothing (`init-v9` scaffolds the permissions block). Verdicts on sound
-> evidence are unchanged.
+> nothing (`init-v9` scaffolds the permissions block). A fourth, found in the
+> signoff interview of this very release: history mode counted every note in
+> the notes ref, so notes published for a branch that was then abandoned, or
+> squash-merged onto an advanced base, made the integration branch's badge
+> green over a code state it never carried; a note now counts only when the
+> object it hangs on is in the ref's history. Head-mode verdicts are
+> unchanged; a history badge that was green only on such notes turns red.
 > **If you pinned `@verify-v1` through `@verify-v1.4`, move to `@verify-v1.5`.**
 > `verify-v1.5` makes the log lookup judge attestation *commits* by their
 > objects, not their trailers (an empty `[SIGNOFF]` commit naming a target's
@@ -124,7 +129,7 @@ unavailable, and can be turned off with `GIT_SIGNOFF_NO_UPDATE_CHECK=1`.
 | Event | Mode | Passes when |
 |---|---|---|
 | every event (default `mode: auto`, since `verify-v1.5`) | `head` | The target commit is (or carries) a valid attestation: an **empty** attestation commit attesting its own parent's commit and tree — the normal shape of a branch ending in `/git-signoff`; a non-empty attestation commit fails, so trailers cannot smuggle unreviewed changes — a note on the commit or its tree, a *sound* attestation commit in its history or under `scan-refs` whose earned anchor matches (see below), or (for a 2-parent PR merge commit) a clean 3-way merge (`git merge-tree --write-tree HEAD^1 HEAD^2`) where the merged PR branch head `HEAD^2` is validly attested. On `push`, the badge therefore means "the current tip of this branch is attested", not "this repository has used the tool". |
-| explicit `mode: history` | `history` | The ref's history carries at least `require` (default 1) valid attestations — notes, and attestation commits that corroborate their trailers. |
+| explicit `mode: history` | `history` | The ref's history carries at least `require` (default 1) valid attestations — attestation commits reachable from the ref that corroborate their trailers, and notes hanging on objects in that history (a reachable commit, or the tree of one). A note on an object outside the ref's history — a branch attested and then abandoned, a commit rebased away — is reported as skipped, not counted (since `verify-v1.6`). |
 
 **Evidence, not trailers (`verify-v1.5`).** An attestation *commit* found by the
 log lookup counts only if the commit object corroborates its trailers: exactly
