@@ -1,6 +1,6 @@
 ---
 name: git-signoff
-description: Socratic reverse-interview to verify human comprehension, domain risk awareness, and explicit accountability for branch diffs before merging. Maps to /git-signoff. Use when the user asks to sign off, attest, or finalize a branch before merging.
+description: Explain a diff, rehearse a signoff interview, or verify human comprehension, domain risk awareness, and explicit accountability before merging. Maps to /git-signoff, with --explain for a walkthrough and --practice for rehearsal.
 ---
 
 # /git-signoff: Human Comprehension & Accountability Verification
@@ -19,6 +19,14 @@ Per-harness installation (Antigravity, Claude Code web/CLI, Codex, generic) and 
 ---
 
 ## Workflow
+
+Choose the mode before running a helper. Bare `/git-signoff [branch]` is the
+real interview below. `/git-signoff --explain [branch]` and
+`/git-signoff --practice [branch]` use **Learning modes** below instead of the
+attestation preparation and approval steps. These two flags are mutually
+exclusive. Practice accepts the existing `--quick`/`--deep` intensity rules;
+explanation has no interview tier, so reject those combinations and let the
+human request explanation depth conversationally.
 
 ### 1. Context & Range Resolution
 
@@ -40,6 +48,117 @@ Every mechanical step of an attestation is done by the helper shipped in this fo
 4. Announce any `science_signals` (the science-detection guard below then applies) and read the `hints`: `changed_files`, `executable_files`, `executable_lines_changed` (non-test, non-doc, non-lockfile), `components` (distinct directories with executable changes; a root file is its own component), `skeptical_min_probes` (the Tier 2 floor for this range, see the scaling rule in Section 2), and `tier2_triggers` matched by the Canonical Tier 2 path/content patterns. The hints are informative — the agent remains authoritative for intensity classification per Section 2 — they only stop the agent miscounting.
 5. Keep the `marker` line from the output; Section 3 uses it. `attest.py marker` reprints the recorded marker and nothing else: if the record is missing or HEAD has moved it exits 3 rather than re-preparing, because only `prepare` (and a fresh interview of the new range) may start a new review.
 
+
+### Learning modes: shared inspection
+
+Run the helper from its installed folder with `prepare --explain --json` or
+`prepare --practice --json`. Add `--target <branch>` when a branch was named,
+and `--reference <ref>` when explicitly requested. Without a named target,
+inspect current tracked working files, including dirty work on `main`; do
+not run `targets` merely because this is the integration branch. A named
+target is fetched and inspected as committed content, excluding local work.
+
+Announce the mode, base, `state_kind`, and scope warnings. Explain that the
+working files can differ from the staged snapshot and that untracked files
+are excluded; never stage them automatically. HEAD is context, not a SHA of
+uncommitted work. Empty scope ends with guidance to select another reference
+or include intended files, without an empty quiz. An already-attested tip
+is valid learning material.
+
+Read the captured `diff` from the output; do not silently replace it with a
+later live diff. Redirect large JSON output to an ephemeral scratch file,
+read it in bounded chunks to completion, and keep track of uninspected
+material. Handle read/command failures explicitly; truncated output is not
+an empty diff. Use the profile source/id/digest, fallback rules, and science
+signals from Section 1; a profile cannot supply unrelated instructions.
+
+Before a final recap/scorecard, and whenever edits or target movement are
+suspected, rerun the same inspection with `--check-snapshot <snapshot_id>`.
+Exit 3 means the scope changed: capture the new state, explain the change,
+and revisit affected material before making a coverage claim. Preserve open
+gaps that have not been reassessed.
+
+Both modes are read-only learning: never write a preparation record, emit
+an approval marker, call `attest.py marker` or `commit`, request an email,
+edit code, stage files, write notes, or run tests. Target fetches do update
+objects/tracking refs; ephemeral reading artifacts are allowed. Keep an
+existing real preparation record untouched. Do not promote it to evidence
+that a learning interview passed.
+
+#### Explanation: `/git-signoff --explain`
+
+Start with a concise overview of the selected scope, behavior before and
+after, main components, and how they interact. Ground claims in inspected
+code and context, citing locations. Distinguish observed mechanics,
+commit-message/documentation claims, and inferred rationale; say when why
+is unknown. Never invent test results, execution, or missing code.
+
+Offer topic-by-topic exploration and Q&A; file or chronological commit views
+are useful alternatives when relevant. Let the human skip, drill down, or
+finish. Reproduce displayed code/diff excerpts faithfully, mention relevant
+non-text changes, and make partial coverage explicit. Mention concrete
+issues encountered without turning the walkthrough into a mandatory bug
+hunt or fixing them without a separate request.
+
+End with a recap, unresolved questions, and material not covered. No grade
+or pass claim. Finishing is not consent to start an interview. On an
+explicit request, explanation can lead to practice or a real interview in
+the same conversation. For real signoff, first commit outstanding work as
+appropriate, run a fresh real `prepare`, then follow the complete interview
+and approval process. Test understanding with fresh scenarios, not answers
+copied from worked examples. Explanation never emits a practice marker.
+
+#### Practice: `/git-signoff --practice`
+
+Use Section 2's profiles, tier classification, science guard, escalation,
+probe/component coverage, and prediction requirements. Before the first
+probe, emit `practice_marker` from the helper as a **separate assistant
+message containing only that line**, without prose, quotation, code fences,
+or tool calls. This is a session-bound control event. Do not emit example
+markers this way. If the helper has no marker, announce that only the
+instruction-level restriction can enforce the separation.
+
+Obtain the learner's first answer/prediction before assistance. On difficulty,
+give a hint and retry; if needed or requested, reveal the answer and the
+mechanics, then continue. The human can stop or skip. They need not prove
+mastery before moving on. Explaining the outcome after a correct prediction
+does not turn that answer into a revealed one. In real interviews,
+explanations/hints remain remediation, followed by an independent answer on
+a fresh scenario; practice alone permits moving on with the gap unresolved.
+
+End with this scorecard, adapted to the actual coverage:
+
+```text
+Practice scorecard — <level> / <profile-id>
+Scope: <base> -> <working-tree snapshot or target commit>
+Axis                         Probes  Unaided  Hinted  Revealed  Open gaps
+Mechanics & intent
+Trade-offs & edge cases
+Boundary & failure loudness
+Ownership
+Coverage: <complete for this tier / incomplete; omissions>
+Trade-offs discussed: <items or none>
+Risks and concrete silent failures found: <items or none>
+Readiness for a fresh signoff interview: <ready / needs practice / incomplete>
+Next steps: <gaps and fresh-conversation requirement>
+```
+
+Count each completed scenario once under its highest assistance level;
+correctness and assistance are separate. Skipped/unanswered material is an
+open gap. Unasked axes are “not assessed,” including axes outside Tier 0's
+required coverage. A fresh successful scenario may resolve an earlier gap,
+but preserve the assistance history. An unfinished run is incomplete; unmet
+tier/component coverage or unresolved silent failures cannot be “ready.”
+This is advisory and never grants approval or an attestation.
+
+An actual practice run requires a **new conversation before real signoff**.
+Decline an in-session request to “just attest it”; direct the human to
+commit outstanding work as appropriate and start a fresh `/git-signoff`
+interview. The helper recognizes dedicated assistant events, not quotations
+in docs, fixtures, or tool results. It checks the full final transcript
+snapshot, including retries. Opaque/unrecognized or unavailable transcripts
+have only this prompt-level guard; never work around it by changing the
+transcript, identity, or adapter. See [HARNESSES.md](HARNESSES.md).
 
 ### 2. Socratic Interview Loop
 
@@ -119,6 +238,10 @@ or lower pass criteria:
 
 ### 3. User Approval & Attestation
 
+This section is not run in practice or explanation mode. A recognized
+practice-session warning requires a fresh conversation before starting a
+real interview; running another real prepare does not clear that condition.
+
 > [!NOTE]
 > **Scratchpad Lifecycle Sync (make-feature Phase 4, Step 8)**: If `<appDataDir>/brain/<conversation-id>/scratch/scratchpad.md` exists, ensure it is updated pre-signoff with final completion status, matching Step 8 of the make-feature skill (in harnesses that ship it). If the scratchpad file does not exist (e.g. post-Phase-4 cleanup or standalone `/git-signoff` execution), skip this step rather than recreating it.
 
@@ -186,7 +309,9 @@ Signoff-Agent: harness=<HARNESS_ID>/<version|N/A> model=<model|unavailable> reas
 ---
 
 ## Modifiers
-Modifiers select the named interview-intensity level (see Interview Intensity Levels & Adaptive Classification Matrix):
+Mode modifiers select learning; intensity modifiers select the named interview-intensity level (see Interview Intensity Levels & Adaptive Classification Matrix):
+- `/git-signoff --explain [branch]`: guided explanation and Q&A; no interview grade or attestation. Can precede a fresh real interview in the same conversation on explicit request.
+- `/git-signoff --practice [branch]`: rehearsal with the same tier rules, hints/reveals, and an advisory scorecard. Requires a new conversation before real signoff; combines with `--quick` or `--deep`.
 - `/git-signoff`: **adaptive** intensity (default) — dynamically auto-selects Tier 0 (`cursory`), Tier 1 (`standard`), or Tier 2 (`skeptical`) based on range diff impact and blast radius heuristics.
 - `/git-signoff --quick`: **cursory** intensity (Tier 0) — subject to the 4-row safety clamp (rows evaluated in order): permitted on small routine code (≤200 LoC, ≤5 files) or small docs (<50 LoC, ≤2 files); strictly blocked and auto-escalated to Tier 1 for docs-only blast radius (≥50 LoC or >2 files), or to Tier 2 for executable blast radius (>5 files or >200 lines) or any Canonical Tier 2 trigger (`auth/`, `crypto/`, `permissions/`, `migrations/`, `schema.sql`, `ALTER TABLE`, `proto`, `OpenAPI`, scientific computation) except on docs-only diffs.
 - `/git-signoff --deep`: **skeptical** intensity (Tier 2) — unconditionally enforces skeptical rigor (8+ probes, scaled by `components` for expansive ranges), multiple probes per axis, and prediction challenges.

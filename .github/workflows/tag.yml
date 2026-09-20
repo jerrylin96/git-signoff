@@ -32,7 +32,7 @@ jobs:
   tag:
     runs-on: ubuntu-latest
     env:
-      PINS: verify-v1 verify-v1.1 verify-v1.2 verify-v1.3 verify-v1.4 verify-v1.5 verify-v1.6 init-v1 init-v2 init-v3 init-v4 init-v5 init-v6 init-v7 init-v8 init-v9
+      PINS: verify-v1 verify-v1.1 verify-v1.2 verify-v1.3 verify-v1.4 verify-v1.5 verify-v1.6 verify-v1.7 init-v1 init-v2 init-v3 init-v4 init-v5 init-v6 init-v7 init-v8 init-v9 init-v10
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:

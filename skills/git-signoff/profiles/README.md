@@ -30,7 +30,7 @@ A scientific interview profile shifts the probe weight to:
 To initialize a repository with the built-in scientific profile, pass `--profile domain-science`:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/jerrylin96/git-signoff/init-v9/init.py -o /tmp/signoff-init.py && python3 /tmp/signoff-init.py --profile domain-science
+curl -fsSL https://raw.githubusercontent.com/jerrylin96/git-signoff/init-v10/init.py -o /tmp/signoff-init.py && python3 /tmp/signoff-init.py --profile domain-science
 ```
 
 This automatically writes `.git-signoff/profile.md` configured for scientific computing, vendors the skill, and sets up CI verification.

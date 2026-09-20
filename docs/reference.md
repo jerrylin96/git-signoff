@@ -19,7 +19,7 @@ end-to-end example is [`walkthrough.md`](walkthrough.md).
 ## `init.py` — repository initializer
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/jerrylin96/git-signoff/init-v9/init.py -o /tmp/signoff-init.py
+curl -fsSL https://raw.githubusercontent.com/jerrylin96/git-signoff/init-v10/init.py -o /tmp/signoff-init.py
 python3 /tmp/signoff-init.py [options]
 ```
 
@@ -77,6 +77,7 @@ imports by path. Run it from anywhere inside the repository; it uses
 
 ```
 attest.py prepare  [--target BRANCH] [--reference REF] [--json]
+                   [--explain | --practice] [--check-snapshot SHA256]
 attest.py targets  [--reference REF] [--limit N] [--all] [--json]
 attest.py commit   --email EMAIL --level {cursory,standard,skeptical}
                    [--tradeoff T]... [--risk R]... [--summary TEXT] [--model ID]
@@ -87,6 +88,39 @@ attest.py --version
 ```
 
 ### `prepare`
+
+**Learning modes** (`--explain` or `--practice`, mutually exclusive): inspect
+the current tracked working files against the resolved base, allowing staged
+and unstaged work. On the integration branch with nothing unpushed, or with
+no usable base in a local-only repository, HEAD is the base for uncommitted
+work. `--reference` selects another base. An initial commit is required.
+Already-attested tips are allowed. With `--target`, the fetched remote tip
+is inspected instead; an explicit earlier reference can select an integration
+branch's history. An empty diff is reported, never treated as a failed Git
+command or an interview that passed.
+
+Learning creates no preparation record, approval marker, commit, or notes,
+and preserves an existing record and the index. Fetching a target still
+updates its tracking ref and objects. Untracked files are listed as excluded;
+`git add -N -- <path>` is a manual inclusion option. The output warns when
+the staged snapshot differs from the tracked working files.
+
+JSON includes `mode`, `state_kind`, `context_head_sha`, the captured `diff`,
+`numstat`, `untracked_files`, `staged_differs`, `empty`, and `snapshot_id`.
+For local working-tree scope, `reviewed_commit_sha`, `short_sha`, and
+`tree_sha` are null; they identify real objects in target scope. Learning
+has no `record` or approval `marker` field. Only practice includes
+`practice_marker` (null if no session identity/path is available).
+
+Read the captured patch, saving large JSON to an ephemeral scratch file
+instead of trusting truncated terminal output. Repeating the inspection with
+`--check-snapshot <snapshot_id>` checks scope drift (exit 3 on change); it
+does not load or create state. Real prepare rejects that flag (exit 2).
+For walkthrough, scoring, and session transition rules, see
+[the design](practice-mode.md) and [SKILL.md](../skills/git-signoff/SKILL.md).
+
+The following preparation-record rules describe **real prepare**, without a
+learning-mode flag. Its JSON now explicitly says `mode: attest`.
 
 **Target mode** (`--target BRANCH`, spelled `feature`, `origin/feature`, or
 `refs/heads/feature`): fetches `origin/BRANCH` and reviews its tip. The
@@ -175,6 +209,14 @@ interview=<level>/<profile-id>[/sha256:<digest>]`); builds the message and
 runs the verifier's structural check on it (a failure here is a bug in the
 helper → exit 7).
 
+Before checking approval, and again after any snapshot retry, `commit`
+rejects a recognized session-bound practice-start assistant message anywhere
+in the final snapshot (exit 3, including dry runs). Real prepare warns about
+this condition early. Quotes in user/tool messages or documentation do not
+count. Opaque/unrecognized formats and absent transcripts have only the
+skill-level guard; see [HARNESSES.md](../skills/git-signoff/HARNESSES.md).
+Explanation emits no practice event and can precede a fresh real interview.
+
 `--dry-run` prints the message and stops here (exit 0, nothing written; the
 marker is not required because the dry run precedes approval).
 
@@ -218,7 +260,7 @@ Output (`--json`: one object; otherwise labeled lines): `attestation_sha`,
 |---|---|
 | 0 | Success. A refused notes push is reported, not fatal. |
 | 2 | Usage or argument error, including unsafe free text; `--reference` that does not resolve; no default reference; missing sibling `verify_signoff.py`. |
-| 3 | Stale or dirty: no preparation record (`prepare` has not run); HEAD or its tree differs from the record; the interview profile changed since `prepare`; unstaged or staged changes; the marker names an ancestor of HEAD; HEAD (or the target's tip) is already an attestation commit; target mode: `origin/<target>` moved since `prepare`, or the lease push was rejected (notes already published stand). |
+| 3 | Stale or dirty: no preparation record (`prepare` has not run); HEAD or its tree differs from the record; the interview profile changed since `prepare`; real prepare/commit has unstaged or staged changes; the marker names an ancestor of HEAD; real prepare sees an already-attested tip; a recognized practice-start event prevents real commit/dry-run; learning capture or `--check-snapshot` detects drift; target mode: `origin/<target>` moved since `prepare`, or the lease push was rejected (notes already published stand). |
 | 4 | Transcript problem: unavailable without `--ack-no-transcript`; marker not found; marker for an unrelated commit. |
 | 5 | `GIT_SIGNOFF_PROFILE_FILE` set but unreadable. A malformed repo-local profile is *not* an error (falls back, reported). |
 | 6 | git failure (rev-parse, commit, notes append). |
@@ -245,7 +287,7 @@ Tests: `scripts/tests/test_attest.py`, `test_attest_adapters.py`,
 ## `verify_signoff.py` — verifier
 
 Same file at `skills/git-signoff/verify_signoff.py` (vendored) and behind the
-composite action `jerrylin96/git-signoff/verify@verify-v1.6`.
+composite action `jerrylin96/git-signoff/verify@verify-v1.7`.
 
 ```
 verify_signoff.py [--repo PATH] [--mode {head,history}] [--target REV] [--require N] [--scan-refs REF ...]
@@ -261,13 +303,13 @@ verify_signoff.py --version
 | `--scan-refs REF ...` | Head mode: also consider sound attestation commits reachable from these refs (patterns expand via `for-each-ref`); a tree match proves the same code state was attested, not that this PR, base, or interview was reviewed. The composite action passes the merged same-repository pull request's head for the target; the verifier trusts no ref it was not given. |
 | `--audit [COMMIT]` | Re-hash the local transcript for the attestation covering `COMMIT` (default `HEAD`) against `Signoff-Transcript-Digest` over the first `Signoff-Transcript-Bytes` bytes. The transcript is resolved from the harness id and conversation id, or from `GIT_SIGNOFF_TRANSCRIPT_FILE`. |
 | `--export PATH` | With `--audit`: write the audited byte snapshot to `PATH`. |
-| `--version` | Prints the pin (`verify-v1.6`). |
+| `--version` | Prints the pin (`verify-v1.7`). |
 
 Before checking, the verifier fetches `origin`'s notes into its own mirror
 ref `refs/notes/signoff-verify` and never writes `refs/notes/signoff`, so an
 unpushed local attestation survives verification. Then it lists this
 repository's `verify-v*` tags and prints
-`warning: verifier pin verify-v1.6 is behind verify-vX.Y; see verify/README.md`
+`warning: verifier pin verify-v1.7 is behind verify-vX.Y; see verify/README.md`
 on stderr when a newer pin exists (never changes the verdict; stdout carries
 only the verdict; silent on network failure).
 
@@ -303,7 +345,9 @@ pull-request list is read, since `verify-v1.6`; forks are never fetched;
 needs `pull-requests: read` on the token), passes `--ref origin/<branch>` plus `--ref refs/remotes/pull/N/head`
 for each, and pushes. A run that could not reach every eligible pull request
 (a failed or partial lookup, a head that could not be fetched) pushes what it
-rebuilt and then fails, naming what it missed; the next push retries. `init.py`
+rebuilt and then fails, naming what it missed; the next push retries. A missing
+`gh` CLI in `pull-requests: auto` also marks recovery incomplete; explicitly
+choosing `none` is an intentional branch-only scan and needs no CLI. `init.py`
 scaffolds it as `.github/workflows/git-signoff-notes.yml`; this repository's
 `notes-recovery.yml` uses the same action. Idempotent.
 

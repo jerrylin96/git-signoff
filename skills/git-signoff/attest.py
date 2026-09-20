@@ -9,6 +9,7 @@ Python 3.10+, vendored into adopter repositories with the rest of this folder.
 Commands:
 
   attest.py prepare  [--target BRANCH] [--reference REF] [--json]
+                    [--explain | --practice] [--check-snapshot SHA256]
       Resolve reviewed/base/tree SHAs, the range diff summary, the active
       interview profile, science-guard signals, transcript availability,
       intensity hints, and the approval marker the agent must emit; record
@@ -97,6 +98,26 @@ Preparation record:
   and `commit` never re-prepare on a stale record, so a refusal cannot be
   cleared by any command other than the one that begins a new review.
 
+Learning inspection (init-v10):
+
+  `prepare --explain` and `prepare --practice` capture current tracked working
+  files, or a fetched target commit, without writing a preparation record,
+  approval marker, index, commit, or notes. Dirty integration branches and
+  local-only repositories fall back to HEAD as the base for uncommitted work.
+  JSON includes the captured diff, state_kind, mode, and snapshot_id. Repeat
+  with --check-snapshot to detect drift (exit 3); an empty diff is explicit.
+  For working files, context_head_sha is context and reviewed_commit_sha /
+  tree_sha are null. Untracked files are excluded and reported.
+
+  Practice returns a session-bound GSA-PRACTICE control line for the agent to
+  emit as a dedicated assistant message before its first probe. Real prepare
+  warns, and commit/dry-run refuse (exit 3), when a structured assistant event
+  in the final snapshot records practice in this session, including on retry.
+  Quoted examples and tool results are not events. Opaque/unsupported formats
+  and unavailable transcripts have only the skill's fresh-conversation rule;
+  this is not protection against deliberately modified transcripts. Explanation
+  emits no practice event and can precede a fresh real interview on request.
+
 Approval marker (gsa-core §2.3, SHOULD for producers):
 
   GSA-APPROVAL <reviewed-commit-sha> <utc-timestamp-of-prepare>
@@ -149,6 +170,8 @@ STATUS_VERIFIED = "VERIFIED_BY_HUMAN"
 STATUS_NO_DIGEST = "VERIFIED_BY_HUMAN_NO_TRANSCRIPT_DIGEST"
 UNAVAILABLE = "unavailable"
 LEVELS = ("cursory", "standard", "skeptical")
+MODES = ("attest", "practice", "explain")
+PRACTICE_RE = re.compile(r"GSA-PRACTICE ([0-9a-f]{24}) (\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z)")
 
 MARKER_PREFIX = "GSA-APPROVAL"
 MARKER_RE = re.compile(rb"GSA-APPROVAL ([0-9a-f]{40}) (\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z)")
@@ -631,6 +654,11 @@ class PrepareState:
     record_path: str | None = None
     integration_branch: str | None = None
     target: str | None = None  # target mode: the branch whose origin tip is reviewed
+    mode: str = "attest"
+    snapshot_id: str | None = None
+    practice_marker: str | None = None
+    untracked_files: list[str] = field(default_factory=list)
+    staged_differs: bool = False
 
     @property
     def marker(self) -> str:
@@ -680,9 +708,10 @@ class PrepareState:
         )
 
     def to_json(self) -> dict:
-        return {
+        result = {
             "ok": True,
             "command": "prepare",
+            "mode": self.mode,
             "reviewed_commit_sha": self.reviewed_commit_sha,
             "short_sha": self.reviewed_commit_sha[:7],
             "base_sha": self.base_sha,
@@ -713,6 +742,25 @@ class PrepareState:
             "target_ref": f"refs/remotes/{TARGET_REMOTE}/{self.target}" if self.target else None,
             "warnings": self.warnings,
         }
+        if self.mode != "attest":
+            result.pop("marker")
+            result.pop("record")
+            result.update(
+                state_kind="commit" if self.target else "working-tree",
+                context_head_sha=self.reviewed_commit_sha,
+                snapshot_id=self.snapshot_id,
+                diff=self.diff,
+                numstat=self.numstat,
+                untracked_files=self.untracked_files,
+                staged_differs=self.staged_differs,
+                empty=not self.diff,
+            )
+            if not self.target:
+                result.update(reviewed_commit_sha=None, short_sha=None, tree_sha=None,
+                              diff_command=f"git diff {self.base_sha}")
+            if self.mode == "practice":
+                result["practice_marker"] = self.practice_marker
+        return result
 
 
 def read_config(root: str) -> dict:
@@ -797,11 +845,12 @@ def _resolve_reference(
     integration_source: str = "none",
     branch_name: str | None = None,
     skip_upstream: bool = False,
+    learning: bool = False,
 ) -> str:
     if reference:
         if repo.git("rev-parse", "--verify", "-q", f"{reference}^{{commit}}", check=False).returncode != 0:
             raise AttestError(EXIT_USAGE, f"--reference {reference!r} does not resolve to a commit")
-        if _range_is_empty(repo, reference, reviewed):
+        if not learning and _range_is_empty(repo, reference, reviewed):
             warnings.append(
                 f"--reference {reference!r} already contains HEAD: the range to review is empty "
                 "(nothing between the base and the reviewed commit)."
@@ -820,7 +869,7 @@ def _resolve_reference(
     # pushed part of the integration branch) is usable.
     if upstream and not _range_is_empty(repo, upstream, reviewed):
         upstream_sha = repo.out("rev-parse", f"{upstream}^{{commit}}")
-        if on_integration and repo.git("merge-base", "--is-ancestor", upstream_sha, reviewed, check=False).returncode != 0:
+        if not learning and on_integration and repo.git("merge-base", "--is-ancestor", upstream_sha, reviewed, check=False).returncode != 0:
             raise AttestError(
                 EXIT_STALE,
                 f"'{branch}' ({reviewed[:7]}) and its upstream '{upstream}' ({upstream_sha[:7]}) have diverged; "
@@ -833,6 +882,9 @@ def _resolve_reference(
             "not a base); falling back."
         )
     if on_integration:
+        if learning:
+            warnings.append("No unpushed integration-branch range; using the current commit as the learning base.")
+            return reviewed
         raise AttestError(
             EXIT_USAGE,
             f"HEAD is the integration branch '{integration}' with nothing unpushed: there is no range to attest "
@@ -856,6 +908,9 @@ def _resolve_reference(
                     "If this is incorrect, pass --reference explicitly."
                 )
             return candidate
+    if learning:
+        warnings.append("No base reference found; using the current commit to inspect uncommitted work. Use --reference for an earlier base.")
+        return reviewed
     raise AttestError(
         EXIT_USAGE,
         "No base reference: HEAD has no usable upstream and none of "
@@ -884,7 +939,15 @@ def prepare(
     env: Mapping[str, str] | None = None,
     adapter: TranscriptProvider | None = None,
     target: str | None = None,
+    mode: str = "attest",
+    check_snapshot: str | None = None,
 ) -> PrepareState:
+    if mode not in MODES:
+        raise AttestError(EXIT_USAGE, f"unknown mode {mode!r}")
+    if mode != "attest":
+        return _prepare_learning(root, reference, env, adapter, target, mode, check_snapshot)
+    if check_snapshot is not None:
+        raise AttestError(EXIT_USAGE, "--check-snapshot requires --practice or --explain")
     repo = GitRepo(root)
     environ = os.environ if env is None else env
     warnings: list[str] = []
@@ -968,7 +1031,11 @@ def _prepare_range(
     conversation_id = (adapter.resolve_conversation_id() if adapter else None) or UNAVAILABLE
     transcript_path = adapter.describe_path() if adapter else None
     # Informative only; the binding snapshot happens inside commit (§2.3).
-    transcript_available = bool(adapter and adapter.fetch_transcript_bytes() is not None)
+    transcript_data = adapter.fetch_transcript_bytes() if adapter else None
+    transcript_available = transcript_data is not None
+    practice = find_practice_marker(transcript_data, adapter)
+    if practice:
+        warnings.append(_practice_refusal(practice, transcript_path))
     if adapter is None:
         warnings.append(
             "No transcript adapter detected (no GIT_SIGNOFF_TRANSCRIPT_FILE or harness session id); "
@@ -1000,6 +1067,86 @@ def _prepare_range(
     )
     state.record_path = write_record(repo, state)
     return state
+
+
+def _prepare_learning(root, reference, env, adapter, target, mode, check_snapshot):
+    """Capture a learning diff without creating attestation state or changing the index.
+
+    The returned patch is the inspected content, not a command to rerun later.
+    A stateless fingerprint lets the agent detect drift before claiming coverage.
+    """
+    repo = GitRepo(root)
+    environ = os.environ if env is None else env
+    warnings = []
+    integration, source = integration_branch(repo, read_config(root))
+    if target is not None:
+        target = normalize_target(target)
+        reviewed = fetch_target(repo, target)
+    else:
+        head = repo.git("rev-parse", "--verify", "-q", "HEAD^{commit}", check=False)
+        if head.returncode or not head.stdout.strip():
+            raise AttestError(EXIT_GIT, "HEAD does not point at a commit; learning needs an initial commit as its base.")
+        reviewed = head.stdout.strip()
+    if _is_attestation_commit(repo, reviewed):
+        warnings.append("The inspected tip is already an attestation; learning does not create another attestation.")
+    ref = _resolve_reference(repo, reference, reviewed, warnings, integration, source,
+                             branch_name=target, skip_upstream=target is not None, learning=True)
+    base = repo.out("merge-base", ref, reviewed)
+    endpoints = (base, reviewed) if target else (base,)
+    diff_args = ("--no-optional-locks", "diff", "--no-ext-diff", "--no-textconv", "--no-color", "--find-renames")
+    patch = repo.git(*diff_args, *endpoints, "--").stdout
+    name_status = repo.git(*diff_args, "--name-status", *endpoints, "--").stdout.splitlines()
+    shortstat = repo.out(*diff_args, "--shortstat", *endpoints, "--")
+    numstat = repo.git(*diff_args, "--numstat", *endpoints, "--").stdout
+    untracked, staged = [], ""
+    if not target:
+        untracked = [p for p in repo.git("--no-optional-locks", "ls-files", "--others", "--exclude-standard", "-z").stdout.split("\0") if p]
+        staged = repo.git(*diff_args, "--cached", base, "--").stdout
+        if staged != patch:
+            warnings.append("Scope is current tracked working files, not the staged snapshot; the next git commit may contain different changes.")
+        if untracked:
+            warnings.append(f"{len(untracked)} untracked file(s) are excluded; use `git add -N -- <path>` yourself to include selected files, then inspect again.")
+        if repo.out("rev-parse", "HEAD") != reviewed:
+            raise AttestError(EXIT_STALE, "HEAD changed while capturing the learning diff; inspect again.")
+    if repo.git(*diff_args, *endpoints, "--").stdout != patch:
+        raise AttestError(EXIT_STALE, "Files changed while capturing the learning diff; inspect again.")
+    profile = resolve_profile(root, environ)
+    if profile.fallback_reason:
+        warnings.append(profile.fallback_reason)
+    signals = detect_science_signals(patch)
+    if adapter is None:
+        adapter = resolve_adapter(environ, cwd=root)
+    transcript = adapter.fetch_transcript_bytes() if adapter else None
+    path = adapter.describe_path() if adapter else None
+    practice = find_practice_marker(transcript, adapter)
+    if practice:
+        warnings.append(_practice_refusal(practice, path))
+    stamp = _utc_now()
+    key = practice_session_key(adapter)
+    if mode == "practice":
+        warnings.append("Practice requires a fresh conversation before real signoff. Detection needs structured assistant messages; opaque or unavailable transcripts rely on this instruction.")
+        if not key:
+            warnings.append("No session identity or transcript path is available; no machine-checkable practice marker can be emitted.")
+    if not patch:
+        warnings.append("No differences in the selected learning scope. Choose --reference for an earlier base or include the intended files; do not start an empty interview.")
+    fingerprint = hashlib.sha256(json.dumps({
+        "base": base, "head": reviewed, "target": target, "diff": patch,
+        "staged": staged, "untracked": untracked,
+        "profile": [profile.source, profile.profile_id, profile.digest],
+    }, sort_keys=True).encode("utf-8")).hexdigest()
+    if check_snapshot is not None and check_snapshot != fingerprint:
+        raise AttestError(EXIT_STALE, "Learning scope changed since inspection; capture a new snapshot and revisit affected topics or probes.")
+    return PrepareState(
+        reviewed_commit_sha=reviewed, base_sha=base, tree_sha=repo.out("rev-parse", f"{reviewed}^{{tree}}"),
+        reference=ref, name_status=name_status, shortstat=shortstat, numstat=numstat, diff=patch,
+        profile=profile, science_signals=signals, harness_id=adapter.harness_id if adapter else "unknown",
+        conversation_id=(adapter.resolve_conversation_id() if adapter else None) or UNAVAILABLE,
+        transcript_available=transcript is not None, transcript_path=path,
+        hints=intensity_hints(numstat, patch, signals), prepared_at=stamp, warnings=warnings,
+        integration_branch=integration, target=target, mode=mode, snapshot_id=fingerprint,
+        practice_marker=f"GSA-PRACTICE {key} {stamp}" if mode == "practice" and key else None,
+        untracked_files=untracked, staged_differs=not target and staged != patch,
+    )
 
 
 # --- targets: branches awaiting review (docs/attest-any-target.md §2.2, §3.8) -----
@@ -1084,6 +1231,8 @@ def record_path(repo: GitRepo) -> str:
 
 
 def write_record(repo: GitRepo, state: PrepareState) -> str:
+    if state.mode != "attest":
+        raise AttestError(EXIT_USAGE, "Learning modes cannot create an attestation preparation record.")
     path = record_path(repo)
     try:
         os.makedirs(os.path.dirname(path), exist_ok=True)
@@ -1285,7 +1434,101 @@ def build_message(
     return "\n".join(lines)
 
 
-# --- approval marker (§2.3) ------------------------------------------------------
+# --- learning-session guard and approval marker (§2.3) -----------------------------
+
+
+def practice_session_key(adapter: TranscriptProvider | None) -> str | None:
+    """Bind a control message to a session id, or a generic transcript's path.
+
+    This is an identity hint, not a secret or proof against transcript editing.
+    Session ids keep the binding stable when using a different linked worktree.
+    """
+    if adapter is None:
+        return None
+    sid = adapter.resolve_conversation_id()
+    path = adapter.describe_path()
+    if sid and sid != UNAVAILABLE:
+        identity = f"session:{sid}"
+    elif path:
+        identity = f"transcript:{os.path.realpath(os.path.expanduser(path))}"
+    else:
+        return None
+    return hashlib.sha256(identity.encode("utf-8")).hexdigest()[:24]
+
+
+def _assistant_text(record: dict) -> str | None:
+    """Recognize message envelopes, never JSON quoted inside message/tool text.
+
+    Native Claude and Codex envelopes and normalized {role, content} JSONL
+    are supported. Antigravity/generic exports can use the normalized form.
+    """
+    if record.get("type") == "response_item":
+        message = record.get("payload")
+        if not isinstance(message, dict) or message.get("type") != "message":
+            return None
+    elif record.get("type") == "assistant":
+        message = record.get("message")
+    elif record.get("type") in (None, "message"):
+        message = record
+    else:
+        return None
+    if not isinstance(message, dict) or message.get("role") != "assistant":
+        return None
+    content = message.get("content")
+    if isinstance(content, str):
+        return content
+    if isinstance(content, list) and content:
+        # A control message must consist entirely of visible text, without a
+        # tool call, tool result, image, or quoted attachment alongside it.
+        if all(isinstance(part, dict) and part.get("type") in ("text", "output_text")
+               and isinstance(part.get("text"), str) for part in content):
+            return "".join(part["text"] for part in content)
+    return None
+
+
+def find_practice_marker(data: bytes | None, adapter: TranscriptProvider | None) -> tuple[str, int] | None:
+    """Find a dedicated practice-start assistant message in this session.
+
+    A raw substring search would treat reading this implementation or its
+    fixtures as running practice. Parse only top-level JSONL message records,
+    and require their entire text to be the session-bound control message.
+    Opaque text exports and absent transcripts have only the prompt guard.
+    """
+    key = practice_session_key(adapter)
+    if not data or key is None:
+        return None
+    sid = adapter.resolve_conversation_id()
+    offset = 0
+    for line in data.splitlines(keepends=True):
+        start, offset = offset, offset + len(line)
+        try:
+            record = json.loads(line)
+        except (ValueError, UnicodeError):
+            continue
+        if not isinstance(record, dict):
+            continue
+        event_sid = record.get("sessionId", record.get("session_id"))
+        if sid and event_sid is not None and event_sid != sid:
+            continue
+        text = _assistant_text(record)
+        match = PRACTICE_RE.fullmatch(text.strip()) if text is not None else None
+        if match and match[1] == key:
+            return match[0], start
+    return None
+
+
+def _practice_refusal(practice: tuple[str, int], path: str | None) -> str:
+    marker, offset = practice
+    return (
+        f"Practice started in this conversation ({marker}; event at byte {offset} of {path or 'transcript'}). "
+        "Start a new conversation and run a fresh real /git-signoff interview before attesting."
+    )
+
+
+def _check_no_practice(data, adapter, path):
+    practice = find_practice_marker(data, adapter)
+    if practice:
+        raise AttestError(EXIT_STALE, _practice_refusal(practice, path))
 
 
 @dataclass
@@ -1562,11 +1805,15 @@ def commit(root: str, opts: CommitOptions, env: Mapping[str, str] | None = None,
     marker_found = False
     marker_warning = None
     if data is not None:
+        _check_no_practice(data, adapter, transcript_path)
         check = find_marker(data)
         if not (check.found and check.sha == reviewed) and not opts.dry_run:
             time.sleep(MARKER_RETRY_DELAY)
             data = _snapshot(adapter) or data
             check = find_marker(data)
+            # The retry may have flushed a practice-start event as well as the
+            # approval marker. Check the exact final bytes used for the digest.
+            _check_no_practice(data, adapter, transcript_path)
         marker_found = bool(check.found and check.sha == reviewed)
         if not marker_found:
             if not opts.dry_run:
@@ -1700,6 +1947,9 @@ def commit(root: str, opts: CommitOptions, env: Mapping[str, str] | None = None,
 
 
 def _print_prepare(state: PrepareState) -> None:
+    if state.mode != "attest":
+        _print_learning(state)
+        return
     p = state.profile
     print(f"reviewed commit: {state.reviewed_commit_sha}")
     print(f"base (merge-base with {state.reference}): {state.base_sha}")
@@ -1740,6 +1990,25 @@ def _print_prepare(state: PrepareState) -> None:
     print(state.marker)
     for w in state.warnings:
         print(f"warning: {w}", file=sys.stderr)
+
+
+def _print_learning(state: PrepareState) -> None:
+    data = state.to_json()
+    identity = "target commit" if state.target else "context HEAD"
+    print(f"{state.mode}: {data['state_kind']} ({identity} {state.reviewed_commit_sha[:12]})")
+    print(f"base: {state.base_sha} ({state.reference})")
+    print(f"snapshot: {state.snapshot_id}")
+    print(f"profile: {state.profile.profile_id} ({state.profile.source})")
+    print(f"files: {state.shortstat or 'no differences in this scope'}")
+    print(f"science signals: {', '.join(state.science_signals) or 'none'}")
+    print("No attestation record, approval marker, commit, or notes were written.")
+    print("Captured diff (use --json redirected to a scratch file for large diffs):")
+    print(state.diff, end="" if state.diff.endswith("\n") else "\n")
+    if state.practice_marker:
+        print("Before the first practice probe, emit this as a separate assistant message containing only this line:")
+        print(state.practice_marker)
+    for warning in state.warnings:
+        print(f"warning: {warning}", file=sys.stderr)
 
 
 def _print_targets(listing: dict) -> None:
@@ -1801,6 +2070,10 @@ def build_parser() -> argparse.ArgumentParser:
     prep.add_argument("--target", help="attest origin/BRANCH's tip instead of HEAD (target mode; the checkout is not consulted)")
     prep.add_argument("--reference", help="base branch or commit (default: upstream, config integration_branch, origin/HEAD, main/master)")
     prep.add_argument("--json", action="store_true", help="print one JSON object on stdout")
+    learning = prep.add_mutually_exclusive_group()
+    learning.add_argument("--practice", action="store_true", help="inspect a learning diff for rehearsal; never write attestation state")
+    learning.add_argument("--explain", action="store_true", help="inspect a learning diff for a walkthrough; never write attestation state")
+    prep.add_argument("--check-snapshot", metavar="SHA256", help="learning only: refuse if the inspected scope differs from this fingerprint")
 
     tg = sub.add_parser("targets", help="list remote branches awaiting review, most recent first")
     tg.add_argument("--reference", help="base to list against (default: the integration branch)")
@@ -1841,7 +2114,8 @@ def main(argv: list[str] | None = None) -> int:
                 _print_targets(listing)
             return EXIT_OK
         if args.command == "prepare":
-            state = prepare(root, args.reference, target=args.target)
+            mode = "practice" if args.practice else "explain" if args.explain else "attest"
+            state = prepare(root, args.reference, target=args.target, mode=mode, check_snapshot=args.check_snapshot)
             if as_json:
                 print(json.dumps(state.to_json(), indent=2))
                 for w in state.warnings:

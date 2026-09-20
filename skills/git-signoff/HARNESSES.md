@@ -30,6 +30,40 @@ initializer, the producer, and the verifier are standard-library scripts
 
 ## Cross-Harness Test Matrix & Agent Skills Conventions
 
+### Explanation and practice
+
+The same installed folder supports `/git-signoff --explain` for a guided
+walkthrough and `/git-signoff --practice` for rehearsal. No second skill or
+external `explain-diff` installation is required. Use the harness's normal
+skill invocation spelling (for example `$git-signoff --explain` in Codex).
+Practice retains the normal profiles, science guard, and tier clamps;
+explanation has no grade. Both inspect current tracked working files unless
+a remote branch is named, and leave preparation records, index, and notes
+untouched. A named target fetches objects and a tracking ref.
+
+Explanation can lead to a fresh real interview in the same conversation
+after an explicit request. Practice requires a new conversation. Before its
+first probe, emit the helper's `practice_marker` as a separate assistant
+message whose entire text is the line. It is a control event, not an
+attestation or approval. Reading an example in docs or tool output does not
+start practice.
+
+The helper recognizes Claude assistant-message envelopes, Codex
+`response_item` message envelopes, and normalized JSONL messages of the form
+`{"role":"assistant","content":"<the exact practice_marker from this run>"}`.
+Text content blocks are supported; user/tool records and quoted content are
+not recursively parsed as messages. The marker is bound to the conversation
+id, or the canonical transcript path for a generic file with no id. Generic
+files must represent one session; use a new file for a new session.
+
+For generic/Antigravity exports without a recognized structured message
+format, opaque text, or unavailable transcripts, practice separation is
+enforced only by the skill instructions. Do not imply stronger assurance:
+editing a transcript, discarding old events, or changing its identity/path
+can defeat structural detection. No-transcript acknowledgment and status
+are unchanged. A recognized practice event blocks both dry-run and real
+commit, even outside the approval window or arriving on a snapshot retry.
+
 The `init.py` zero-touch initializer installs `/git-signoff` as a committed repository skill. Git Signoff Attestation (GSA v1.0) is entirely protocol-neutral: the commit trailers, git notes mirror, and verification logic are implemented using standard library Python (stdlib) invoking the `git` CLI, requiring zero external dependencies.
 
 Repositories can vendor `/git-signoff` into one or both candidate locations using `--skill-target`:

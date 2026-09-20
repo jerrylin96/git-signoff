@@ -101,7 +101,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0   # full history — attestations live in it
-      - uses: jerrylin96/git-signoff/verify@verify-v1.6
+      - uses: jerrylin96/git-signoff/verify@verify-v1.7
 """
 
 NOTES_WORKFLOW_TEMPLATE = """name: git-signoff notes
@@ -127,7 +127,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
-      - uses: jerrylin96/git-signoff/recover@verify-v1.6
+      - uses: jerrylin96/git-signoff/recover@verify-v1.7
         with:
           branch: {default_branch}
 """
@@ -410,7 +410,7 @@ SKILL_SOURCE_REPO = "https://github.com/jerrylin96/git-signoff"
 # script version instead of silently tracking the default branch. Pin tags
 # never move; bump this together with the install snippets (README,
 # verify/README.md, site/index.html) and tag.yml's PINS list.
-SKILL_SOURCE_REF = "init-v9"
+SKILL_SOURCE_REF = "init-v10"
 VENDOR_STAMP_FILENAME = "VENDORED-FROM"
 BENIGN_METADATA_FILES: set[str] = {".DS_Store", "Thumbs.db", "desktop.ini"}
 
