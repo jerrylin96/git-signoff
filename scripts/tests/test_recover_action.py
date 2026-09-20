@@ -6,7 +6,10 @@ outside a fixed window would otherwise never be recovered. The step runs for
 real, as in test_verify_action.py."""
 
 import os
+import shutil
+import subprocess
 
+import pytest
 from action_harness import Fixture, pull_request, step_script
 
 ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
@@ -104,3 +107,28 @@ def test_pull_requests_none_scans_the_branch_only(tmp_path):
     _, outputs = fx.run(step_script("recover/action.yml", STEP), {"BRANCH_INPUT": "", "PRS": "none"})
     assert outputs["refs"] == "--ref origin/main"
     assert fx.gh_calls() == [] and fx.fetched_pull_refs() == []
+
+
+@pytest.mark.parametrize("mode", ["auto", "none"])
+def test_missing_gh_is_incomplete_only_for_auto(tmp_path, mode):
+    fx = Fixture(tmp_path, pr_numbers=(7,))
+    runner_bin = tmp_path / "runner-bin"
+    runner_bin.mkdir()
+    for executable in ("bash", "git", "mktemp", "head", "tr"):
+        (runner_bin / executable).symlink_to(shutil.which(executable))
+    stdout, outputs = fx.run(
+        step_script("recover/action.yml", STEP),
+        {"BRANCH_INPUT": "", "PRS": mode, "PATH": str(runner_bin)},
+    )
+    assert outputs["refs"] == "--ref origin/main"
+    assert fx.gh_calls() == [] and fx.fetched_pull_refs() == []
+    if mode == "auto":
+        assert outputs["incomplete"] == "gh-unavailable"
+        assert "::warning::gh CLI not available" in stdout
+        report = subprocess.run(
+            ["bash", "-eo", "pipefail", "-c", step_script("recover/action.yml", "Report incomplete recovery")],
+            env={**os.environ, "INCOMPLETE": outputs["incomplete"]}, capture_output=True, text=True,
+        )
+        assert report.returncode == 1 and "gh-unavailable" in report.stdout
+    else:
+        assert outputs["incomplete"] == "" and stdout == ""

@@ -71,6 +71,9 @@ runs:
               echo "::warning::could not fetch refs/pull/$N/head; its attestation is not recovered in this run"
             fi
           done
+        elif [ "$PRS" = auto ]; then
+          INCOMPLETE="gh-unavailable"
+          echo "::warning::gh CLI not available; pull-requests: auto cannot discover eligible heads. Install gh or explicitly choose pull-requests: none for branch-only recovery."
         fi
         echo "refs=$REFS" >> "$GITHUB_OUTPUT"
         echo "branch=$BRANCH" >> "$GITHUB_OUTPUT"
