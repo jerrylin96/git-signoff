@@ -17,10 +17,13 @@ dates on `origin`.
   or remote-target diffs, explicit staged/untracked scope, dirty-main and
   local-only base fallback, and stateless snapshot drift checks. It preserves
   the index and any existing real preparation record.
-- **Added** practice-session separation using dedicated, session-bound
-  assistant events in structured transcripts. Documentation/tool examples
-  do not count; the final snapshot is checked again after retries. Opaque
-  or unavailable transcripts retain a documented prompt-only limitation.
+- **Added** practice-session separation with an explicit `practice-start`
+  local record, shared across linked worktrees. Real prepare, marker, and
+  commit/dry-run refuse recorded sessions even without readable transcripts.
+  Structured assistant events provide backup detection; documentation/tool
+  examples do not count, and snapshot retries are checked. Only sessions
+  without any identity/path lack a local guard. Records are not pushed or
+  cloned, and deliberate record/identity changes remain outside the guarantee.
 - **Fixed** recovery silently finishing green when `pull-requests: auto`
   cannot find `gh`. It reports the missing prerequisite, publishes available
   recovered notes, then fails as incomplete. Explicit `none` remains valid.

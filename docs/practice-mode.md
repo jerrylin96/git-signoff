@@ -1,6 +1,6 @@
 # Design: explanation and practice before signoff
 
-**Status:** Implementation design, revised 2026-09-19 from the draft on
+**Status:** Implementation design, revised 2026-09-20 from the draft on
 `claude/zealous-goodall-tnk50s`. The implementation branch is
 `codex/learning-modes`. This replaces the original draft's raw transcript
 search, unchanged reference-resolution rule, and practice-only hints rule.
@@ -36,6 +36,8 @@ Neither writes or replaces `.git/git-signoff/prepared.json`, creates an
 approval marker, asks for email, writes commits/notes, or publishes anything.
 An existing preparation record remains byte-for-byte unchanged.
 `write_record` itself rejects a learning state.
+Inspection is read-only. Actually starting practice is a separate helper
+command that writes a local session guard in shared Git metadata (§5).
 
 Local learning compares the merge base to the current tracked working files.
 An explicit `--reference` wins. Otherwise preserve the existing usable
@@ -86,7 +88,8 @@ This is a best-effort consistency check, not an atomic filesystem snapshot.
 
 Save large learning JSON output in an ephemeral scratch file and read it in
 bounded chunks. Do not interpret terminal truncation as end-of-diff. Do not
-persist learning history in the repository.
+persist diffs, answers, or scores in the repository. The small session guard
+records only that practice started, separately from learning content.
 
 Before issuing a recap/scorecard, rerun the same learning command with
 `--check-snapshot <snapshot_id>`. Drift exits 3: inspect again, explain
@@ -176,16 +179,47 @@ Practice never requests approval or invokes `commit`. This prevents an
 accidental promotion of a rehearsal; it is not proof against forgery or
 proof that a person has never been taught the material.
 
-### 5.1 Dedicated, session-bound assistant event
+### 5.1 Local session record: the primary guard
 
-When identity is available, practice prepare returns
+Inspect the nonempty scope first. Immediately before the first probe, run
+`attest.py practice-start --json`. It writes
+`<git-common-dir>/git-signoff/practice-sessions/<session-key>.json` and
+returns `guard: local-record`, `practice_record`, `created`, and a backup
+`practice_marker`. The file contains a format version, hashed session key,
+and start timestamp; no answers, transcript contents, or raw conversation id.
+
+The key hashes the current conversation id, or the canonical transcript path
+when a generic export has no conversation id. The same repository's linked
+worktrees share the Git common directory, so switching worktrees or branches
+does not clear the guard. A new conversation id has a different key. A generic
+path must identify one session; use a new path for a new session.
+
+Practice-start never overwrites an existing record. File presence blocks
+signoff even if a failed write left it empty/partial. A write error exits 6
+and stops practice before the first probe. A guard lookup error exits 3;
+unknown state is not treated as absence. There is no in-session reset or
+expiry. New sessions do not remove the old session's record.
+
+Real prepare and `marker` refuse the recorded session (exit 3). Commit checks
+before loading preparation state and again after transcript snapshot/retries,
+before any writes, including target mode and dry-run. Missing or unrecognized
+transcripts and `--ack-no-transcript` do not bypass this check. Learning
+inspection and explanation remain available after practice.
+
+If neither an id nor a transcript path is available, practice-start returns
+`guard: instruction-only`, null record/marker fields, and a warning. That
+unidentified case still relies on the fresh-conversation instruction.
+
+### 5.2 Dedicated assistant event: transcript backup
+
+When identity is available, practice-start returns
 `GSA-PRACTICE <session-key-24hex> <utc-timestamp>`.
 Before the first probe, the agent emits a separate assistant message whose
 entire text is that line: no prose, code fence, quotation, or tool call.
 
-The key hashes the current conversation id, or the canonical transcript path
-when a generic export has no conversation id. It is not secret. Same-session
-linked worktrees derive the same key. A new session id derives a new key.
+Use the event from practice-start's result. Inspection alone does not start
+practice, even though practice prepare also exposes the marker format. The
+key is not secret; this event provides a backup if the local record is absent.
 
 The helper parses top-level JSONL message envelopes and checks the entire
 assistant text, not arbitrary transcript substrings. Supported forms:
@@ -205,18 +239,23 @@ commit refuse with exit 3, naming the event's byte offset and transcript
 path. Check the final bytes used for the digest, including a snapshot retry.
 Search the whole snapshot, not only the final approval-marker window.
 
-### 5.2 Limits
+### 5.3 Limits
 
-Opaque text, unrecognized transcript schemas, unavailable transcripts, and
-practice without any session identity/path have only the skill-level
-restriction. The helper explains this during practice. Generic users need
-normalized message JSONL for machine enforcement. Changing identity/path,
-editing a transcript, or discarding its earlier events can defeat the guard;
-authenticity beyond these structural checks remains out of scope.
+Opaque text, unrecognized transcript schemas, and unavailable transcripts
+prevent only backup detection; the local record still enforces separation.
+No identity/path means the helper cannot bind either guard to a session.
 
-No-transcript attestation keeps its existing explicit acknowledgment and
-downgraded status. There is no new trailer, attestation status, verifier rule,
-or claim of stronger transcript authenticity.
+The record is local to this repository and its linked worktrees. Pushes,
+clones, other repositories, and copied working files do not carry it; those
+contexts rely on the transcript backup or the skill instructions. Explicit
+practice-start is required; inspection alone never writes it. Changing the
+identity/path, deleting records, or modifying/discarding transcript events
+can defeat the guards. They prevent accidental promotion, not deliberate
+forgery, and do not claim transaction locking against concurrent interviews.
+
+No-transcript attestation in a fresh session keeps its existing explicit
+acknowledgment and downgraded status. There is no new trailer, attestation
+status, verifier rule, or claim of stronger transcript authenticity.
 
 Explanation alone does not emit a practice event or poison the conversation.
 Simply reading this design or the implementation's tests must not refuse a
@@ -243,6 +282,9 @@ Test real and learning paths separately:
 - existing attestation tips and remote target scope;
 - learning JSON/CLI identity, captured diff, drift refusal, profile/science;
 - no index/ref/notes/preparation-record writes in local learning;
+- explicit practice-start records, missing/opaque transcripts, no-transcript
+  acknowledgment refusal, linked worktrees, fresh sessions, generic-path
+  identity, idempotence, write/read errors, and partial records;
 - practice events versus quotes, fixtures, tool output, foreign sessions,
   native/normalized envelopes, old events, and the final retried snapshot;
 - explanation followed by fresh real prepare/commit; no-transcript limits;

@@ -42,8 +42,22 @@ a remote branch is named, and leave preparation records, index, and notes
 untouched. A named target fetches objects and a tracking ref.
 
 Explanation can lead to a fresh real interview in the same conversation
-after an explicit request. Practice requires a new conversation. Before its
-first probe, emit the helper's `practice_marker` as a separate assistant
+after an explicit request. Practice requires a new conversation. Inspection
+is read-only. Before its first probe, run `attest.py practice-start --json`:
+it writes a small local record under
+`<git-common-dir>/git-signoff/practice-sessions/<session-key>.json`.
+All linked worktrees share it; it is not committed, pushed, or cloned.
+The key uses the conversation id, or the canonical transcript path for a
+generic file with no id. Generic files must represent one session; use a new
+file for a new session. Transcript contents need not be available or parsable.
+
+Real prepare, `marker`, and commit/dry-run reject the recorded session,
+including `--ack-no-transcript`. A new conversation has a different key and
+does not clear previous records. A failed write stops practice; unreadable
+guard state stops signoff, and an empty/partial record still blocks it.
+Never clear a guard to turn practice into real signoff.
+
+For backup, emit practice-start's `practice_marker` as a separate assistant
 message whose entire text is the line. It is a control event, not an
 attestation or approval. Reading an example in docs or tool output does not
 start practice.
@@ -53,16 +67,18 @@ The helper recognizes Claude assistant-message envelopes, Codex
 `{"role":"assistant","content":"<the exact practice_marker from this run>"}`.
 Text content blocks are supported; user/tool records and quoted content are
 not recursively parsed as messages. The marker is bound to the conversation
-id, or the canonical transcript path for a generic file with no id. Generic
-files must represent one session; use a new file for a new session.
+id, or the canonical transcript path for a generic file with no id.
 
-For generic/Antigravity exports without a recognized structured message
-format, opaque text, or unavailable transcripts, practice separation is
-enforced only by the skill instructions. Do not imply stronger assurance:
-editing a transcript, discarding old events, or changing its identity/path
-can defeat structural detection. No-transcript acknowledgment and status
-are unchanged. A recognized practice event blocks both dry-run and real
-commit, even outside the approval window or arriving on a snapshot retry.
+Opaque/unrecognized or unavailable transcripts do not weaken an existing
+local guard; they only prevent transcript-based backup detection. Without
+any conversation identity or transcript path, the helper explicitly reports
+`guard: instruction-only`. Records are repository-local, so another clone
+must rely on the transcript backup or the skill instructions. Deliberately
+deleting records, editing transcripts, or changing identity can bypass the
+guards; they prevent accidental promotion, not forgery. No-transcript
+acknowledgment and status remain available to fresh sessions. A recognized
+practice event blocks both dry-run and real commit, even outside the approval
+window or arriving on a snapshot retry.
 
 The `init.py` zero-touch initializer installs `/git-signoff` as a committed repository skill. Git Signoff Attestation (GSA v1.0) is entirely protocol-neutral: the commit trailers, git notes mirror, and verification logic are implemented using standard library Python (stdlib) invoking the `git` CLI, requiring zero external dependencies.
 

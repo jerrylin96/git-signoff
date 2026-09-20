@@ -78,6 +78,7 @@ imports by path. Run it from anywhere inside the repository; it uses
 ```
 attest.py prepare  [--target BRANCH] [--reference REF] [--json]
                    [--explain | --practice] [--check-snapshot SHA256]
+attest.py practice-start [--json]
 attest.py targets  [--reference REF] [--limit N] [--all] [--json]
 attest.py commit   --email EMAIL --level {cursory,standard,skeptical}
                    [--tradeoff T]... [--risk R]... [--summary TEXT] [--model ID]
@@ -120,7 +121,9 @@ For walkthrough, scoring, and session transition rules, see
 [the design](practice-mode.md) and [SKILL.md](../skills/git-signoff/SKILL.md).
 
 The following preparation-record rules describe **real prepare**, without a
-learning-mode flag. Its JSON now explicitly says `mode: attest`.
+learning-mode flag. Its JSON now explicitly says `mode: attest`. Real prepare
+first rejects a local practice record for the current session (exit 3), without
+replacing an existing preparation record.
 
 **Target mode** (`--target BRANCH`, spelled `feature`, `origin/feature`, or
 `refs/heads/feature`): fetches `origin/BRANCH` and reviews its tip. The
@@ -160,6 +163,31 @@ profile), which is the only state `commit` will attest. Prints:
 | `marker` | `GSA-APPROVAL <reviewed-sha> <utc-timestamp>` — the line the agent emits after approval. |
 | `record` | Path of the preparation record just written. |
 | `warnings` | Also printed to stderr. |
+
+### `practice-start`
+
+Run after inspecting a nonempty learning scope, immediately before the first
+practice probe. This explicit step writes
+`<git-common-dir>/git-signoff/practice-sessions/<session-key>.json`;
+`prepare --practice` and `prepare --explain` remain read-only inspection.
+The key hashes the conversation id, or a generic transcript's canonical path.
+Linked worktrees share the record. It changes no index, refs, attestation
+preparation record, tracked files, commits, or notes.
+
+JSON fields: `guard` (`local-record` or `instruction-only`), `practice_record`,
+`created`, `practice_marker`, and `warnings`. Emit the returned marker as a
+dedicated assistant message for transcript backup. With no id or path, both
+record and marker are null and the helper warns that only instructions can
+enforce separation. A missing transcript is otherwise fine.
+
+Creation is exclusive and retries preserve an existing record. A write error
+exits 6: stop before the first probe. Presence alone blocks real signoff, even
+for empty/partial records. Lookup errors stop signoff with exit 3. There is
+no reset/expiry; a fresh conversation uses a new identity. Generic users
+without ids must use a different transcript path for each session.
+
+Records are local, not pushed/cloned, and deliberate deletion or identity
+changes can bypass the guard. See [the design](practice-mode.md#5-practice-session-separation).
 
 ### `targets`
 
@@ -209,13 +237,18 @@ interview=<level>/<profile-id>[/sha256:<digest>]`); builds the message and
 runs the verifier's structural check on it (a failure here is a bug in the
 helper → exit 7).
 
-Before checking approval, and again after any snapshot retry, `commit`
+Before loading preparation state, and again after snapshot/retries before
+writing, `commit` rejects a local practice record for this session (exit 3,
+including dry-run, target mode, and `--ack-no-transcript`). Real prepare and
+`marker` also refuse. Transcript contents need not be available or parsable.
+
+As backup, before checking approval and again after a snapshot retry, `commit`
 rejects a recognized session-bound practice-start assistant message anywhere
-in the final snapshot (exit 3, including dry runs). Real prepare warns about
-this condition early. Quotes in user/tool messages or documentation do not
-count. Opaque/unrecognized formats and absent transcripts have only the
-skill-level guard; see [HARNESSES.md](../skills/git-signoff/HARNESSES.md).
-Explanation emits no practice event and can precede a fresh real interview.
+in the final snapshot. Real prepare warns about this condition early. Quotes
+in user/tool messages or documentation do not count. Without any session
+identity/path, only the skill-level guard remains; see
+[HARNESSES.md](../skills/git-signoff/HARNESSES.md). Explanation never starts
+practice and can precede a fresh real interview.
 
 `--dry-run` prints the message and stops here (exit 0, nothing written; the
 marker is not required because the dry run precedes approval).
@@ -260,10 +293,10 @@ Output (`--json`: one object; otherwise labeled lines): `attestation_sha`,
 |---|---|
 | 0 | Success. A refused notes push is reported, not fatal. |
 | 2 | Usage or argument error, including unsafe free text; `--reference` that does not resolve; no default reference; missing sibling `verify_signoff.py`. |
-| 3 | Stale or dirty: no preparation record (`prepare` has not run); HEAD or its tree differs from the record; the interview profile changed since `prepare`; real prepare/commit has unstaged or staged changes; the marker names an ancestor of HEAD; real prepare sees an already-attested tip; a recognized practice-start event prevents real commit/dry-run; learning capture or `--check-snapshot` detects drift; target mode: `origin/<target>` moved since `prepare`, or the lease push was rejected (notes already published stand). |
+| 3 | Stale or dirty: no preparation record (`prepare` has not run); HEAD or its tree differs from the record; the interview profile changed since `prepare`; real prepare/commit has unstaged or staged changes; the marker names an ancestor of HEAD; real prepare sees an already-attested tip; a local practice record (or an error checking it) prevents real prepare/marker/commit/dry-run; a recognized practice event also prevents commit/dry-run; learning capture or `--check-snapshot` detects drift; target mode: `origin/<target>` moved since `prepare`, or the lease push was rejected (notes already published stand). |
 | 4 | Transcript problem: unavailable without `--ack-no-transcript`; marker not found; marker for an unrelated commit. |
 | 5 | `GIT_SIGNOFF_PROFILE_FILE` set but unreadable. A malformed repo-local profile is *not* an error (falls back, reported). |
-| 6 | git failure (rev-parse, commit, notes append). |
+| 6 | git failure (rev-parse, commit, notes append), or failure to write a local practice-start record. |
 | 7 | Self-check failure; anything written has been removed. If a rollback step itself fails, the message says `ROLLBACK INCOMPLETE` and names the step instead of claiming a clean state. |
 
 ### Environment

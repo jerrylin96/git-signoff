@@ -78,12 +78,14 @@ Exit 3 means the scope changed: capture the new state, explain the change,
 and revisit affected material before making a coverage claim. Preserve open
 gaps that have not been reassessed.
 
-Both modes are read-only learning: never write a preparation record, emit
+Both modes preserve code and attestation state: never write a preparation record, emit
 an approval marker, call `attest.py marker` or `commit`, request an email,
 edit code, stage files, write notes, or run tests. Target fetches do update
 objects/tracking refs; ephemeral reading artifacts are allowed. Keep an
 existing real preparation record untouched. Do not promote it to evidence
-that a learning interview passed.
+that a learning interview passed. Inspection is read-only; the explicit
+practice-start step below writes only a local session guard in shared Git
+metadata. Explanation never calls that step.
 
 #### Explanation: `/git-signoff --explain`
 
@@ -111,12 +113,20 @@ copied from worked examples. Explanation never emits a practice marker.
 #### Practice: `/git-signoff --practice`
 
 Use Section 2's profiles, tier classification, science guard, escalation,
-probe/component coverage, and prediction requirements. Before the first
-probe, emit `practice_marker` from the helper as a **separate assistant
+probe/component coverage, and prediction requirements. After inspecting a
+nonempty scope and before the first probe, run `attest.py practice-start --json`.
+This records the session under `<git-common-dir>/git-signoff/practice-sessions/`,
+shared across linked worktrees. A write failure stops practice; surface the
+error and resolve it before beginning. Do not treat inspection, a quoted
+command, or a tool result as the actual start of a practice interview.
+
+Then emit `practice_marker` from **practice-start's result** as a **separate assistant
 message containing only that line**, without prose, quotation, code fences,
 or tool calls. This is a session-bound control event. Do not emit example
 markers this way. If the helper has no marker, announce that only the
-instruction-level restriction can enforce the separation.
+instruction-level restriction can enforce the separation because no session
+identity or transcript path is available. Missing or opaque transcript content
+alone does not disable the local guard when identity is available.
 
 Obtain the learner's first answer/prediction before assistance. On difficulty,
 give a hint and retry; if needed or requested, reveal the answer and the
@@ -154,11 +164,14 @@ This is advisory and never grants approval or an attestation.
 An actual practice run requires a **new conversation before real signoff**.
 Decline an in-session request to “just attest it”; direct the human to
 commit outstanding work as appropriate and start a fresh `/git-signoff`
-interview. The helper recognizes dedicated assistant events, not quotations
-in docs, fixtures, or tool results. It checks the full final transcript
-snapshot, including retries. Opaque/unrecognized or unavailable transcripts
-have only this prompt-level guard; never work around it by changing the
-transcript, identity, or adapter. See [HARNESSES.md](HARNESSES.md).
+interview. The local session guard blocks real preparation, approval-marker
+retrieval, and commit/dry-run, including `--ack-no-transcript`. A fresh
+conversation uses a new identity; do not delete the old record to proceed.
+The helper also checks dedicated assistant events in the full final transcript,
+including retries, as a backup. Quotations in docs, fixtures, and tool results
+are not events. Without any identity/path, only the instruction-level guard
+remains. Never work around either guard by altering records, transcript,
+identity, or adapter. See [HARNESSES.md](HARNESSES.md).
 
 ### 2. Socratic Interview Loop
 

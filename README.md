@@ -70,7 +70,9 @@ including dirty work on `main`. Untracked files are reported as excluded.
 Neither creates an attestation or changes your staged work. Named targets
 are fetched. Explanation can precede a real interview in the same conversation
 on explicit request; practice requires a fresh conversation before real
-signoff. See [the learning-mode design](docs/practice-mode.md).
+signoff. Starting practice writes a small local session guard in Git metadata,
+shared across linked worktrees; no readable transcript is needed when a
+session identity is available. See [the learning-mode design](docs/practice-mode.md).
 
 **Want the merge gate and record?** Use the initializer:
 

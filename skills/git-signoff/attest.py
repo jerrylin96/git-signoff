@@ -8,6 +8,10 @@ Python 3.10+, vendored into adopter repositories with the rest of this folder.
 
 Commands:
 
+  attest.py practice-start [--json]
+      Record the actual start of practice in local, shared Git metadata.
+      This session cannot prepare or write a real attestation afterward.
+
   attest.py prepare  [--target BRANCH] [--reference REF] [--json]
                     [--explain | --practice] [--check-snapshot SHA256]
       Resolve reviewed/base/tree SHAs, the range diff summary, the active
@@ -109,14 +113,21 @@ Learning inspection (init-v10):
   For working files, context_head_sha is context and reviewed_commit_sha /
   tree_sha are null. Untracked files are excluded and reported.
 
-  Practice returns a session-bound GSA-PRACTICE control line for the agent to
-  emit as a dedicated assistant message before its first probe. Real prepare
-  warns, and commit/dry-run refuse (exit 3), when a structured assistant event
-  in the final snapshot records practice in this session, including on retry.
-  Quoted examples and tool results are not events. Opaque/unsupported formats
-  and unavailable transcripts have only the skill's fresh-conversation rule;
-  this is not protection against deliberately modified transcripts. Explanation
-  emits no practice event and can precede a fresh real interview on request.
+  Inspection does not start practice. Before the first probe, practice-start
+  writes <git-common-dir>/git-signoff/practice-sessions/<session-key>.json.
+  Real prepare, marker, and commit/dry-run refuse a recorded session (exit 3),
+  even with an opaque/missing transcript or --ack-no-transcript. Linked
+  worktrees share the record. Write failures stop practice (exit 6); unreadable
+  guard state stops signoff (exit 3); even a partial record stays blocking.
+  The key uses the conversation id, or a generic transcript's canonical path.
+  Without either, separation relies on the skill's fresh-conversation rule.
+
+  As backup, practice-start returns a session-bound GSA-PRACTICE line for the
+  agent to emit as a dedicated assistant message. Commit checks the full final
+  transcript for that event, including retries; quotations/tool results do not
+  count. Records are local to the repository, not copied by clone/push, and
+  cannot prevent deliberate deletion or identity changes. Explanation never
+  starts practice and can precede a fresh real interview on request.
 
 Approval marker (gsa-core §2.3, SHOULD for producers):
 
@@ -950,6 +961,9 @@ def prepare(
         raise AttestError(EXIT_USAGE, "--check-snapshot requires --practice or --explain")
     repo = GitRepo(root)
     environ = os.environ if env is None else env
+    if adapter is None:
+        adapter = resolve_adapter(environ, cwd=root)
+    _check_practice_record(repo, adapter)
     warnings: list[str] = []
     config = read_config(root)
     integration, integration_source = integration_branch(repo, config)
@@ -1124,9 +1138,9 @@ def _prepare_learning(root, reference, env, adapter, target, mode, check_snapsho
     stamp = _utc_now()
     key = practice_session_key(adapter)
     if mode == "practice":
-        warnings.append("Practice requires a fresh conversation before real signoff. Detection needs structured assistant messages; opaque or unavailable transcripts rely on this instruction.")
+        warnings.append("Before the first practice probe, run `attest.py practice-start --json` to record this session locally. A fresh conversation is required before real signoff.")
         if not key:
-            warnings.append("No session identity or transcript path is available; no machine-checkable practice marker can be emitted.")
+            warnings.append("No session identity or transcript path is available; practice separation can only be enforced by the skill instructions.")
     if not patch:
         warnings.append("No differences in the selected learning scope. Choose --reference for an earlier base or include the intended files; do not start an empty interview.")
     fingerprint = hashlib.sha256(json.dumps({
@@ -1438,7 +1452,7 @@ def build_message(
 
 
 def practice_session_key(adapter: TranscriptProvider | None) -> str | None:
-    """Bind a control message to a session id, or a generic transcript's path.
+    """Bind practice state and its backup event to a session id or transcript path.
 
     This is an identity hint, not a secret or proof against transcript editing.
     Session ids keep the binding stable when using a different linked worktree.
@@ -1454,6 +1468,72 @@ def practice_session_key(adapter: TranscriptProvider | None) -> str | None:
     else:
         return None
     return hashlib.sha256(identity.encode("utf-8")).hexdigest()[:24]
+
+
+def practice_record_path(repo: GitRepo, adapter: TranscriptProvider | None) -> str | None:
+    """A repository-local session guard shared by all its linked worktrees."""
+    key = practice_session_key(adapter)
+    if key is None:
+        return None
+    common = os.path.realpath(os.path.join(repo.path, repo.out("rev-parse", "--git-common-dir")))
+    return os.path.join(common, "git-signoff", "practice-sessions", f"{key}.json")
+
+
+def _check_practice_record(repo: GitRepo, adapter: TranscriptProvider | None) -> None:
+    path = practice_record_path(repo, adapter)
+    if path is None:
+        return
+    try:
+        # Presence is enough: an empty/partial record must not clear the guard.
+        # lstat also treats a broken symlink as present, without following it.
+        os.lstat(path)
+    except FileNotFoundError:
+        return
+    except OSError as exc:
+        raise AttestError(EXIT_STALE, f"Cannot check practice-session record at {path}: {exc}. Refusing signoff while session state is unknown.") from exc
+    raise AttestError(
+        EXIT_STALE,
+        f"Practice started in this conversation (local session record: {path}). "
+        "Start a new conversation and run a fresh real /git-signoff interview before attesting.",
+    )
+
+
+def start_practice(root: str, env: Mapping[str, str] | None = None,
+                   adapter: TranscriptProvider | None = None) -> dict:
+    """Record an actual practice start, separately from read-only inspection.
+
+    Exclusive creation never overwrites an existing session record. Even a
+    partial write remains blocking; a failed write must stop the practice run.
+    There is deliberately no reset command or expiry within a conversation.
+    """
+    if adapter is None:
+        adapter = resolve_adapter(os.environ if env is None else env, cwd=root)
+    key = practice_session_key(adapter)
+    path = practice_record_path(GitRepo(root), adapter)
+    stamp = _utc_now()
+    warnings = []
+    created = False
+    if path is None:
+        warnings.append("No session identity or transcript path is available; no local practice record can be bound to this conversation. Separation relies on the skill instructions: start a fresh conversation before real signoff.")
+    else:
+        try:
+            os.makedirs(os.path.dirname(path), mode=0o700, exist_ok=True)
+            try:
+                with open(path, "x", encoding="utf-8") as stream:
+                    json.dump({"version": 1, "session_key": key, "started_at": stamp}, stream)
+                    stream.write("\n")
+                created = True
+            except FileExistsError:
+                pass  # Already blocking; retries never replace the first record.
+        except OSError as exc:
+            raise AttestError(EXIT_GIT, f"Could not record practice start at {path}: {exc}. Do not begin practice until this write succeeds.") from exc
+    return {
+        "ok": True, "command": "practice-start",
+        "guard": "local-record" if path else "instruction-only",
+        "practice_record": path, "created": created,
+        "practice_marker": f"GSA-PRACTICE {key} {stamp}" if key else None,
+        "warnings": warnings,
+    }
 
 
 def _assistant_text(record: dict) -> str | None:
@@ -1492,7 +1572,8 @@ def find_practice_marker(data: bytes | None, adapter: TranscriptProvider | None)
     A raw substring search would treat reading this implementation or its
     fixtures as running practice. Parse only top-level JSONL message records,
     and require their entire text to be the session-bound control message.
-    Opaque text exports and absent transcripts have only the prompt guard.
+    Opaque text exports and absent transcripts cannot supply this backup;
+    the local practice record remains the primary guard.
     """
     key = practice_session_key(adapter)
     if not data or key is None:
@@ -1791,10 +1872,11 @@ def commit(root: str, opts: CommitOptions, env: Mapping[str, str] | None = None,
     verifier = verifier or load_verifier()
     repo = GitRepo(root)
 
-    state = load_prepared(root, opts.reference, environ)
-    reviewed, tree = state.reviewed_commit_sha, state.tree_sha
     if adapter is None:
         adapter = resolve_adapter(environ, cwd=root)
+    _check_practice_record(repo, adapter)
+    state = load_prepared(root, opts.reference, environ)
+    reviewed, tree = state.reviewed_commit_sha, state.tree_sha
     harness_id = adapter.harness_id if adapter else "unknown"
     conversation_id = (adapter.resolve_conversation_id() if adapter else None) or UNAVAILABLE
     transcript_path = adapter.describe_path() if adapter else None
@@ -1878,6 +1960,8 @@ def commit(root: str, opts: CommitOptions, env: Mapping[str, str] | None = None,
         warnings=list(state.warnings) + ([marker_warning] if marker_warning else []),
     )
     result.target = state.target
+    # Recheck after snapshotting/retries, including for dry-run and target mode.
+    _check_practice_record(repo, adapter)
     if opts.dry_run:
         return result
     if state.target:
@@ -2004,9 +2088,8 @@ def _print_learning(state: PrepareState) -> None:
     print("No attestation record, approval marker, commit, or notes were written.")
     print("Captured diff (use --json redirected to a scratch file for large diffs):")
     print(state.diff, end="" if state.diff.endswith("\n") else "\n")
-    if state.practice_marker:
-        print("Before the first practice probe, emit this as a separate assistant message containing only this line:")
-        print(state.practice_marker)
+    if state.mode == "practice":
+        print("Before the first practice probe, run `attest.py practice-start --json`, then emit its practice_marker as a separate assistant message containing only that line.")
     for warning in state.warnings:
         print(f"warning: {warning}", file=sys.stderr)
 
@@ -2075,6 +2158,9 @@ def build_parser() -> argparse.ArgumentParser:
     learning.add_argument("--explain", action="store_true", help="inspect a learning diff for a walkthrough; never write attestation state")
     prep.add_argument("--check-snapshot", metavar="SHA256", help="learning only: refuse if the inspected scope differs from this fingerprint")
 
+    practice = sub.add_parser("practice-start", help="record an actual practice start locally; blocks this session from real signoff")
+    practice.add_argument("--json", action="store_true", help="print one JSON object on stdout")
+
     tg = sub.add_parser("targets", help="list remote branches awaiting review, most recent first")
     tg.add_argument("--reference", help="base to list against (default: the integration branch)")
     tg.add_argument("--limit", type=int, default=TARGETS_DEFAULT_LIMIT, help=f"how many to show (default {TARGETS_DEFAULT_LIMIT})")
@@ -2106,6 +2192,20 @@ def main(argv: list[str] | None = None) -> int:
     as_json = getattr(args, "json", False)
     try:
         root = repo_root()
+        if args.command == "practice-start":
+            result = start_practice(root)
+            if as_json:
+                print(json.dumps(result, indent=2))
+            else:
+                print(f"practice guard: {result['guard']}")
+                if result["practice_record"]:
+                    print(f"local session record: {result['practice_record']}")
+                if result["practice_marker"]:
+                    print("Emit this as a separate assistant message containing only this line before the first practice probe:")
+                    print(result["practice_marker"])
+            for warning in result["warnings"]:
+                print(f"warning: {warning}", file=sys.stderr)
+            return EXIT_OK
         if args.command == "targets":
             listing = list_targets(root, args.reference, None if args.all else args.limit)
             if as_json:
@@ -2124,6 +2224,7 @@ def main(argv: list[str] | None = None) -> int:
                 _print_prepare(state)
             return EXIT_OK
         if args.command == "marker":
+            _check_practice_record(GitRepo(root), resolve_adapter(os.environ, cwd=root))
             # Read-only on purpose: a stale or missing record is a refusal, never
             # a silent re-prepare. Otherwise `marker` would be the one command
             # that restarts a review without an interview: prepare A, add B,

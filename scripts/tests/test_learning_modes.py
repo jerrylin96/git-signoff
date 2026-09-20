@@ -1,5 +1,6 @@
-"""Learning is read-only; only actual session control messages forbid promotion."""
+"""Inspection is read-only; actual practice starts block promotion to signoff."""
 
+import builtins
 import json
 from pathlib import Path
 
@@ -59,6 +60,7 @@ def test_learning_captures_dirty_content_without_writing_git_state(scratch_repo,
     assert ("practice_marker" in data) == (mode == "practice")
     assert _record(repo).read_bytes() == old_record and index.read_bytes() == old_index
     assert git(repo, "show-ref").stdout == old_refs
+    assert not Path(attest.practice_record_path(attest.GitRepo(str(repo)), adapter)).exists()
     with pytest.raises(attest.AttestError, match="cannot create"):
         attest.write_record(attest.GitRepo(str(repo)), state)
 
@@ -265,10 +267,172 @@ def test_explanation_then_fresh_real_prepare_can_attest(scratch_repo, tmp_path):
     assert result.attestation_sha and result.status == attest.STATUS_VERIFIED
 
 
-def test_no_transcript_keeps_the_documented_prompt_only_boundary(scratch_repo, tmp_path):
-    adapter = attest.GenericFileAdapter(str(tmp_path / "not-readable.jsonl"))
-    practice = attest.prepare(str(scratch_repo), "main", mode="practice", adapter=adapter, env={})
-    assert any("opaque or unavailable" in w for w in practice.warnings)
+def test_no_identity_keeps_the_documented_prompt_only_boundary(scratch_repo):
+    practice = attest.prepare(str(scratch_repo), "main", mode="practice", env={})
+    assert any("No session identity" in w for w in practice.warnings)
+    started = attest.start_practice(str(scratch_repo), env={})
+    assert started["guard"] == "instruction-only" and started["practice_record"] is None
+    assert started["practice_marker"] is None and started["warnings"]
     attest.prepare(str(scratch_repo), "main", env={})
-    result = attest.commit(str(scratch_repo), attest.CommitOptions(email="tester@example.com", level="standard", ack_no_transcript=True, push=False, sign=False), adapter=adapter, env={})
+    result = attest.commit(str(scratch_repo), attest.CommitOptions(email="tester@example.com", level="standard", ack_no_transcript=True, push=False, sign=False), env={})
     assert result.status == attest.STATUS_NO_DIGEST
+
+
+@pytest.mark.parametrize("transcript", ["opaque", "unsupported-json", "missing", "unlocated"])
+def test_local_practice_record_blocks_without_parsable_transcript(scratch_repo, tmp_path, transcript):
+    root = str(scratch_repo)
+    adapter = _adapter(tmp_path)
+    if transcript == "missing":
+        Path(adapter.path).unlink()
+    elif transcript == "unlocated":
+        adapter = attest.CodexAdapter("learning-session", home=str(tmp_path))
+        assert adapter.describe_path() is None
+    else:
+        Path(adapter.path).write_text("opaque export" if transcript == "opaque" else '{"speaker":"assistant","body":"practice"}')
+    attest.prepare(root, "main", adapter=adapter, env={})
+    prepared = _record(scratch_repo).read_bytes()
+    refs = git(scratch_repo, "show-ref").stdout
+    started = attest.start_practice(root, adapter=adapter, env={})
+    assert started["guard"] == "local-record" and started["created"]
+    path = Path(started["practice_record"])
+    saved = path.read_bytes()
+    assert json.loads(saved)["session_key"] == attest.practice_session_key(adapter)
+    again = attest.start_practice(root, adapter=adapter, env={})
+    assert not again["created"] and path.read_bytes() == saved
+    with pytest.raises(attest.AttestError, match="local session record") as exc:
+        attest.prepare(root, "main", adapter=adapter, env={})
+    assert exc.value.code == 3
+    for dry_run in (True, False):
+        with pytest.raises(attest.AttestError, match="local session record") as exc:
+            attest.commit(root, attest.CommitOptions(email="tester@example.com", level="standard", ack_no_transcript=True, dry_run=dry_run, push=False, sign=False), adapter=adapter, env={})
+        assert exc.value.code == 3
+    assert _record(scratch_repo).read_bytes() == prepared
+    assert git(scratch_repo, "show-ref").stdout == refs
+
+
+def test_practice_record_preserves_dirty_index_files_refs_and_preparation(scratch_repo, tmp_path):
+    root = str(scratch_repo)
+    adapter = _adapter(tmp_path)
+    attest.prepare(root, "main", env={})
+    prepared = _record(scratch_repo).read_bytes()
+    (scratch_repo / "feat.txt").write_text("staged\n")
+    git(scratch_repo, "add", "feat.txt")
+    (scratch_repo / "feat.txt").write_text("unstaged\n")
+    index = scratch_repo / git(scratch_repo, "rev-parse", "--git-path", "index").stdout.strip()
+    before_index, before_refs = index.read_bytes(), git(scratch_repo, "show-ref").stdout
+    started = attest.start_practice(root, adapter=adapter, env={})
+    assert index.read_bytes() == before_index and git(scratch_repo, "show-ref").stdout == before_refs
+    assert (scratch_repo / "feat.txt").read_text() == "unstaged\n"
+    assert _record(scratch_repo).read_bytes() == prepared
+    assert Path(started["practice_record"]).is_relative_to(scratch_repo / ".git")
+
+
+def test_practice_record_is_shared_across_worktrees_but_not_session_ids(scratch_repo, tmp_path):
+    root = str(scratch_repo)
+    adapter = _adapter(tmp_path)
+    started = attest.start_practice(root, adapter=adapter, env={})
+    linked = tmp_path / "linked"
+    git(scratch_repo, "worktree", "add", "-q", "-b", "linked-review", str(linked), "feature")
+    assert attest.practice_record_path(attest.GitRepo(str(linked)), adapter) == started["practice_record"]
+    with pytest.raises(attest.AttestError, match="local session record"):
+        attest.prepare(str(linked), "main", adapter=adapter, env={})
+    fresh = attest.GenericFileAdapter(str(tmp_path / "missing.jsonl"), "fresh-session")
+    attest.prepare(str(linked), "main", adapter=fresh, env={})
+    result = attest.commit(str(linked), attest.CommitOptions(email="tester@example.com", level="standard", ack_no_transcript=True, push=False, sign=False), adapter=fresh, env={})
+    assert result.status == attest.STATUS_NO_DIGEST and result.attestation_sha
+    assert Path(started["practice_record"]).exists()  # A new interview does not clear old sessions.
+
+
+def test_generic_practice_record_uses_transcript_path_without_id(scratch_repo, tmp_path):
+    adapter = attest.GenericFileAdapter(str(tmp_path / "missing.jsonl"))
+    started = attest.start_practice(str(scratch_repo), adapter=adapter, env={})
+    assert started["guard"] == "local-record" and not Path(adapter.path).exists()
+    with pytest.raises(attest.AttestError, match="local session record"):
+        attest.prepare(str(scratch_repo), "main", adapter=adapter, env={})
+    fresh = attest.GenericFileAdapter(str(tmp_path / "new-session.jsonl"))
+    attest.prepare(str(scratch_repo), "main", adapter=fresh, env={})
+
+
+def test_practice_start_cli_and_marker_refusal(scratch_repo, tmp_path, monkeypatch, capsys):
+    adapter = _adapter(tmp_path)
+    monkeypatch.chdir(scratch_repo)
+    monkeypatch.setenv("GIT_SIGNOFF_TRANSCRIPT_FILE", adapter.path)
+    assert attest.main(["prepare", "--reference", "main", "--json"]) == 0
+    capsys.readouterr()
+    assert attest.main(["practice-start", "--json"]) == 0
+    data = json.loads(capsys.readouterr().out)
+    assert data["guard"] == "local-record" and Path(data["practice_record"]).is_file()
+    assert "GSA-APPROVAL" not in json.dumps(data)
+    assert attest.main(["marker"]) == 3
+    assert "local session record" in capsys.readouterr().err
+
+
+@pytest.mark.parametrize("content", ["", "{incomplete", '{"version":999}'])
+def test_partial_or_unknown_practice_record_still_blocks(scratch_repo, tmp_path, content):
+    adapter = _adapter(tmp_path)
+    started = attest.start_practice(str(scratch_repo), adapter=adapter, env={})
+    Path(started["practice_record"]).write_text(content)
+    with pytest.raises(attest.AttestError, match="local session record"):
+        attest.prepare(str(scratch_repo), "main", adapter=adapter, env={})
+
+
+def test_practice_record_write_failure_is_loud_and_partial_record_blocks(scratch_repo, tmp_path, monkeypatch):
+    adapter = _adapter(tmp_path)
+
+    def fail_dump(*args, **kwargs):
+        raise OSError("disk full")
+
+    monkeypatch.setattr(attest.json, "dump", fail_dump)
+    with pytest.raises(attest.AttestError, match="Do not begin practice") as exc:
+        attest.start_practice(str(scratch_repo), adapter=adapter, env={})
+    assert exc.value.code == 6
+    with pytest.raises(attest.AttestError, match="local session record"):
+        attest.prepare(str(scratch_repo), "main", adapter=adapter, env={})
+
+
+def test_practice_record_permission_errors_are_not_treated_as_absent(scratch_repo, tmp_path, monkeypatch):
+    adapter = _adapter(tmp_path)
+    path = attest.practice_record_path(attest.GitRepo(str(scratch_repo)), adapter)
+    original_open, original_lstat = builtins.open, attest.os.lstat
+
+    def denied_open(filename, *args, **kwargs):
+        if str(filename) == path:
+            raise PermissionError("denied")
+        return original_open(filename, *args, **kwargs)
+
+    monkeypatch.setattr(builtins, "open", denied_open)
+    with pytest.raises(attest.AttestError, match="Could not record practice") as exc:
+        attest.start_practice(str(scratch_repo), adapter=adapter, env={})
+    assert exc.value.code == 6
+
+    def denied_lstat(filename, *args, **kwargs):
+        if str(filename) == path:
+            raise PermissionError("denied")
+        return original_lstat(filename, *args, **kwargs)
+
+    monkeypatch.setattr(attest.os, "lstat", denied_lstat)
+    with pytest.raises(attest.AttestError, match="session state is unknown") as exc:
+        attest.prepare(str(scratch_repo), "main", adapter=adapter, env={})
+    assert exc.value.code == 3
+
+
+def test_local_record_created_during_snapshot_retry_blocks_commit(scratch_repo, tmp_path, monkeypatch):
+    root = str(scratch_repo)
+    adapter = _adapter(tmp_path)
+    attest.prepare(root, "main", env={})
+    reads = 0
+
+    def snapshot():
+        nonlocal reads
+        reads += 1
+        if reads == 1:
+            return b"not flushed yet\n"
+        attest.start_practice(root, adapter=adapter, env={})
+        return _approval(scratch_repo)
+
+    monkeypatch.setattr(adapter, "fetch_transcript_bytes", snapshot)
+    monkeypatch.setattr(attest, "MARKER_RETRY_DELAY", 0)
+    refs = git(scratch_repo, "show-ref").stdout
+    with pytest.raises(attest.AttestError, match="local session record"):
+        attest.commit(root, attest.CommitOptions(email="tester@example.com", level="standard", push=False, sign=False), adapter=adapter, env={})
+    assert reads == 2 and git(scratch_repo, "show-ref").stdout == refs
