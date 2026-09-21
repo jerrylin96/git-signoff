@@ -1,0 +1,22 @@
+[SIGNOFF 8f4bcf2]: human comprehension and risk attestation
+
+Skeptical interview over 4 commits and 4 components (.github/workflows, init.py, recover, skills/git-signoff): 13 probes, 4 prediction challenges, every component's failure mode probed. The learning modes (explain/practice), the two-layer practice-session guard, the recover gh-unavailable fix, and the verify-v1.7/init-v10 pin bumps were each explained by the reviewer in their own words; one silent failure (unrecognized backup event) was found and explicitly accepted as a risk rather than guarded. Affected test files pass (199 tests).
+
+Signoff-Spec-Version: 1.0
+Signoff-Status: VERIFIED_BY_HUMAN
+Signoff-Timestamp: 2026-09-21T16:19:17Z
+Signoff-Base-SHA: 95c048db592e00e45cf08ad80308e1e3159d3c6e
+Signoff-Reviewed-Commit-SHA: 8f4bcf2213da3e356dff90eac93b31bc7bdfda29
+Signoff-Reviewed-Tree-SHA: f23dd41a8c0747344ad59a5ac58445614ec931d7
+Signoff-Harness-ID: claude-code
+Signoff-Conversation-ID: a0a9ab40-0aaa-53ea-b324-3656afce9554
+Signoff-Transcript-Digest: sha256:92cf9ab612507b2d811554dbe4dd979006386c9fe77a4af998b92a47f4c928eb
+Signoff-Transcript-Bytes: 1065515
+Signoff-Tradeoff: practice separation is scoped to the whole conversation, not the reviewed commit or branch: a rehearsal on any branch blocks real signoff in that session
+Signoff-Tradeoff: learning modes inspect working files rather than the index; a staged/working mismatch is warned about, not refused, because learning output can never become attestation evidence
+Signoff-Tradeoff: recover pull-requests: none is a written, silent opt-out of pull-request-head recovery; only pull-requests: auto without gh is now a loud incomplete run
+Signoff-Risk: pin tags bind to the first push to main that lists them; a competing branch adding verify-v1.7 first would split the init-v10 skill from the actions it scaffolds, and no test detects it
+Signoff-Risk: practice backup event is silently unrecognized if the marker is not a text-only assistant message; a resumed cloud session or fresh clone then has no practice guard
+Signoff-Risk: in the guard: instruction-only case and the compound case above, practice separation rests entirely on the agent following SKILL.md, and a resulting attestation would verify normally
+Signoff-Verified-By: jlin404@bu.edu
+Signoff-Agent: harness=claude-code/2.1.42 model=claude-fable-5-1 reasoning=high interview=skeptical/software-general
