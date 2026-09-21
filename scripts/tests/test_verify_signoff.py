@@ -1601,7 +1601,9 @@ def test_pin_version_parsing():
 
 
 def test_stale_pin_warning_when_upstream_has_newer_tag(repo, tmp_path, monkeypatch, capsys):
-    remote = _fake_pin_remote(tmp_path, ["verify-v1", "verify-v1.6", "verify-v1.7", "init-v10"])
+    major, minor = verify_signoff._pin_version(verify_signoff.VERIFIER_PIN)
+    newer = f"verify-v{major}.{minor + 1}"
+    remote = _fake_pin_remote(tmp_path, ["verify-v1", verify_signoff.VERIFIER_PIN, newer, "init-v10"])
     monkeypatch.delenv("GIT_SIGNOFF_NO_UPDATE_CHECK", raising=False)
     monkeypatch.setenv("GIT_SIGNOFF_PIN_REMOTE", remote)
     attest_head(repo)
@@ -1609,7 +1611,7 @@ def test_stale_pin_warning_when_upstream_has_newer_tag(repo, tmp_path, monkeypat
     captured = capsys.readouterr()
     assert rc == 0, captured.out  # the warning never changes the verdict
     # stderr carries the warning so stdout stays the verdict for pipelines
-    assert f"warning: verifier pin {verify_signoff.VERIFIER_PIN} is behind verify-v1.7" in captured.err
+    assert f"warning: verifier pin {verify_signoff.VERIFIER_PIN} is behind {newer}" in captured.err
     assert "see verify/README.md" in captured.err
     assert "warning: verifier pin" not in captured.out
     assert captured.out.startswith("PASS")

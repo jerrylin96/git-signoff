@@ -5,7 +5,35 @@ the composite action (`verify-vX.Y`) and the initializer (`init-vN`) never
 move and are listed with the release that introduced them. Dates are the tag
 dates on `origin`.
 
-## Unreleased (`verify-v1.5` → `verify-v1.6`, `init-v8` → `init-v9`, spec 3.8.0)
+## Unreleased (`verify-v1.7`, `init-v10`, spec 3.8.1)
+
+- **Added** `/git-signoff --explain`: a guided, read-only walkthrough with
+  source-grounded rationale, Q&A, and explicit coverage. It can precede a
+  fresh real interview in the same conversation on request.
+- **Added** `/git-signoff --practice`: rehearsal with the existing profiles,
+  tier rules, hints/reveals, and an advisory readiness scorecard. Real
+  interviews retain explanation followed by independent re-probing.
+- **Added** learning inspection to `attest.py prepare`: captured working-tree
+  or remote-target diffs, explicit staged/untracked scope, dirty-main and
+  local-only base fallback, and stateless snapshot drift checks. It preserves
+  the index and any existing real preparation record.
+- **Added** practice-session separation with an explicit `practice-start`
+  local record, shared across linked worktrees. Real prepare, marker, and
+  commit/dry-run refuse recorded sessions even without readable transcripts.
+  Structured assistant events provide backup detection; documentation/tool
+  examples do not count, and snapshot retries are checked. Only sessions
+  without any identity/path lack a local guard. Records are not pushed or
+  cloned, and deliberate record/identity changes remain outside the guarantee.
+- **Fixed** recovery silently finishing green when `pull-requests: auto`
+  cannot find `gh`. It reports the missing prerequisite, publishes available
+  recovered notes, then fails as incomplete. Explicit `none` remains valid.
+- **Delivery:** new immutable `init-v10` and `verify-v1.7` pins; the latter
+  changes recovery behavior, not verifier evidence rules. The core spec's
+  patch update is informative. No release tags have been published here;
+  the project/helper version and Zenodo citation metadata remain at v0.5.0
+  until a project release is cut.
+
+## Previous pin update (`verify-v1.5` → `verify-v1.6`, `init-v8` → `init-v9`, spec 3.8.0)
 
 Three fixes from an external review of the merged `verify-v1.5` range, shipped
 as `verify-v1.6` and `init-v9` (pins never move; `tag.yml` creates both at

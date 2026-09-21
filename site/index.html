@@ -455,6 +455,13 @@ and risk attestation</span>
       type <code class="inline">/git-signoff</code> (adaptive default auto-selects intensity;
       <code class="inline">--deep</code> for skeptical rigor, <code class="inline">--quick</code> for
       low-risk diffs).</p>
+      <p>Want to understand the change first? Copy the same skill folder and run
+      <code class="inline">/git-signoff --explain</code> for a guided walkthrough,
+      or <code class="inline">/git-signoff --practice</code> for rehearsal with
+      hints and an advisory scorecard. No PR, workflow, badge, or attestation
+      is required. Local learning includes tracked uncommitted work and reports
+      excluded untracked files. Explanation can precede a real interview on
+      request; practice requires a fresh conversation before real signoff.</p>
       <div class="rows">
         <div class="row">
           <h3>Any repository — zero-touch</h3>
@@ -464,10 +471,10 @@ and risk attestation</span>
           <code class="inline">--skill-target {auto,claude,agents,both}</code> to control destinations), scaffolds the CI
           gate and interview profile, and opens a ready-to-merge branch.</p>
           <pre class="cmd"><code><span class="c"># standard software engineering profile:</span>
-curl -fsSL https://raw.githubusercontent.com/jerrylin96/git-signoff/init-v9/init.py -o /tmp/signoff-init.py &amp;&amp; python3 /tmp/signoff-init.py
+curl -fsSL https://raw.githubusercontent.com/jerrylin96/git-signoff/init-v10/init.py -o /tmp/signoff-init.py &amp;&amp; python3 /tmp/signoff-init.py
 
 <span class="c"># scientific &amp; research computing profile (math, physics, bio, climate, ML):</span>
-curl -fsSL https://raw.githubusercontent.com/jerrylin96/git-signoff/init-v9/init.py -o /tmp/signoff-init.py &amp;&amp; python3 /tmp/signoff-init.py --profile domain-science</code></pre>
+curl -fsSL https://raw.githubusercontent.com/jerrylin96/git-signoff/init-v10/init.py -o /tmp/signoff-init.py &amp;&amp; python3 /tmp/signoff-init.py --profile domain-science</code></pre>
         </div>
 
         <div class="row">
@@ -513,7 +520,7 @@ curl -fsSL https://raw.githubusercontent.com/jerrylin96/git-signoff/init-v9/init
         or follow the <a href="https://github.com/jerrylin96/git-signoff/blob/main/skills/git-signoff/profiles/README.md"><strong>scientific profile authoring guide</strong></a>
         with ready-to-use templates for fluid dynamics, bioinformatics, neural surrogate models, and numerical analysis.</p>
         <pre class="cmd"><code><span class="c"># scaffold a scientific profile in .git-signoff/profile.md:</span>
-curl -fsSL https://raw.githubusercontent.com/jerrylin96/git-signoff/init-v9/init.py -o /tmp/signoff-init.py &amp;&amp; python3 /tmp/signoff-init.py --profile domain-science</code></pre>
+curl -fsSL https://raw.githubusercontent.com/jerrylin96/git-signoff/init-v10/init.py -o /tmp/signoff-init.py &amp;&amp; python3 /tmp/signoff-init.py --profile domain-science</code></pre>
       </div>
 
       <ol class="steps">
@@ -578,7 +585,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with: { fetch-depth: 0 }
-      - uses: jerrylin96/git-signoff/verify@verify-v1.6</code></pre>
+      - uses: jerrylin96/git-signoff/verify@verify-v1.7</code></pre>
       <p style="margin-top:1.1rem">The verifier is a single dependency-free
       Python file — copy it into any CI system. Details:
       <a href="https://github.com/jerrylin96/git-signoff/tree/main/verify">verify/</a>.</p>

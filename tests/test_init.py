@@ -147,7 +147,7 @@ def test_scaffold_workflow_file(temp_git_repo):
     content = workflow.read_text(encoding="utf-8")
     assert "branches: [ master ]" in content
     assert "fetch-depth: 0" in content
-    assert "jerrylin96/git-signoff/verify@verify-v1.6" in content
+    assert "jerrylin96/git-signoff/verify@verify-v1.7" in content
     # GitHub's restricted default token (the default for repositories created
     # since 2023) has no pull-requests scope; without it the action's
     # scan-refs: auto lookup gets a 403 and scans nothing.
@@ -160,7 +160,7 @@ def test_scaffold_notes_workflow_file(temp_git_repo):
     workflow = temp_git_repo / ".github" / "workflows" / "git-signoff-notes.yml"
     content = workflow.read_text(encoding="utf-8")
     assert "branches: [ dev ]" in content and "branch: dev" in content
-    assert "jerrylin96/git-signoff/recover@verify-v1.6" in content
+    assert "jerrylin96/git-signoff/recover@verify-v1.7" in content
     assert "contents: write" in content and "pull-requests: read" in content
 
 
@@ -235,7 +235,7 @@ def test_skill_source_ref_pin_consistency():
     import re
 
     repo_root = Path(__file__).parent.parent
-    assert init.SKILL_SOURCE_REF == "init-v9", f"Expected init-v9, got {init.SKILL_SOURCE_REF}"
+    assert init.SKILL_SOURCE_REF == "init-v10", f"Expected init-v10, got {init.SKILL_SOURCE_REF}"
     ref = init.SKILL_SOURCE_REF
 
 

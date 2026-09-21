@@ -55,14 +55,35 @@ you'd notice drift outside them. That is exactly the part a human must own.
 
 ## Quickstart: Set up any repo in 60 seconds
 
+**Want to understand the change first?** Copy the whole `skills/git-signoff/`
+folder into your repository's `.claude/skills/git-signoff/` (Claude Code) or
+`.agents/skills/git-signoff/` (other supported harnesses). Install on the base
+before starting a feature when possible, so the skill installation does not
+dominate your learning diff. No workflow, badge, ruleset, or PR is required.
+
+- `/git-signoff --explain` gives a guided walkthrough of what changed and why.
+- `/git-signoff --practice` rehearses the interview, with hints, answers, and
+  an advisory scorecard using the same profile and tier rules.
+
+Both accept a branch name; without one they inspect tracked working files,
+including dirty work on `main`. Untracked files are reported as excluded.
+Neither creates an attestation or changes your staged work. Named targets
+are fetched. Explanation can precede a real interview in the same conversation
+on explicit request; practice requires a fresh conversation before real
+signoff. Starting practice writes a small local session guard in Git metadata,
+shared across linked worktrees; no readable transcript is needed when a
+session identity is available. See [the learning-mode design](docs/practice-mode.md).
+
+**Want the merge gate and record?** Use the initializer:
+
 Inside your repository root, run the zero-touch initializer (Python 3.10+ stdlib only — zero dependencies):
 
 ```bash
 # Standard software engineering profile:
-curl -fsSL https://raw.githubusercontent.com/jerrylin96/git-signoff/init-v9/init.py -o /tmp/signoff-init.py && python3 /tmp/signoff-init.py
+curl -fsSL https://raw.githubusercontent.com/jerrylin96/git-signoff/init-v10/init.py -o /tmp/signoff-init.py && python3 /tmp/signoff-init.py
 
 # Scientific & research computing profile (math, physics, bio, climate, ML):
-curl -fsSL https://raw.githubusercontent.com/jerrylin96/git-signoff/init-v9/init.py -o /tmp/signoff-init.py && python3 /tmp/signoff-init.py --profile domain-science
+curl -fsSL https://raw.githubusercontent.com/jerrylin96/git-signoff/init-v10/init.py -o /tmp/signoff-init.py && python3 /tmp/signoff-init.py --profile domain-science
 ```
 
 The script automatically:
@@ -162,7 +183,7 @@ account-scoped, nothing to pip-install.
 
 | Where you work | One-time action |
 |---|---|
-| **Any repository (Zero-touch)** | `curl -fsSL https://raw.githubusercontent.com/jerrylin96/git-signoff/init-v9/init.py -o /tmp/signoff-init.py && python3 /tmp/signoff-init.py` (use `--skill-target {auto,claude,agents,both}` to control destinations) |
+| **Any repository (Zero-touch)** | `curl -fsSL https://raw.githubusercontent.com/jerrylin96/git-signoff/init-v10/init.py -o /tmp/signoff-init.py && python3 /tmp/signoff-init.py` (use `--skill-target {auto,claude,agents,both}` to control destinations) |
 | **Any repository (manual)** | Copy this repo's `skills/git-signoff/` folder to `<your-repo>/.claude/skills/git-signoff/` (Claude Code) or `<your-repo>/.agents/skills/git-signoff/` (Antigravity, Codex, Cursor, etc.) and commit before running the initializer; an untracked skill destination now aborts as an unrelated working-tree change. Update by re-copying (or re-running the initializer) on new releases. |
 | **Other harnesses (Antigravity, Codex, Cursor, …)** | Same folder, cross-client convention: copy `skills/git-signoff/` into `.agents/skills/git-signoff` (or `.claude/skills/git-signoff`) and set the transcript adapter env vars — full matrix in [HARNESSES.md](skills/git-signoff/HARNESSES.md). |
 
@@ -277,7 +298,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0   # full history — attestations live in it
-      - uses: jerrylin96/git-signoff/verify@verify-v1.6
+      - uses: jerrylin96/git-signoff/verify@verify-v1.7
 ```
 
 Supports standard merge strategies: **2-parent PR merges** (verifies clean merge tree & attested PR head in `head` mode), **fast-forward merges** (`head` mode), **squash merges** (`history` mode; in `head` mode when base is unchanged), and **rebase merges** (`history` mode; in `head` mode, re-run `/git-signoff` after rebase). Enforce strictly with preconfigured [`ruleset.json`](verify/ruleset.json). Full setup & badge markdown: [`verify/`](verify/README.md).

@@ -90,7 +90,7 @@ from pathlib import Path  # noqa: E402
 # The pin tag this file ships under. tag.yml's PINS list and the install
 # snippets must carry the same value (pinned by tests); the stale-pin warning
 # compares it against the tags published upstream.
-VERIFIER_PIN = "verify-v1.6"
+VERIFIER_PIN = "verify-v1.7"
 PIN_REMOTE = "https://github.com/jerrylin96/git-signoff"
 PIN_TAG_RE = re.compile(r"refs/tags/verify-v(\d+)(?:\.(\d+))?$")
 

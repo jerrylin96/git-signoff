@@ -17,7 +17,7 @@ squash merges.
 
 Run inside your repository root:
 ```bash
-curl -fsSL https://raw.githubusercontent.com/jerrylin96/git-signoff/init-v9/init.py -o /tmp/signoff-init.py && python3 /tmp/signoff-init.py
+curl -fsSL https://raw.githubusercontent.com/jerrylin96/git-signoff/init-v10/init.py -o /tmp/signoff-init.py && python3 /tmp/signoff-init.py
 ```
 
 This automatically scaffolds the workflow, selects your domain interview profile, configures the README badge, configures GitHub ruleset protection, and creates a setup branch ready for `/git-signoff`.
@@ -47,7 +47,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0   # full history — attestations live in it
-      - uses: jerrylin96/git-signoff/verify@verify-v1.6
+      - uses: jerrylin96/git-signoff/verify@verify-v1.7
 ```
 
 **2.** (Recommended) Enforce signoff before merge with the preconfigured GitHub Ruleset:
@@ -73,13 +73,20 @@ repository's `verify-v*` tags after fetching notes and prints one line on
 stderr (visible in the CI log; stdout stays the verdict) when a newer pin exists:
 
 ```text
-warning: verifier pin verify-v1.6 is behind verify-v1.7; see verify/README.md
+warning: verifier pin verify-v1.7 is behind verify-v1.8; see verify/README.md
 ```
 
 It never changes the verdict, is skipped silently when the network is
 unavailable, and can be turned off with `GIT_SIGNOFF_NO_UPDATE_CHECK=1`.
 
-> **If you pinned `@verify-v1.5`, move to `@verify-v1.6`** and add
+> **Current pin: `@verify-v1.7`.** It retains `verify-v1.6` evidence rules and
+> makes recovery report a missing `gh` CLI as incomplete when
+> `pull-requests: auto`. Available notes are published before the run fails;
+> explicit `pull-requests: none` remains a valid branch-only choice.
+> `init-v10` also vendors the explanation/practice modes. Existing pins never move.
+>
+> **Migrating from `@verify-v1.5` or earlier:** the `verify-v1.6` changes below
+> are included in the current pin. Add
 > `permissions: { contents: read, pull-requests: read }` to the workflow if
 > it has no `permissions:` block. `verify-v1.6` fixes three fail-closed gaps
 > found in review of `verify-v1.5`: history mode let an invalid copy of an
@@ -175,7 +182,7 @@ creation date), so a delayed or re-run workflow finds the pull request too.
 Override with inputs:
 
 ```yaml
-      - uses: jerrylin96/git-signoff/verify@verify-v1.6
+      - uses: jerrylin96/git-signoff/verify@verify-v1.7
         with:
           mode: history      # or: head (the default on every event)
           target: main       # commit (head) or ref (history)

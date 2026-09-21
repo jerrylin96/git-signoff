@@ -30,7 +30,7 @@ Online, fetch the pinned initializer; offline, point `--skill-source` at a
 checkout of this repository's `skills/git-signoff/` folder.
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/jerrylin96/git-signoff/init-v9/init.py -o /tmp/signoff-init.py
+curl -fsSL https://raw.githubusercontent.com/jerrylin96/git-signoff/init-v10/init.py -o /tmp/signoff-init.py
 python3 /tmp/signoff-init.py --profile software-general --skill-target claude --skip-ruleset --non-interactive
 # offline alternative:
 # python3 /path/to/git-signoff/init.py --skill-source /path/to/git-signoff/skills/git-signoff \
