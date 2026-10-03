@@ -267,8 +267,34 @@ class TranscriptProvider(Protocol):
     def describe_path(self) -> str | None: ...
 
 
+# Claude Code names a session's transcript directory after the directory it
+# was LAUNCHED from: every character outside [A-Za-z0-9] becomes "-", so
+# /work/bu/ea_barnes_bu/x -> -work-bu-ea-barnes-bu-x. A slug longer than
+# _CLAUDE_SLUG_MAX characters is truncated and given a version-dependent
+# suffix (none before Claude Code 2.1.x, a base-36 hash since), so such a slug
+# is matched by prefix; the session id in the file name keeps that unambiguous.
+# Before init-v11 only "/" was replaced, so a repository path containing an
+# underscore, a dot or a space reported an existing transcript as missing and
+# steered the interview toward --ack-no-transcript.
+_CLAUDE_SLUG_MAX = 200
+
+
 def _slug(path: str) -> str:
-    return path.replace("/", "-")
+    return re.sub(r"[^A-Za-z0-9]", "-", path)
+
+
+def _claude_transcript_candidates(home: str, root: str, session_id: str) -> list[str]:
+    """Where Claude Code may have written this session's transcript for a
+    project rooted at `root`: the exact slug first (the path error messages
+    name), then, for a long slug, every truncated-and-suffixed directory that
+    shares its first _CLAUDE_SLUG_MAX characters."""
+    slug = _slug(root)
+    projects = os.path.join(home, ".claude", "projects")
+    exact = os.path.join(projects, slug, f"{session_id}.jsonl")
+    if len(slug) <= _CLAUDE_SLUG_MAX:
+        return [exact]
+    pattern = os.path.join(projects, glob.escape(slug[:_CLAUDE_SLUG_MAX]) + "*", glob.escape(f"{session_id}.jsonl"))
+    return [exact, *sorted(p for p in glob.glob(pattern) if p != exact)]
 
 
 def _read_bytes(path: str | None) -> bytes | None:
@@ -331,10 +357,13 @@ class AntigravityAdapter:
 class ClaudeCodeAdapter:
     """Claude Code harness (§3.2) with linked-worktree fallback.
 
-    Session transcripts are keyed to the primary repository root slug. Inside a
-    linked worktree (or a subdirectory of the main worktree) the cwd slug
-    misses, so fall back to the primary root via `git rev-parse
-    --git-common-dir`, anchored to the injected cwd rather than the process cwd.
+    Claude Code keys a session's transcript to the directory it was launched
+    from (slug rule at _slug). The adapter tries the repository root of the
+    checkout it was given, which is that directory when Claude Code was
+    started at the root of the worktree, then the primary root of a linked
+    worktree via `git rev-parse --git-common-dir`, anchored to the injected
+    cwd rather than the process cwd. A session launched in a subdirectory
+    of the checkout matches neither candidate.
     """
 
     harness_id = "claude-code"
@@ -348,20 +377,26 @@ class ClaudeCodeAdapter:
         return self.session_id
 
     def _transcript_path(self, root: str) -> str:
-        return os.path.join(self.home, ".claude", "projects", _slug(root), f"{self.session_id}.jsonl")
+        return _claude_transcript_candidates(self.home, root, self.session_id)[0]
+
+    def _existing(self, root: str) -> str | None:
+        for path in _claude_transcript_candidates(self.home, root, self.session_id):
+            if os.path.exists(path):
+                return path
+        return None
 
     def describe_path(self) -> str | None:
-        path = self._transcript_path(self.cwd)
-        if os.path.exists(path):
-            return path
+        found = self._existing(self.cwd)
+        if found:
+            return found
         try:
             git_dir = subprocess.check_output(
                 ["git", "rev-parse", "--git-common-dir"], text=True, stderr=subprocess.DEVNULL, cwd=self.cwd
             ).strip()
         except Exception:
-            return path
+            return self._transcript_path(self.cwd)
         main_root = os.path.abspath(os.path.join(self.cwd, git_dir, os.pardir))
-        return self._transcript_path(main_root)
+        return self._existing(main_root) or self._transcript_path(main_root)
 
     def fetch_transcript_bytes(self) -> bytes | None:
         return _read_bytes(self.describe_path())

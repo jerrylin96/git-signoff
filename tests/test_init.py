@@ -147,7 +147,7 @@ def test_scaffold_workflow_file(temp_git_repo):
     content = workflow.read_text(encoding="utf-8")
     assert "branches: [ master ]" in content
     assert "fetch-depth: 0" in content
-    assert "jerrylin96/git-signoff/verify@verify-v1.7" in content
+    assert "jerrylin96/git-signoff/verify@verify-v1.8" in content
     # GitHub's restricted default token (the default for repositories created
     # since 2023) has no pull-requests scope; without it the action's
     # scan-refs: auto lookup gets a 403 and scans nothing.
@@ -160,7 +160,7 @@ def test_scaffold_notes_workflow_file(temp_git_repo):
     workflow = temp_git_repo / ".github" / "workflows" / "git-signoff-notes.yml"
     content = workflow.read_text(encoding="utf-8")
     assert "branches: [ dev ]" in content and "branch: dev" in content
-    assert "jerrylin96/git-signoff/recover@verify-v1.7" in content
+    assert "jerrylin96/git-signoff/recover@verify-v1.8" in content
     assert "contents: write" in content and "pull-requests: read" in content
 
 
@@ -235,7 +235,7 @@ def test_skill_source_ref_pin_consistency():
     import re
 
     repo_root = Path(__file__).parent.parent
-    assert init.SKILL_SOURCE_REF == "init-v10", f"Expected init-v10, got {init.SKILL_SOURCE_REF}"
+    assert init.SKILL_SOURCE_REF == "init-v11", f"Expected init-v11, got {init.SKILL_SOURCE_REF}"
     ref = init.SKILL_SOURCE_REF
 
 
@@ -318,6 +318,58 @@ def test_inject_readme_badge_code_fence(tmp_path):
 
 
 # --- T1.4: Working Tree Safety & Branch Management ---
+
+def test_inject_readme_badge_names_the_integration_branch(temp_git_repo):
+    """A badge without ?branch= reports GitHub's default branch, or, when that
+    branch has no runs of the workflow, the most recent run on any branch.
+    Naming the integration branch makes it report the branch the gate
+    protects; a second run adds nothing."""
+    init.inject_readme_badge(temp_git_repo, slug="org/my-project", branch="dev-clean")
+    content = (temp_git_repo / "README.md").read_text(encoding="utf-8")
+    assert (
+        "[![attested by humans](https://github.com/org/my-project/actions/workflows/git-signoff.yml/badge.svg?branch=dev-clean)]"
+        "(https://github.com/org/my-project/actions/workflows/git-signoff.yml)"
+    ) in content
+    init.inject_readme_badge(temp_git_repo, slug="org/my-project", branch="dev-clean")
+    content = (temp_git_repo / "README.md").read_text(encoding="utf-8")
+    assert content.count("badge.svg") == 1 and content.count("?branch=") == 1
+
+
+def test_inject_readme_badge_percent_encodes_the_branch(temp_git_repo):
+    init.inject_readme_badge(temp_git_repo, slug="org/my-project", branch="release/2.x")
+    assert "badge.svg?branch=release%2F2.x)" in (temp_git_repo / "README.md").read_text(encoding="utf-8")
+
+
+def test_inject_readme_badge_adds_the_branch_to_a_bare_badge_from_an_earlier_install(temp_git_repo):
+    init.inject_readme_badge(temp_git_repo, slug="org/my-project")
+    before = (temp_git_repo / "README.md").read_bytes()
+    assert b"badge.svg)" in before and b"?branch=" not in before
+    init.inject_readme_badge(temp_git_repo, slug="org/my-project", branch="dev")
+    after = (temp_git_repo / "README.md").read_bytes()
+    assert after.count(b"badge.svg?branch=dev)") == 1 and after.count(b"badge.svg") == 1
+    assert after.replace(b"badge.svg?branch=dev)", b"badge.svg)") == before  # nothing else touched
+
+
+def test_inject_readme_badge_leaves_a_badge_that_already_names_a_branch(temp_git_repo):
+    init.inject_readme_badge(temp_git_repo, slug="org/my-project", branch="main")
+    before = (temp_git_repo / "README.md").read_bytes()
+    init.inject_readme_badge(temp_git_repo, slug="org/my-project", branch="dev")
+    assert (temp_git_repo / "README.md").read_bytes() == before
+
+
+def test_inject_readme_badge_legacy_rename_also_gets_the_branch(temp_git_repo):
+    readme = temp_git_repo / "README.md"
+    readme.write_text(
+        "# Test Project\n\n"
+        "[![attested by humans](https://github.com/org/my-project/actions/workflows/signoff.yml/badge.svg)]"
+        "(https://github.com/org/my-project/actions/workflows/signoff.yml)\n",
+        encoding="utf-8",
+    )
+    init.inject_readme_badge(temp_git_repo, "org/my-project", branch="dev")
+    content = readme.read_text(encoding="utf-8")
+    assert "actions/workflows/git-signoff.yml/badge.svg?branch=dev)" in content
+    assert "actions/workflows/signoff.yml" not in content and content.count("badge.svg") == 1
+
 
 def test_dirty_working_tree_guard(temp_git_repo):
     dirty_file = temp_git_repo / "unrelated.txt"
@@ -586,6 +638,9 @@ def test_end_to_end_init(temp_git_repo):
     assert config == {"integration_branch": "main"}
     committed = subprocess.check_output(["git", "show", "HEAD:.git-signoff/config.json"], cwd=temp_git_repo, text=True)
     assert json.loads(committed) == config
+    # ...and the badge names it, so what it reports never depends on GitHub's default branch
+    readme = (temp_git_repo / "README.md").read_text(encoding="utf-8")
+    assert "actions/workflows/git-signoff.yml/badge.svg?branch=main)" in readme
 
 
 def test_explicit_integration_branch_drives_workflow_config_ruleset_and_base(temp_git_repo):
@@ -611,6 +666,9 @@ def test_explicit_integration_branch_drives_workflow_config_ruleset_and_base(tem
     # based on dev: dev is the parent of the scaffold commit
     parent = subprocess.check_output(["git", "rev-parse", "HEAD~1"], cwd=temp_git_repo, text=True).strip()
     assert parent == subprocess.check_output(["git", "rev-parse", "dev"], cwd=temp_git_repo, text=True).strip()
+    # the badge is the integration branch's fourth reader: GitHub's default (main) never runs the workflow
+    readme = (temp_git_repo / "README.md").read_text(encoding="utf-8")
+    assert "git-signoff.yml/badge.svg?branch=dev)" in readme
 
 
 def test_invalid_integration_branch_name_is_refused_before_any_mutation(temp_git_repo):

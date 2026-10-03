@@ -31,6 +31,7 @@ import webbrowser  # noqa: E402
 from dataclasses import dataclass, field  # noqa: E402
 from pathlib import Path  # noqa: E402
 from typing import Optional  # noqa: E402
+from urllib.parse import quote  # noqa: E402
 
 SKILL_DEST_CANDIDATES: tuple[str, ...] = (
     ".claude/skills/git-signoff",
@@ -101,7 +102,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0   # full history — attestations live in it
-      - uses: jerrylin96/git-signoff/verify@verify-v1.7
+      - uses: jerrylin96/git-signoff/verify@verify-v1.8
 """
 
 NOTES_WORKFLOW_TEMPLATE = """name: git-signoff notes
@@ -127,7 +128,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
-      - uses: jerrylin96/git-signoff/recover@verify-v1.7
+      - uses: jerrylin96/git-signoff/recover@verify-v1.8
         with:
           branch: {default_branch}
 """
@@ -410,7 +411,7 @@ SKILL_SOURCE_REPO = "https://github.com/jerrylin96/git-signoff"
 # script version instead of silently tracking the default branch. Pin tags
 # never move; bump this together with the install snippets (README,
 # verify/README.md, site/index.html) and tag.yml's PINS list.
-SKILL_SOURCE_REF = "init-v10"
+SKILL_SOURCE_REF = "init-v11"
 VENDOR_STAMP_FILENAME = "VENDORED-FROM"
 BENIGN_METADATA_FILES: set[str] = {".DS_Store", "Thumbs.db", "desktop.ini"}
 
@@ -729,11 +730,29 @@ def single_destination_hint(
     )
 
 
-def inject_readme_badge(repo_root: Path, slug: str) -> Path:
+def badge_markdown(slug: str, branch: Optional[str] = None) -> str:
+    """The README badge. With `branch`, the badge names the branch it reports.
+
+    GitHub renders a badge without `?branch=` for the repository's default
+    branch and, when that branch has no runs of the workflow, for the most
+    recent run on ANY branch. The scaffolded workflow runs on pull requests
+    and on pushes to the integration branch only, so on a repository whose
+    pull requests merge into a non-default branch a bare badge tracked
+    whichever pull request ran last (red until its author attested) instead
+    of the integration branch's tip. The integration branch is chosen once in
+    run_init and read everywhere; the badge is one of its readers.
+    """
+    badge_url = f"https://github.com/{slug}/actions/workflows/git-signoff.yml/badge.svg"
+    if branch:
+        badge_url += "?branch=" + quote(branch, safe="")
+    return f"[![attested by humans]({badge_url})](https://github.com/{slug}/actions/workflows/git-signoff.yml)"
+
+
+def inject_readme_badge(repo_root: Path, slug: str, branch: Optional[str] = None) -> Path:
     readme = repo_root / "README.md"
     ensure_no_symlink_in_path(repo_root, readme)
-    badge_md = f"[![attested by humans](https://github.com/{slug}/actions/workflows/git-signoff.yml/badge.svg)](https://github.com/{slug}/actions/workflows/git-signoff.yml)"
-    
+    badge_md = badge_markdown(slug, branch)
+
     if not readme.is_file():
         readme.write_text(f"# {slug.split('/')[-1]}\n\n{badge_md}\n", encoding="utf-8")
         return readme
@@ -743,14 +762,23 @@ def inject_readme_badge(repo_root: Path, slug: str) -> Path:
         text = raw_bytes.decode("utf-8")
     except UnicodeDecodeError as e:
         raise RuntimeError(f"README.md is not valid UTF-8: {e}") from e
-        
-    if "actions/workflows/git-signoff.yml/badge.svg" in text:
-        return readme  # already present
-    if "actions/workflows/signoff.yml" in text:
+
+    updated = raw_bytes
+    if b"actions/workflows/signoff.yml" in updated and b"actions/workflows/git-signoff.yml/badge.svg" not in updated:
         # A badge from an install predating the git-signoff rename (init-v6 and
         # earlier): point it at the renamed workflow, preserving line endings.
-        readme.write_bytes(raw_bytes.replace(b"actions/workflows/signoff.yml", b"actions/workflows/git-signoff.yml"))
-        return readme
+        updated = updated.replace(b"actions/workflows/signoff.yml", b"actions/workflows/git-signoff.yml")
+    if b"actions/workflows/git-signoff.yml/badge.svg" in updated:
+        if branch:
+            # A bare badge from an earlier install gets the branch it should
+            # report. A badge that already names a branch, this one or another,
+            # is someone's choice and is left alone.
+            bare = b"git-signoff.yml/badge.svg)"
+            with_branch = b"git-signoff.yml/badge.svg?branch=" + quote(branch, safe="").encode("ascii") + b")"
+            updated = updated.replace(bare, with_branch)
+        if updated != raw_bytes:
+            readme.write_bytes(updated)
+        return readme  # already present
     if "attested by humans" in text:
         return readme  # a hand-written badge or mention; never inject a second one
         
@@ -1473,7 +1501,7 @@ def run_init(
         scaffold_config(root, integration_branch=ctx.default_branch)
         vendor_skill(root, source=skill_source, destinations=resolved_dests, allow_dirty=allow_dirty)
         if effective_slug and not skip_badge:
-            inject_readme_badge(root, slug=effective_slug)
+            inject_readme_badge(root, slug=effective_slug, branch=ctx.default_branch)
 
         # Step 5: Ruleset setup
         ruleset_res = setup_ruleset(

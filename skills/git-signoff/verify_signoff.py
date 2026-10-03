@@ -90,7 +90,7 @@ from pathlib import Path  # noqa: E402
 # The pin tag this file ships under. tag.yml's PINS list and the install
 # snippets must carry the same value (pinned by tests); the stale-pin warning
 # compares it against the tags published upstream.
-VERIFIER_PIN = "verify-v1.7"
+VERIFIER_PIN = "verify-v1.8"
 PIN_REMOTE = "https://github.com/jerrylin96/git-signoff"
 PIN_TAG_RE = re.compile(r"refs/tags/verify-v(\d+)(?:\.(\d+))?$")
 
@@ -138,6 +138,42 @@ def git(repo, *args, check=True):
     if check and proc.returncode != 0:
         raise SystemExit(f"git {' '.join(args)} failed: {proc.stderr.strip()}")
     return proc
+
+
+# `git merge-tree --write-tree`, which head mode needs to verify a 2-parent
+# merge commit, arrived in git 2.38. An older git rejects the invocation, and
+# until verify-v1.8 that read as "failed clean 3-way merge calculation" — a
+# confident, false statement about two commits that may merge cleanly.
+MERGE_TREE_MIN_GIT = (2, 38)
+
+
+def git_version(repo):
+    """git's version as a tuple of ints, or None when it cannot be parsed (the
+    caller then proceeds and lets git speak for itself)."""
+    proc = git(repo, "--version", check=False)
+    m = re.search(r"(\d+)\.(\d+)(?:\.(\d+))?", proc.stdout or "")
+    if not m:
+        return None
+    return tuple(int(x) for x in m.groups() if x is not None)
+
+
+# Claude Code's project-directory rule, the same as attest.py's _slug: every
+# character outside [A-Za-z0-9] becomes "-" (/work/ea_barnes_bu/x ->
+# -work-ea-barnes-bu-x); a slug over _CLAUDE_SLUG_MAX characters is truncated
+# and given a version-dependent suffix, so it is matched by prefix. Until
+# verify-v1.8 only "/" was replaced, and --audit on a repository path with an
+# underscore or a dot reported the transcript missing.
+_CLAUDE_SLUG_MAX = 200
+
+
+def _claude_transcript_candidates(home_dir, root, conv_id):
+    slug = re.sub(r"[^A-Za-z0-9]", "-", root)
+    projects = Path(home_dir) / ".claude" / "projects"
+    exact = projects / slug / f"{conv_id}.jsonl"
+    if len(slug) <= _CLAUDE_SLUG_MAX:
+        return [exact]
+    pattern = os.path.join(str(projects), glob.escape(slug[:_CLAUDE_SLUG_MAX]) + "*", glob.escape(f"{conv_id}.jsonl"))
+    return [exact, *(Path(p) for p in sorted(glob.glob(pattern)) if Path(p) != exact)]
 
 
 def parse_trailers(payload):
@@ -452,10 +488,20 @@ def check_head(repo, target, scan_refs=()):
             return False, [
                 f"FAIL: merge commit {commit[:7]} PR head {p2[:7]} is an ancestor of base {p1[:7]}"
             ]
+        version = git_version(repo)
+        if version is not None and version < MERGE_TREE_MIN_GIT:
+            have = ".".join(str(n) for n in version)
+            need = ".".join(str(n) for n in MERGE_TREE_MIN_GIT)
+            return False, [
+                f"FAIL: merge commit {commit[:7]} cannot be verified with git {have}: checking a 2-parent merge "
+                f"needs `git merge-tree --write-tree` (git {need} or newer); this is not a verdict on the merge itself"
+            ]
         mproc = git(repo, "merge-tree", "--write-tree", p1, p2, check=False)
         if mproc.returncode != 0:
+            detail = (mproc.stderr.strip() or mproc.stdout.strip()).splitlines()
+            reason = f": {detail[-1]}" if detail else ""
             return False, [
-                f"FAIL: merge commit {commit[:7]} failed clean 3-way merge calculation between {p1[:7]} and {p2[:7]}"
+                f"FAIL: merge commit {commit[:7]} failed clean 3-way merge calculation between {p1[:7]} and {p2[:7]}{reason}"
             ]
         expected_tree = mproc.stdout.strip().splitlines()[0]
         if expected_tree != tree:
@@ -808,8 +854,8 @@ def check_audit(repo, target="HEAD", export_path=None):
                 root = str(Path(root).resolve())
             except Exception:
                 pass
-            slug = root.replace("/", "-")
-            transcript_path = home_dir / ".claude" / "projects" / slug / f"{conv_id}.jsonl"
+            candidates = _claude_transcript_candidates(home_dir, root, conv_id)
+            transcript_path = next((c for c in candidates if c.is_file()), candidates[0])
             if not transcript_path.is_file():
                 proc_common = git(repo, "rev-parse", "--git-common-dir", check=False)
                 if proc_common.returncode == 0 and proc_common.stdout.strip():
@@ -819,10 +865,11 @@ def check_audit(repo, target="HEAD", export_path=None):
                         main_root = str(Path(main_root).resolve())
                     except Exception:
                         pass
-                    fallback_slug = main_root.replace("/", "-")
-                    fallback_path = home_dir / ".claude" / "projects" / fallback_slug / f"{conv_id}.jsonl"
-                    if fallback_path.is_file():
-                        transcript_path = fallback_path
+                    fallback = next(
+                        (c for c in _claude_transcript_candidates(home_dir, main_root, conv_id) if c.is_file()), None
+                    )
+                    if fallback is not None:
+                        transcript_path = fallback
         elif harness_id == "antigravity-cli":
             transcript_path = (
                 home_dir

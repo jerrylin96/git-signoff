@@ -1,8 +1,11 @@
 # Functionality reference
 
 What the three scripts do, their flags, exit codes, and environment variables.
-All three are standard-library Python 3.10+ and shell out to `git`. Behavior
-is pinned by the tests named at the end of each section.
+All three are standard-library Python 3.10+ and shell out to `git` (any
+recent git; verifying a 2-parent merge commit needs `git merge-tree
+--write-tree`, git 2.38+, and since `verify-v1.8` an older git is reported as
+unable to verify it rather than as a failed merge). Behavior is pinned by the
+tests named at the end of each section.
 
 - [`init.py`](#initpy--repository-initializer) — sets a repository up once.
 - [`attest.py`](#attestpy--producer) — writes an attestation (called by the
@@ -19,7 +22,7 @@ end-to-end example is [`walkthrough.md`](walkthrough.md).
 ## `init.py` — repository initializer
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/jerrylin96/git-signoff/init-v10/init.py -o /tmp/signoff-init.py
+curl -fsSL https://raw.githubusercontent.com/jerrylin96/git-signoff/init-v11/init.py -o /tmp/signoff-init.py
 python3 /tmp/signoff-init.py [options]
 ```
 
@@ -305,7 +308,7 @@ Output (`--json`: one object; otherwise labeled lines): `attestation_sha`,
 |---|---|---|
 | `GIT_SIGNOFF_TRANSCRIPT_FILE` | `attest.py`, `verify_signoff.py --audit` | Transcript file; takes precedence over every harness adapter (`generic-file`). |
 | `ANTIGRAVITY_CONVERSATION_ID` | `attest.py` | `~/.gemini/antigravity-cli/brain/<id>/.system_generated/logs/transcript.jsonl` |
-| `CLAUDE_CODE_SESSION_ID` | `attest.py` | `~/.claude/projects/<slug of repo root>/<id>.jsonl`, falling back to the primary root of a linked worktree via `git rev-parse --git-common-dir`. Also scopes `CLAUDE_CODE_VERSION` and `CLAUDE_EFFORT` into `Signoff-Agent`. |
+| `CLAUDE_CODE_SESSION_ID` | `attest.py` | `~/.claude/projects/<slug>/<id>.jsonl`, where `<slug>` is the repository root with every character outside `A-Za-z0-9` replaced by `-` (Claude Code's rule, keyed to the directory it was launched from — start it at the worktree root; a slug over 200 characters is matched by prefix), falling back to the primary root of a linked worktree via `git rev-parse --git-common-dir`. Also scopes `CLAUDE_CODE_VERSION` and `CLAUDE_EFFORT` into `Signoff-Agent`. |
 | `CODEX_SESSION_ID`, `CODEX_HOME` | `attest.py` | Newest `$CODEX_HOME/sessions/**/rollout-*-<id>.jsonl` (default `~/.codex`). |
 | `ANTHROPIC_MODEL` | `attest.py` | Model id for `Signoff-Agent`; else the last `"model"` field in the snapshot; else `--model`; else `unavailable`. |
 | `GIT_SIGNOFF_PROFILE_FILE` | `attest.py` | Interview profile override; unreadable → exit 5. Otherwise `<root>/.git-signoff/profile.md`, else the embedded default. |
@@ -320,7 +323,7 @@ Tests: `scripts/tests/test_attest.py`, `test_attest_adapters.py`,
 ## `verify_signoff.py` — verifier
 
 Same file at `skills/git-signoff/verify_signoff.py` (vendored) and behind the
-composite action `jerrylin96/git-signoff/verify@verify-v1.7`.
+composite action `jerrylin96/git-signoff/verify@verify-v1.8`.
 
 ```
 verify_signoff.py [--repo PATH] [--mode {head,history}] [--target REV] [--require N] [--scan-refs REF ...]
@@ -336,13 +339,13 @@ verify_signoff.py --version
 | `--scan-refs REF ...` | Head mode: also consider sound attestation commits reachable from these refs (patterns expand via `for-each-ref`); a tree match proves the same code state was attested, not that this PR, base, or interview was reviewed. The composite action passes the merged same-repository pull request's head for the target; the verifier trusts no ref it was not given. |
 | `--audit [COMMIT]` | Re-hash the local transcript for the attestation covering `COMMIT` (default `HEAD`) against `Signoff-Transcript-Digest` over the first `Signoff-Transcript-Bytes` bytes. The transcript is resolved from the harness id and conversation id, or from `GIT_SIGNOFF_TRANSCRIPT_FILE`. |
 | `--export PATH` | With `--audit`: write the audited byte snapshot to `PATH`. |
-| `--version` | Prints the pin (`verify-v1.7`). |
+| `--version` | Prints the pin (`verify-v1.8`). |
 
 Before checking, the verifier fetches `origin`'s notes into its own mirror
 ref `refs/notes/signoff-verify` and never writes `refs/notes/signoff`, so an
 unpushed local attestation survives verification. Then it lists this
 repository's `verify-v*` tags and prints
-`warning: verifier pin verify-v1.7 is behind verify-vX.Y; see verify/README.md`
+`warning: verifier pin verify-v1.8 is behind verify-vX.Y; see verify/README.md`
 on stderr when a newer pin exists (never changes the verdict; stdout carries
 only the verdict; silent on network failure).
 

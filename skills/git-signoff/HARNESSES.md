@@ -133,6 +133,19 @@ dogfoods via symlinks at both `.claude/skills/git-signoff` and
 `.agents/skills/git-signoff` to its own `skills/git-signoff/`; that symlink pattern is
 for this repo only.
 
+**Migration note (2026-10, `init-v11`):** re-running the initializer
+re-vendors `attest.py` and `verify_signoff.py` with the Claude Code
+transcript-slug fix above, pins `verify@verify-v1.8` and
+`recover@verify-v1.8`, and names the integration branch in the README badge
+(`badge.svg?branch=<integration-branch>`), adding the parameter to a bare
+badge from an earlier install: GitHub renders a bare badge for the default
+branch, or when that branch has no runs of the workflow for the most recent
+run on any branch, so on a repository that integrates on a non-default
+branch the badge tracked whichever pull request ran last. `verify-v1.8` also
+reports a git older than 2.38 as unable to verify a 2-parent merge commit
+(no `merge-tree --write-tree`) instead of as a failed merge. Existing
+attestations verify as before.
+
 **Migration note (2026-09, `init-v9`):** re-running the initializer rewrites
 `.github/workflows/git-signoff.yml` with a `permissions:` block (`contents:
 read`, `pull-requests: read`) and pins `verify@verify-v1.6` and
@@ -169,15 +182,28 @@ rename `.signoff/` to `.git-signoff/`, and re-export any `SIGNOFF_*` variables
 under the new names.
 
 A machine-local install also works for local CLI/desktop sessions: copy the
-folder to `~/.claude/skills/git-signoff` (user-level, all projects). Linked git
-worktrees are handled by the `--git-common-dir` fallback: the transcript is
-keyed to the primary repository root, and the adapter resolves it
-automatically.
+folder to `~/.claude/skills/git-signoff` (user-level, all projects).
+
+**Where the transcript is, and the one habit that keeps it findable.** Claude
+Code keys a session's transcript to the directory it was *launched from*,
+slugged by replacing every character outside `A-Za-z0-9` with `-`:
+`/work/bu/ea_barnes_bu/proj` → `~/.claude/projects/-work-bu-ea-barnes-bu-proj/`.
+A slug over 200 characters is truncated and suffixed (the suffix depends on
+the Claude Code version), and the adapter matches it by prefix. The adapter
+tries the repository root of the checkout first, then the primary root of a
+linked worktree via `git rev-parse --git-common-dir`, so **start Claude Code
+at the root of the worktree you attest from**: a session launched in a
+subdirectory matches neither candidate (`GIT_SIGNOFF_TRANSCRIPT_FILE` is the
+override). Until `init-v11` the adapter replaced only `/`, so any repository
+path containing `_`, `.` or a space reported an existing transcript as
+missing and steered the interview toward `--ack-no-transcript`, the
+downgraded status; re-vendor the folder to pick up the fix.
 
 - Transcript env: `CLAUDE_CODE_SESSION_ID` (exported to Bash subprocesses;
   verified live in a web session on 2026-08-05, including full adapter
   resolution of the running session's transcript).
 - Transcript path: `~/.claude/projects/<cwd-slug>/<session-id>.jsonl`
+  (slug rule above)
 
 Web-specific caveats:
 - **Ephemeral containers**: the transcript file is destroyed when the session

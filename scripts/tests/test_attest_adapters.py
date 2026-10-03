@@ -13,7 +13,9 @@ resolve_adapter = attest.resolve_adapter
 
 
 def _slug(p):
-    return str(p).replace("/", "-")
+    # Claude Code's project-directory rule; locked by value in
+    # test_claude_slug_replaces_every_non_alphanumeric_character below.
+    return attest._slug(str(p))
 
 
 def _plant_claude_transcript(home, root, sid, data=b'{"role":"user"}\n'):
@@ -101,6 +103,67 @@ def test_claude_relative_git_common_dir_resolved_against_repo_cwd(tmp_path):
     assert os.getcwd() != str(sub)  # process cwd differs from injected cwd
     a = ClaudeCodeAdapter("sid-3", cwd=str(sub), home=str(home))
     assert a.fetch_transcript_bytes() == data
+
+
+def test_claude_slug_replaces_every_non_alphanumeric_character():
+    """Claude Code names ~/.claude/projects/<slug> by replacing every character
+    outside [A-Za-z0-9] with "-". Replacing only "/" (the rule until init-v11)
+    missed any repository path with an underscore, a dot or a space, and the
+    interview was steered toward --ack-no-transcript for a transcript that
+    existed. Expected values are literals, not the function under test."""
+    assert attest._slug("/work/bu/ea_barnes_bu/jlin404/project-rewind/dev-clean") == (
+        "-work-bu-ea-barnes-bu-jlin404-project-rewind-dev-clean"
+    )
+    assert attest._slug("/home/u/my.repo v2") == "-home-u-my-repo-v2"
+    assert attest._slug("/home/user/plain") == "-home-user-plain"
+
+
+def test_claude_transcript_found_for_path_with_underscore_and_dot(tmp_path):
+    home, cwd = tmp_path / "home", tmp_path / "ea_barnes_bu" / "v0.5"
+    cwd.mkdir(parents=True)
+    data = _plant_claude_transcript(home, cwd, "sid-5")
+    a = ClaudeCodeAdapter("sid-5", cwd=str(cwd), home=str(home))
+    assert a.describe_path() == str(home / ".claude" / "projects" / attest._slug(str(cwd)) / "sid-5.jsonl")
+    assert a.fetch_transcript_bytes() == data
+    # The slash-only directory the old rule looked in is not where Claude Code writes.
+    assert not (home / ".claude" / "projects" / str(cwd).replace("/", "-")).exists()
+
+
+def test_claude_missing_transcript_names_the_exact_slug_path(tmp_path):
+    home, cwd = tmp_path / "home", tmp_path / "x_y"
+    cwd.mkdir()
+    a = ClaudeCodeAdapter("sid-7", cwd=str(cwd), home=str(home))
+    assert a.describe_path() == str(home / ".claude" / "projects" / attest._slug(str(cwd)) / "sid-7.jsonl")
+    assert a.fetch_transcript_bytes() is None
+
+
+def test_claude_long_slug_matched_by_prefix(tmp_path):
+    """A slug over 200 characters is truncated and suffixed by Claude Code (no
+    suffix before 2.1.x, a base-36 hash since); the adapter matches it by
+    prefix, and an untruncated directory wins when both exist."""
+    home = tmp_path / "home"
+    # Aim for a slug just over the cap but under the 255-byte file-name limit,
+    # so the untruncated directory (what an older Claude Code wrote) can exist.
+    pad = max(1, 215 - len(attest._slug(str(tmp_path))) - 1)
+    cwd = tmp_path / ("p" * pad)
+    cwd.mkdir()
+    slug = attest._slug(str(cwd))
+    assert len(slug) > attest._CLAUDE_SLUG_MAX
+    truncated = home / ".claude" / "projects" / (slug[: attest._CLAUDE_SLUG_MAX] + "-1k2j3h")
+    truncated.mkdir(parents=True)
+    (truncated / "sid-6.jsonl").write_bytes(b"long")
+    a = ClaudeCodeAdapter("sid-6", cwd=str(cwd), home=str(home))
+    assert a.fetch_transcript_bytes() == b"long"
+    if len(slug) <= 255:  # a longer tmp_path (macOS) makes the exact name uncreatable; the prefix match above still holds
+        exact = home / ".claude" / "projects" / slug
+        exact.mkdir(parents=True)
+        (exact / "sid-6.jsonl").write_bytes(b"exact")
+        assert a.fetch_transcript_bytes() == b"exact"
+    # Another session's file under a sibling prefix directory is never picked up.
+    other = home / ".claude" / "projects" / (slug[: attest._CLAUDE_SLUG_MAX] + "-zzzzzz")
+    other.mkdir(parents=True)
+    (other / "sid-other.jsonl").write_bytes(b"not mine")
+    assert ClaudeCodeAdapter("sid-8", cwd=str(cwd), home=str(home)).fetch_transcript_bytes() is None
 
 
 def _plant_codex_rollout(base, day, ts, sid, data):

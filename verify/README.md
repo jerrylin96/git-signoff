@@ -17,7 +17,7 @@ squash merges.
 
 Run inside your repository root:
 ```bash
-curl -fsSL https://raw.githubusercontent.com/jerrylin96/git-signoff/init-v10/init.py -o /tmp/signoff-init.py && python3 /tmp/signoff-init.py
+curl -fsSL https://raw.githubusercontent.com/jerrylin96/git-signoff/init-v11/init.py -o /tmp/signoff-init.py && python3 /tmp/signoff-init.py
 ```
 
 This automatically scaffolds the workflow, selects your domain interview profile, configures the README badge, configures GitHub ruleset protection, and creates a setup branch ready for `/git-signoff`.
@@ -47,7 +47,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0   # full history — attestations live in it
-      - uses: jerrylin96/git-signoff/verify@verify-v1.7
+      - uses: jerrylin96/git-signoff/verify@verify-v1.8
 ```
 
 **2.** (Recommended) Enforce signoff before merge with the preconfigured GitHub Ruleset:
@@ -59,9 +59,17 @@ Download [`ruleset.json`](ruleset.json) and import it into your repository via *
 [![attested by humans](https://github.com/OWNER/REPO/actions/workflows/git-signoff.yml/badge.svg)](https://github.com/OWNER/REPO/actions/workflows/git-signoff.yml)
 ```
 
+If pull requests merge into a branch other than GitHub's default branch,
+append `?branch=<that-branch>` to the `badge.svg` URL. GitHub renders a bare
+badge for the default branch and, when that branch has no runs of the
+workflow, for the most recent run on any branch; the workflow above runs only
+on pull requests and on pushes to the branch it names, so a bare badge on
+such a repository tracks whichever pull request ran last. The initializer
+writes the parameter.
+
 Done. Pull requests now fail the check until the branch ends in a valid
-attestation (run `/git-signoff` before merging), and your default branch badge
-reads **attested by humans: passing**.
+attestation (run `/git-signoff` before merging), and your integration
+branch's badge reads **attested by humans: passing**.
 
 Pin tags do not move. Backward-compatible fixes ship as new `verify-v1.x`
 tags; a breaking change to the action's inputs or pass criteria would ship
@@ -73,17 +81,23 @@ repository's `verify-v*` tags after fetching notes and prints one line on
 stderr (visible in the CI log; stdout stays the verdict) when a newer pin exists:
 
 ```text
-warning: verifier pin verify-v1.7 is behind verify-v1.8; see verify/README.md
+warning: verifier pin verify-v1.8 is behind verify-v1.9; see verify/README.md
 ```
 
 It never changes the verdict, is skipped silently when the network is
 unavailable, and can be turned off with `GIT_SIGNOFF_NO_UPDATE_CHECK=1`.
 
-> **Current pin: `@verify-v1.7`.** It retains `verify-v1.6` evidence rules and
-> makes recovery report a missing `gh` CLI as incomplete when
-> `pull-requests: auto`. Available notes are published before the run fails;
-> explicit `pull-requests: none` remains a valid branch-only choice.
-> `init-v10` also vendors the explanation/practice modes. Existing pins never move.
+> **Current pin: `@verify-v1.8`.** It retains `verify-v1.6` evidence rules.
+> `verify-v1.8` reports a git older than 2.38 as unable to verify a 2-parent
+> merge commit (it has no `merge-tree --write-tree`) instead of as a failed
+> merge, and `--audit` finds Claude Code transcripts for repository paths
+> containing `_`, `.` or a space (the slug replaces every non-alphanumeric
+> character, not only `/`). `verify-v1.7` made recovery report a missing `gh`
+> CLI as incomplete when `pull-requests: auto`; available notes are published
+> before the run fails, and explicit `pull-requests: none` remains a valid
+> branch-only choice. `init-v11` names the integration branch in the badge
+> (`?branch=`) and vendors the transcript fix; `init-v10` vendored the
+> explanation/practice modes. Existing pins never move.
 >
 > **Migrating from `@verify-v1.5` or earlier:** the `verify-v1.6` changes below
 > are included in the current pin. Add
@@ -182,7 +196,7 @@ creation date), so a delayed or re-run workflow finds the pull request too.
 Override with inputs:
 
 ```yaml
-      - uses: jerrylin96/git-signoff/verify@verify-v1.7
+      - uses: jerrylin96/git-signoff/verify@verify-v1.8
         with:
           mode: history      # or: head (the default on every event)
           target: main       # commit (head) or ref (history)
@@ -192,7 +206,10 @@ Override with inputs:
 
 The verifier is a single stdlib-only Python file
 ([`skills/git-signoff/verify_signoff.py`](../skills/git-signoff/verify_signoff.py))
-— no dependencies beyond git and Python 3.10+. It ships inside the skill
+— no dependencies beyond git and Python 3.10+ (verifying a 2-parent merge
+commit needs git 2.38+ for `merge-tree --write-tree`; since `verify-v1.8` an
+older git is reported as unable to verify, not as a failed merge, and
+GitHub's runners qualify). It ships inside the skill
 folder, so every repository that vendored `/git-signoff` already has it at
 `.claude/skills/git-signoff/verify_signoff.py` (or `.agents/…`) for local
 `--mode head` and `--audit` runs; the composite action in this directory runs

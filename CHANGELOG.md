@@ -5,7 +5,53 @@ the composite action (`verify-vX.Y`) and the initializer (`init-vN`) never
 move and are listed with the release that introduced them. Dates are the tag
 dates on `origin`.
 
-## Unreleased (`verify-v1.7`, `init-v10`, spec 3.8.1)
+## Unreleased (`verify-v1.8`, `init-v11`, spec 3.8.2)
+
+Three defects found while setting a repository up whose pull requests merge
+into a non-default branch, from a checkout under a path with underscores (an
+HPC worktree). Each was reproduced before it was fixed.
+
+- **Fixed** the Claude Code transcript adapter (`attest.py`, and
+  `verify_signoff.py --audit`) missing the transcript of any repository whose
+  path contains a character outside `A-Za-z0-9` other than `/`. Claude Code
+  names `~/.claude/projects/<slug>` by replacing every such character with
+  `-`; the adapter replaced only `/`, so for `/work/bu/ea_barnes_bu/...` it
+  looked in a directory Claude Code never writes, `prepare` warned that the
+  transcript was unreadable, and `commit` exited 4 pointing at
+  `--ack-no-transcript`, the downgraded status, for a transcript that
+  existed. A slug over 200 characters, which Claude Code truncates and
+  suffixes, is matched by prefix. The spec's §3.2 path description,
+  HARNESSES.md and the reference now state the rule, and HARNESSES.md
+  corrects its worktree note: the transcript is keyed to the directory Claude
+  Code was launched from, not to the primary repository root, so start it at
+  the worktree root.
+- **Fixed** the README badge the initializer writes not naming the branch it
+  reports. GitHub renders a bare badge for the default branch or, when that
+  branch has no runs of the workflow, for the most recent run on any branch;
+  the scaffolded workflow runs only on pull requests and on pushes to the
+  integration branch, so on a repository that integrates on a non-default
+  branch the badge tracked whichever pull request ran last. `init.py` now
+  writes `badge.svg?branch=<integration-branch>` (the integration branch's
+  fourth reader, after the workflow, the ruleset and `attest.py`), adds the
+  parameter to a bare badge from an earlier install when re-run, and leaves a
+  badge that already names a branch alone. `verify/README.md` documents the
+  manual step.
+- **Fixed** `verify_signoff.py` reporting a 2-parent merge commit as a
+  "failed clean 3-way merge calculation" on a git older than 2.38, which has
+  no `merge-tree --write-tree`: a confident, false statement about two
+  commits that may merge cleanly. The verdict now names the git version and
+  the requirement (still a FAIL, since the merge cannot be verified there),
+  and a genuine `merge-tree` failure carries git's last output line. CI
+  runners are unaffected.
+- **Docs:** the README's copy-the-folder path says to commit
+  `.git-signoff/config.json` (or pass `--reference`) when pull requests merge
+  into a non-default branch, since without it `attest.py` diffs against
+  `origin/HEAD`.
+- **Delivery:** new immutable `init-v11` and `verify-v1.8` pins; spec 3.8.2
+  is informative (§3.2). No verifier evidence rule changes; existing
+  attestations verify as before.
+
+## Previous pin update (`verify-v1.6` → `verify-v1.7`, `init-v9` → `init-v10`, spec 3.8.1)
 
 - **Added** `/git-signoff --explain`: a guided, read-only walkthrough with
   source-grounded rationale, Q&A, and explicit coverage. It can precede a

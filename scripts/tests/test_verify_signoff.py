@@ -7,6 +7,7 @@ counting/validation/dedup, and an end-to-end run against this repository.
 
 import importlib.util
 import os
+import re
 import subprocess
 import sys
 
@@ -40,6 +41,13 @@ def repo(tmp_path):
     r = init_repo(tmp_path / "repo")
     commit_file(r, "a.txt", "hello", "initial commit")
     return r
+
+
+def _claude_slug(path):
+    """Claude Code's project-directory rule (every non-alphanumeric character
+    becomes "-"), written out here so the tests do not borrow the verifier's
+    own implementation of it."""
+    return re.sub(r"[^A-Za-z0-9]", "-", str(path))
 
 
 def attest_head(repo, message=None):
@@ -489,6 +497,49 @@ def test_head_mode_fails_on_dirty_conflict_resolved_merge(repo):
     assert f"FAIL: merge commit {merge_commit[:7]} tree does not match clean 3-way merge" in lines[0]
 
 
+def test_head_mode_reports_old_git_instead_of_a_failed_merge(repo, monkeypatch):
+    """git older than 2.38 has no `merge-tree --write-tree`; until verify-v1.8
+    its rejection read as a failed 3-way merge of two commits that merge
+    cleanly. The verdict stays FAIL (the merge cannot be verified there) but
+    names the real reason."""
+    git(repo, "checkout", "-b", "feature")
+    commit_file(repo, "b.txt", "feature work", "add b.txt")
+    attest_head(repo)
+    git(repo, "checkout", "main")
+    git(repo, "merge", "--no-ff", "-m", "Merge pull request #1 from feature", "feature")
+    merge_commit = git(repo, "rev-parse", "HEAD").stdout.strip()
+
+    monkeypatch.setattr(verify_signoff, "git_version", lambda repo: (2, 37, 0))
+    ok, lines = verify_signoff.check_head(str(repo), "HEAD")
+    assert not ok
+    assert lines[0].startswith(f"FAIL: merge commit {merge_commit[:7]} cannot be verified with git 2.37.0")
+    assert "git 2.38 or newer" in lines[0]
+    assert "failed clean 3-way merge" not in lines[0]
+    # Only the 2-parent path consults the version: the attested feature tip still passes.
+    ok_tip, _ = verify_signoff.check_head(str(repo), "feature")
+    assert ok_tip
+
+
+def test_git_version_parses_real_and_suffixed_output(repo, monkeypatch):
+    real = verify_signoff.git_version(str(repo))
+    assert real is not None and real >= verify_signoff.MERGE_TREE_MIN_GIT, real
+
+    class Proc:
+        returncode = 0
+        stderr = ""
+
+        def __init__(self, out):
+            self.stdout = out
+
+    monkeypatch.setattr(verify_signoff, "git", lambda repo, *a, check=True: Proc("git version 2.39.5.windows.1\n"))
+    assert verify_signoff.git_version(str(repo)) == (2, 39, 5)
+    monkeypatch.setattr(verify_signoff, "git", lambda repo, *a, check=True: Proc("something else\n"))
+    assert verify_signoff.git_version(str(repo)) is None
+    # Tuple comparison against the floor: 2.37.x is too old, 2.38 and 2.38.1 are not.
+    assert (2, 37, 9) < verify_signoff.MERGE_TREE_MIN_GIT
+    assert not ((2, 38) < verify_signoff.MERGE_TREE_MIN_GIT) and not ((2, 38, 1) < verify_signoff.MERGE_TREE_MIN_GIT)
+
+
 def test_head_mode_fails_on_redundant_merge_where_pr_head_is_ancestor(repo):
     commit_file(repo, "b.txt", "b", "commit b")
     p1 = git(repo, "rev-parse", "HEAD").stdout.strip()
@@ -861,7 +912,7 @@ def test_check_audit_harness_claude_code(repo, tmp_path, monkeypatch):
     monkeypatch.setenv("USERPROFILE", str(home))
 
     root_str = str(repo.resolve())
-    slug = root_str.replace("/", "-")
+    slug = _claude_slug(root_str)
     conv_id = "claude-session-999"
 
     claude_dir = home / ".claude" / "projects" / slug
@@ -994,7 +1045,7 @@ def test_check_audit_harness_claude_code_worktree_fallback(repo, tmp_path, monke
     monkeypatch.setenv("USERPROFILE", str(home))
 
     root_str = str(repo.resolve())
-    main_slug = root_str.replace("/", "-")
+    main_slug = _claude_slug(root_str)
     conv_id = "claude-worktree-session"
 
     # Transcript saved under main repo slug
@@ -1021,6 +1072,38 @@ def test_check_audit_harness_claude_code_worktree_fallback(repo, tmp_path, monke
     # Auditing from inside the worktree should resolve transcript from main repo slug
     ok, lines = verify_signoff.check_audit(str(wt_dir), "HEAD")
     assert ok is True
+    assert any("VALID MATCH" in line for line in lines)
+
+
+def test_check_audit_harness_claude_code_path_with_underscore(tmp_path, monkeypatch):
+    """The repository path carries characters Claude Code slugs to "-" (an HPC
+    checkout under /work/bu/ea_barnes_bu/...). Until verify-v1.8 --audit
+    replaced only "/" and reported the transcript missing."""
+    home = tmp_path / "home"
+    monkeypatch.setenv("HOME", str(home))
+    monkeypatch.setenv("USERPROFILE", str(home))
+    repo = init_repo(tmp_path / "ea_barnes_bu" / "project-rewind" / "dev-clean")
+    commit_file(repo, "a.txt", "hello", "initial commit")
+
+    root_str = str(repo.resolve())
+    conv_id = "claude-session-hpc"
+    claude_dir = home / ".claude" / "projects" / _claude_slug(root_str)
+    assert "_" not in claude_dir.name and "_" in root_str
+    claude_dir.mkdir(parents=True)
+    raw_content = b'{"role": "assistant", "content": "hpc session"}\n'
+    (claude_dir / f"{conv_id}.jsonl").write_bytes(raw_content)
+    expected_digest = f"sha256:{hashlib.sha256(raw_content).hexdigest()}"
+
+    reviewed = git(repo, "rev-parse", "HEAD").stdout.strip()
+    tree = git(repo, "rev-parse", "HEAD^{tree}").stdout.strip()
+    msg = audit_attestation_message(
+        reviewed, tree, harness_id="claude-code", conv_id=conv_id,
+        digest=expected_digest, nbytes=str(len(raw_content)),
+    )
+    git(repo, "commit", "--allow-empty", "-m", msg)
+
+    ok, lines = verify_signoff.check_audit(str(repo), "HEAD")
+    assert ok is True, lines
     assert any("VALID MATCH" in line for line in lines)
 
 
