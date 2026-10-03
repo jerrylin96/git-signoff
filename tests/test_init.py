@@ -357,6 +357,20 @@ def test_inject_readme_badge_leaves_a_badge_that_already_names_a_branch(temp_git
     assert (temp_git_repo / "README.md").read_bytes() == before
 
 
+def test_inject_readme_badge_adds_the_branch_preserving_crlf(temp_git_repo):
+    readme = temp_git_repo / "README.md"
+    bare = (
+        "# Test Project\r\n\r\n"
+        "[![attested by humans](https://github.com/org/my-project/actions/workflows/git-signoff.yml/badge.svg)]"
+        "(https://github.com/org/my-project/actions/workflows/git-signoff.yml)\r\n\r\nA test repository.\r\n"
+    )
+    readme.write_bytes(bare.encode("utf-8"))
+    init.inject_readme_badge(temp_git_repo, "org/my-project", branch="dev-clean")
+    content = readme.read_bytes()
+    assert content == bare.replace("badge.svg)", "badge.svg?branch=dev-clean)").encode("utf-8")
+    assert b"\r\n" in content and b"\n\n" not in content.replace(b"\r\n", b"")
+
+
 def test_inject_readme_badge_legacy_rename_also_gets_the_branch(temp_git_repo):
     readme = temp_git_repo / "README.md"
     readme.write_text(

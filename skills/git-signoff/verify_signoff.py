@@ -143,7 +143,9 @@ def git(repo, *args, check=True):
 # `git merge-tree --write-tree`, which head mode needs to verify a 2-parent
 # merge commit, arrived in git 2.38. An older git rejects the invocation, and
 # until verify-v1.8 that read as "failed clean 3-way merge calculation" — a
-# confident, false statement about two commits that may merge cleanly.
+# confident, false statement about two commits that may merge cleanly. The
+# version is consulted only after merge-tree has failed, so a git that
+# backports the flag is tried rather than refused.
 MERGE_TREE_MIN_GIT = (2, 38)
 
 
@@ -172,7 +174,9 @@ def _claude_transcript_candidates(home_dir, root, conv_id):
     exact = projects / slug / f"{conv_id}.jsonl"
     if len(slug) <= _CLAUDE_SLUG_MAX:
         return [exact]
-    pattern = os.path.join(str(projects), glob.escape(slug[:_CLAUDE_SLUG_MAX]) + "*", glob.escape(f"{conv_id}.jsonl"))
+    pattern = os.path.join(
+        glob.escape(str(projects)), glob.escape(slug[:_CLAUDE_SLUG_MAX]) + "*", glob.escape(f"{conv_id}.jsonl")
+    )
     return [exact, *(Path(p) for p in sorted(glob.glob(pattern)) if Path(p) != exact)]
 
 
@@ -488,16 +492,16 @@ def check_head(repo, target, scan_refs=()):
             return False, [
                 f"FAIL: merge commit {commit[:7]} PR head {p2[:7]} is an ancestor of base {p1[:7]}"
             ]
-        version = git_version(repo)
-        if version is not None and version < MERGE_TREE_MIN_GIT:
-            have = ".".join(str(n) for n in version)
-            need = ".".join(str(n) for n in MERGE_TREE_MIN_GIT)
-            return False, [
-                f"FAIL: merge commit {commit[:7]} cannot be verified with git {have}: checking a 2-parent merge "
-                f"needs `git merge-tree --write-tree` (git {need} or newer); this is not a verdict on the merge itself"
-            ]
         mproc = git(repo, "merge-tree", "--write-tree", p1, p2, check=False)
         if mproc.returncode != 0:
+            version = git_version(repo)
+            if version is not None and version < MERGE_TREE_MIN_GIT:
+                have = ".".join(str(n) for n in version)
+                need = ".".join(str(n) for n in MERGE_TREE_MIN_GIT)
+                return False, [
+                    f"FAIL: merge commit {commit[:7]} cannot be verified with git {have}: checking a 2-parent merge "
+                    f"needs `git merge-tree --write-tree` (git {need} or newer); this is not a verdict on the merge itself"
+                ]
             detail = (mproc.stderr.strip() or mproc.stdout.strip()).splitlines()
             reason = f": {detail[-1]}" if detail else ""
             return False, [

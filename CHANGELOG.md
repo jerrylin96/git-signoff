@@ -31,11 +31,12 @@ HPC worktree). Each was reproduced before it was fixed.
   the scaffolded workflow runs only on pull requests and on pushes to the
   integration branch, so on a repository that integrates on a non-default
   branch the badge tracked whichever pull request ran last. `init.py` now
-  writes `badge.svg?branch=<integration-branch>` (the integration branch's
-  fourth reader, after the workflow, the ruleset and `attest.py`), adds the
-  parameter to a bare badge from an earlier install when re-run, and leaves a
-  badge that already names a branch alone. `verify/README.md` documents the
-  manual step.
+  writes `badge.svg?branch=<integration-branch>` (another reader of the
+  branch chosen once in `.git-signoff/config.json`), adds the parameter to a
+  bare badge from an earlier install when re-run (a default-branch repository
+  gains `?branch=main`, which reports the same branch minus the no-runs
+  fallback), and leaves a badge that already names a branch alone.
+  `verify/README.md` documents the manual step.
 - **Fixed** `verify_signoff.py` reporting a 2-parent merge commit as a
   "failed clean 3-way merge calculation" on a git older than 2.38, which has
   no `merge-tree --write-tree`: a confident, false statement about two

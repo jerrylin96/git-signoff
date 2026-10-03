@@ -138,7 +138,9 @@ re-vendors `attest.py` and `verify_signoff.py` with the Claude Code
 transcript-slug fix above, pins `verify@verify-v1.8` and
 `recover@verify-v1.8`, and names the integration branch in the README badge
 (`badge.svg?branch=<integration-branch>`), adding the parameter to a bare
-badge from an earlier install: GitHub renders a bare badge for the default
+badge from an earlier install, a default-branch repository's included (it
+gains `?branch=main`, the same branch minus GitHub's no-runs fallback):
+GitHub renders a bare badge for the default
 branch, or when that branch has no runs of the workflow for the most recent
 run on any branch, so on a repository that integrates on a non-default
 branch the badge tracked whichever pull request ran last. `verify-v1.8` also

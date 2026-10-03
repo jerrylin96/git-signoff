@@ -269,10 +269,10 @@ class TranscriptProvider(Protocol):
 
 # Claude Code names a session's transcript directory after the directory it
 # was LAUNCHED from: every character outside [A-Za-z0-9] becomes "-", so
-# /work/bu/ea_barnes_bu/x -> -work-bu-ea-barnes-bu-x. A slug longer than
-# _CLAUDE_SLUG_MAX characters is truncated and given a version-dependent
-# suffix (none before Claude Code 2.1.x, a base-36 hash since), so such a slug
-# is matched by prefix; the session id in the file name keeps that unambiguous.
+# /work/bu/ea_barnes_bu/x -> -work-bu-ea-barnes-bu-x. An older Claude Code
+# wrote a long slug in full; since 2.1.x a slug longer than _CLAUDE_SLUG_MAX
+# characters is truncated and suffixed with a base-36 hash, so such a slug is
+# matched by prefix; the session id in the file name keeps that unambiguous.
 # Before init-v11 only "/" was replaced, so a repository path containing an
 # underscore, a dot or a space reported an existing transcript as missing and
 # steered the interview toward --ack-no-transcript.
@@ -293,7 +293,9 @@ def _claude_transcript_candidates(home: str, root: str, session_id: str) -> list
     exact = os.path.join(projects, slug, f"{session_id}.jsonl")
     if len(slug) <= _CLAUDE_SLUG_MAX:
         return [exact]
-    pattern = os.path.join(projects, glob.escape(slug[:_CLAUDE_SLUG_MAX]) + "*", glob.escape(f"{session_id}.jsonl"))
+    pattern = os.path.join(
+        glob.escape(projects), glob.escape(slug[:_CLAUDE_SLUG_MAX]) + "*", glob.escape(f"{session_id}.jsonl")
+    )
     return [exact, *sorted(p for p in glob.glob(pattern) if p != exact)]
 
 
@@ -381,7 +383,7 @@ class ClaudeCodeAdapter:
 
     def _existing(self, root: str) -> str | None:
         for path in _claude_transcript_candidates(self.home, root, self.session_id):
-            if os.path.exists(path):
+            if os.path.isfile(path):
                 return path
         return None
 
@@ -396,7 +398,9 @@ class ClaudeCodeAdapter:
         except Exception:
             return self._transcript_path(self.cwd)
         main_root = os.path.abspath(os.path.join(self.cwd, git_dir, os.pardir))
-        return self._existing(main_root) or self._transcript_path(main_root)
+        # On a miss, name the checkout's own path: that is where a Claude Code
+        # started at this worktree's root writes, and what the user should check.
+        return self._existing(main_root) or self._transcript_path(self.cwd)
 
     def fetch_transcript_bytes(self) -> bytes | None:
         return _read_bytes(self.describe_path())

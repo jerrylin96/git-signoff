@@ -138,9 +138,10 @@ def test_claude_missing_transcript_names_the_exact_slug_path(tmp_path):
 
 
 def test_claude_long_slug_matched_by_prefix(tmp_path):
-    """A slug over 200 characters is truncated and suffixed by Claude Code (no
-    suffix before 2.1.x, a base-36 hash since); the adapter matches it by
-    prefix, and an untruncated directory wins when both exist."""
+    """Since 2.1.x Claude Code truncates a slug over 200 characters and
+    suffixes it with a base-36 hash (an older Claude Code wrote it in full);
+    the adapter matches the truncated form by prefix, and the full directory
+    wins when both exist."""
     home = tmp_path / "home"
     # Aim for a slug just over the cap but under the 255-byte file-name limit,
     # so the untruncated directory (what an older Claude Code wrote) can exist.
@@ -154,7 +155,7 @@ def test_claude_long_slug_matched_by_prefix(tmp_path):
     (truncated / "sid-6.jsonl").write_bytes(b"long")
     a = ClaudeCodeAdapter("sid-6", cwd=str(cwd), home=str(home))
     assert a.fetch_transcript_bytes() == b"long"
-    if len(slug) <= 255:  # a longer tmp_path (macOS) makes the exact name uncreatable; the prefix match above still holds
+    if len(slug) <= 255:  # a longer tmp_path (macOS) makes the full name uncreatable; the prefix match above still holds
         exact = home / ".claude" / "projects" / slug
         exact.mkdir(parents=True)
         (exact / "sid-6.jsonl").write_bytes(b"exact")
@@ -164,6 +165,38 @@ def test_claude_long_slug_matched_by_prefix(tmp_path):
     other.mkdir(parents=True)
     (other / "sid-other.jsonl").write_bytes(b"not mine")
     assert ClaudeCodeAdapter("sid-8", cwd=str(cwd), home=str(home)).fetch_transcript_bytes() is None
+
+
+def test_claude_long_slug_glob_escapes_the_projects_prefix(tmp_path):
+    """The prefix glob must escape ~/.claude/projects too: a home directory
+    with a glob metacharacter ([ ] * ?) is rare but legal, and an unescaped
+    prefix made the long-slug lookup miss a transcript that existed."""
+    home = tmp_path / "h[1]"
+    pad = max(1, 215 - len(attest._slug(str(tmp_path))) - 1)
+    cwd = tmp_path / ("q" * pad)
+    cwd.mkdir()
+    slug = attest._slug(str(cwd))
+    assert len(slug) > attest._CLAUDE_SLUG_MAX
+    truncated = home / ".claude" / "projects" / (slug[: attest._CLAUDE_SLUG_MAX] + "-abc123")
+    truncated.mkdir(parents=True)
+    (truncated / "sid-9.jsonl").write_bytes(b"bracket home")
+    assert ClaudeCodeAdapter("sid-9", cwd=str(cwd), home=str(home)).fetch_transcript_bytes() == b"bracket home"
+
+
+def test_claude_linked_worktree_miss_names_the_worktree_root(tmp_path):
+    """Nothing found: the reported path is the checkout's own (where a Claude
+    Code started at this worktree's root writes), not the primary root's."""
+    home = tmp_path / "home"
+    main = init_repo(tmp_path / "main")
+    git(main, "commit", "-q", "--allow-empty", "-m", "base")
+    wt = tmp_path / "wt_linked"
+    git(main, "worktree", "add", "-q", str(wt))
+    a = ClaudeCodeAdapter("sid-10", cwd=str(wt), home=str(home))
+    assert a.describe_path() == str(home / ".claude" / "projects" / attest._slug(str(wt)) / "sid-10.jsonl")
+    assert a.fetch_transcript_bytes() is None
+    # A directory named like the transcript is not a transcript.
+    (home / ".claude" / "projects" / attest._slug(str(wt)) / "sid-10.jsonl").mkdir(parents=True)
+    assert a.fetch_transcript_bytes() is None
 
 
 def _plant_codex_rollout(base, day, ts, sid, data):
